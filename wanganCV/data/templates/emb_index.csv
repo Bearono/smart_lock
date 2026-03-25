@@ -1,0 +1,7 @@
+user_id,emb_path,source_file,ts,dim,normed
+user_001,data/templates/embs/user_001/emb_0001_norm.npy,outputs/faces/faces_20251107_203707_1.jpg,2025-11-07T20:37:07Z,128,True
+user_001,data\templates\embs\user_001\emb_0002_norm.npy,outputs\faces\faces_20251106_210440_1.jpg,2025-11-13T21:04:40Z,128,True
+user_001,data\templates\embs\user_001\emb_0001_norm.npy,outputs\faces\faces_20251113_213241_1.jpg,2025-11-13T21:32:41Z,128,True
+user_001,data\templates\embs\user_001\emb_0003_norm.npy,outputs\faces\faces_20251113_213324_1.jpg,2025-11-13T21:33:24Z,128,True
+user_001,data\templates\embs\user_001\emb_0004_norm.npy,outputs\faces\faces_20251113_213354_1.jpg,2025-11-13T21:33:54Z,128,True
+user_001,data\templates\embs\user_001\emb_0005_norm.npy,outputs\faces\faces_20251113_213418_1.jpg,2025-11-13T21:34:18Z,128,True
