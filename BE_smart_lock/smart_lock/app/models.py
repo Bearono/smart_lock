@@ -42,3 +42,55 @@ class AlarmLog(db.Model):
             'message': self.message,
             'snapshot': self.snapshot_path
         }
+
+# 5. MFA凭证表（TOTP密钥、设备绑定）
+class MFACredential(db.Model):
+    __tablename__ = 'mfa_credentials'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    credential_type = db.Column(db.String(20), nullable=False)  # 'totp', 'device'
+    credential_data = db.Column(db.String(500), nullable=False)  # TOTP密钥或设备公钥
+    device_id = db.Column(db.String(50))  # 设备ID（仅device类型）
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+# 6. 认证会话表
+class AuthSession(db.Model):
+    __tablename__ = 'auth_sessions'
+    id = db.Column(db.Integer, primary_key=True)
+    request_id = db.Column(db.String(64), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    nonce = db.Column(db.String(64), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # pending, face_verified, totp_required, completed, failed
+    device_verified = db.Column(db.Boolean, default=False)
+    face_verified = db.Column(db.Boolean, default=False)
+    totp_verified = db.Column(db.Boolean, default=False)
+    face_user_id = db.Column(db.String(50))
+    similarity_score = db.Column(db.Float)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    expires_at = db.Column(db.DateTime)
+
+# 7. 开门令牌表
+class UnlockToken(db.Model):
+    __tablename__ = 'unlock_tokens'
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(128), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    request_id = db.Column(db.String(64), nullable=False)
+    is_used = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+# 8. 访客授权表
+class GuestPass(db.Model):
+    __tablename__ = 'guest_passes'
+    id = db.Column(db.Integer, primary_key=True)
+    pass_code = db.Column(db.String(128), unique=True, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    guest_name = db.Column(db.String(80))
+    valid_from = db.Column(db.DateTime, nullable=False)
+    valid_until = db.Column(db.DateTime, nullable=False)
+    max_uses = db.Column(db.Integer, default=1)
+    used_count = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.now)
