@@ -1,6 +1,14 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models import User, MFACredential, AuthSession, UnlockToken, GuestPass, AccessLog
+from app.models import (
+    AccessLog,
+    AuthSession,
+    FaceRecognitionLog,
+    GuestPass,
+    MFACredential,
+    UnlockToken,
+    User,
+)
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 import pyotp
@@ -93,6 +101,59 @@ def verify_totp():
     return jsonify({"msg": "TOTP verified"}), 200
 
 
+@mfa_bp.route('/mfa/status', methods=['GET'])
+@jwt_required()
+def mfa_status():
+    username = get_jwt_identity()
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+
+    totp = MFACredential.query.filter_by(
+        user_id=user.id,
+        credential_type='totp',
+        is_active=True,
+    ).first()
+    devices = MFACredential.query.filter_by(
+        user_id=user.id,
+        credential_type='device',
+        is_active=True,
+    ).all()
+
+    return jsonify({
+        "totp_bound": bool(totp),
+        "devices": [
+            {
+                "credential_id": device.id,
+                "device_id": device.device_id,
+                "is_active": device.is_active,
+                "created_at": device.created_at.strftime("%Y-%m-%d %H:%M:%S") if device.created_at else None,
+            }
+            for device in devices
+        ],
+    }), 200
+
+
+@mfa_bp.route('/mfa/unbind/totp', methods=['POST'])
+@jwt_required()
+def unbind_totp():
+    username = get_jwt_identity()
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+
+    credentials = MFACredential.query.filter_by(
+        user_id=user.id,
+        credential_type='totp',
+        is_active=True,
+    ).all()
+    for credential in credentials:
+        credential.is_active = False
+    db.session.commit()
+
+    return jsonify({"msg": "TOTP unbound successfully"}), 200
+
+
 # ==================== 设备绑定 ====================
 
 @mfa_bp.route('/mfa/bind/device', methods=['POST'])
@@ -130,6 +191,34 @@ def bind_device():
 
 
 # ==================== 开门认证流程 ====================
+
+@mfa_bp.route('/mfa/unbind/device', methods=['POST'])
+@jwt_required()
+def unbind_device():
+    data = request.get_json() or {}
+    device_id = data.get('device_id')
+    if not device_id:
+        return jsonify({"msg": "device_id is required"}), 400
+
+    username = get_jwt_identity()
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+
+    credential = MFACredential.query.filter_by(
+        user_id=user.id,
+        credential_type='device',
+        device_id=device_id,
+        is_active=True,
+    ).first()
+    if not credential:
+        return jsonify({"msg": "Device binding not found"}), 404
+
+    credential.is_active = False
+    db.session.commit()
+
+    return jsonify({"msg": "Device unbound successfully"}), 200
+
 
 @mfa_bp.route('/mfa/open-door/request', methods=['POST'])
 @jwt_required()
@@ -200,7 +289,19 @@ def receive_face_result():
 
     # 验证人脸结果
     user = User.query.get(session.user_id)
-    if face_user_id == user.username and similarity_score >= 0.7:
+    passed = face_user_id == user.username and similarity_score >= 0.7
+    db.session.add(FaceRecognitionLog(
+        request_id=request_id,
+        device_id=device_id,
+        expected_username=user.username if user else None,
+        face_user_id=face_user_id,
+        similarity_score=similarity_score,
+        passed=passed,
+        snapshot_path=data.get('snapshot'),
+        failure_reason=None if passed else 'face_user_or_score_mismatch',
+    ))
+
+    if passed:
         session.face_verified = True
         session.face_user_id = face_user_id
         session.similarity_score = similarity_score
@@ -364,6 +465,18 @@ def verify_guest_pass():
         "unlock_token": token,
         "expires_in": 60
     }), 200
+
+
+@mfa_bp.route('/mfa/guest/list', methods=['GET'])
+@jwt_required()
+def list_guest_passes():
+    username = get_jwt_identity()
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+
+    passes = GuestPass.query.filter_by(created_by=user.id).order_by(GuestPass.id.desc()).all()
+    return jsonify([guest_pass.to_dict() for guest_pass in passes]), 200
 
 
 @mfa_bp.route('/mfa/guest/revoke/<int:pass_id>', methods=['POST'])

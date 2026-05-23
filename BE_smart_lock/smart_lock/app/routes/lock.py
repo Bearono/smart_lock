@@ -1,9 +1,8 @@
-import json
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models import Device, AccessLog
+from app.models import Device, AccessLog, UnlockToken, User
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from datetime import datetime, timezone
+from datetime import datetime
 
 lock_bp = Blueprint('lock', __name__)
 
@@ -51,7 +50,7 @@ def control_lock():
     # 更新数据库中的状态
     # 在不使用 MQTT 的情况下，后端直接改变数据库状态
     device.status = action
-    device.last_update = datetime.now(timezone.utc)
+    device.last_update = datetime.now()
 
     # 记录到访问历史表
     log_action = "远程开锁" if action == "UNLOCK" else "远程关锁"
@@ -69,6 +68,47 @@ def control_lock():
 
 # --- 功能三：硬件同步接口（可选，供联调） ---
 # 模拟硬件（比如树莓派）主动来询问后端“我该是什么状态”
+@lock_bp.route('/unlock-token/verify', methods=['POST'])
+def verify_unlock_token():
+    """Hardware consumes a one-time unlock token issued after MFA or guest verification."""
+    data = request.get_json() or {}
+    token = data.get('unlock_token')
+    device_id = data.get('device_id', 'door_01')
+
+    if not token:
+        return jsonify({"msg": "unlock_token is required"}), 400
+
+    unlock_token = UnlockToken.query.filter_by(token=token).first()
+    if not unlock_token:
+        return jsonify({"msg": "Invalid unlock token"}), 401
+    if unlock_token.is_used:
+        return jsonify({"msg": "Unlock token already used"}), 401
+    if unlock_token.expires_at < datetime.now():
+        return jsonify({"msg": "Unlock token expired"}), 401
+
+    device = Device.query.filter_by(device_id=device_id).first()
+    if not device:
+        device = Device(device_id=device_id)
+        db.session.add(device)
+
+    device.status = "UNLOCKED"
+    device.last_update = datetime.now()
+    unlock_token.is_used = True
+
+    user = User.query.get(unlock_token.user_id)
+    db.session.add(AccessLog(
+        action='TOKEN_UNLOCK',
+        username=user.username if user else 'Unknown',
+    ))
+    db.session.commit()
+
+    return jsonify({
+        "msg": "Unlock token accepted",
+        "device_id": device.device_id,
+        "new_status": device.status,
+    }), 200
+
+
 @lock_bp.route('/sync', methods=['POST'])
 def hardware_sync():
     data = request.get_json()
