@@ -18,7 +18,8 @@ from .secure_payload import decrypt_secure_payload
 
 mfa_bp = Blueprint('mfa', __name__)
 
-# ==================== TOTP 绑定与验证 ====================
+
+# ==================== TOTP 绑定、解绑与状态 ====================
 
 @mfa_bp.route('/mfa/bind/totp', methods=['POST'])
 @jwt_required()
@@ -154,7 +155,7 @@ def unbind_totp():
     return jsonify({"msg": "TOTP unbound successfully"}), 200
 
 
-# ==================== 设备绑定 ====================
+# ==================== 设备绑定与解绑 ====================
 
 @mfa_bp.route('/mfa/bind/device', methods=['POST'])
 @jwt_required()
@@ -190,8 +191,6 @@ def bind_device():
     return jsonify({"msg": "Device bound successfully"}), 200
 
 
-# ==================== 开门认证流程 ====================
-
 @mfa_bp.route('/mfa/unbind/device', methods=['POST'])
 @jwt_required()
 def unbind_device():
@@ -220,10 +219,12 @@ def unbind_device():
     return jsonify({"msg": "Device unbound successfully"}), 200
 
 
+# ==================== 开门认证流程 (含防爆破) ====================
+
 @mfa_bp.route('/mfa/open-door/request', methods=['POST'])
 @jwt_required()
 def open_door_request():
-    """发起开门请求（创建认证会话）"""
+    """发起开门请求（拦截已锁定设备）"""
     data = request.get_json()
     device_id = data.get('device_id')
 
@@ -240,6 +241,17 @@ def open_door_request():
     if not device_bound:
         return jsonify({"msg": "Device not bound"}), 403
 
+    # ================= 新增：设备锁定状态拦截 =================
+    if getattr(device_bound, 'is_locked', False):
+        log = AccessLog(action='BLOCKED_LOCKED_DEVICE_ATTEMPT', username=username)
+        db.session.add(log)
+        db.session.commit()
+        return jsonify({
+            "msg": "Device is LOCKED due to multiple failed attempts. Please contact Administrator.",
+            "code": "DEVICE_LOCKED"
+        }), 423
+    # ========================================================
+
     # 创建认证会话
     request_id = secrets.token_hex(32)
     nonce = secrets.token_hex(32)
@@ -255,12 +267,15 @@ def open_door_request():
     db.session.add(session)
     db.session.commit()
 
+    # 评估当前场景需要哪些认证因子
+    required_factors = evaluate_mfa_policy(user.id)
+
     return jsonify({
         "msg": "Auth session created",
         "request_id": request_id,
         "nonce": nonce,
-        "requires_face": True,
-        "requires_totp": _check_totp_required(user.id)
+        "requires_face": 'face' in required_factors,
+        "requires_totp": 'totp' in required_factors
     }), 200
 
 
@@ -308,13 +323,16 @@ def receive_face_result():
         session.status = 'face_verified'
         db.session.commit()
 
+        required_factors = evaluate_mfa_policy(user.id)
         return jsonify({
             "msg": "Face verified",
-            "requires_totp": _check_totp_required(user.id)
+            "requires_totp": 'totp' in required_factors
         }), 200
     else:
         session.status = 'failed'
-        db.session.commit()
+        # ================= 新增：人脸验证失败，增加失败计数 =================
+        _record_auth_failure(user.id)
+        # ==============================================================
         return jsonify({"msg": "Face verification failed"}), 401
 
 
@@ -337,10 +355,21 @@ def open_door_confirm():
     if session.status == 'failed':
         return jsonify({"msg": "Authentication failed"}), 401
 
-    # 检查是否需要TOTP
-    if _check_totp_required(user.id):
+    # 获取当前场景下的 MFA 安全策略
+    required_factors = evaluate_mfa_policy(user.id)
+
+    # 1. 核验生物因子 (人脸)
+    if 'face' in required_factors and not session.face_verified:
+        return jsonify({"msg": "Face verification missing"}), 401
+
+    # 2. 核验基础持有因子 (设备)
+    if 'device' in required_factors and not session.device_verified:
+        return jsonify({"msg": "Device verification missing"}), 401
+
+    # 3. 检查是否需要TOTP
+    if 'totp' in required_factors:
         if not totp_code:
-            return jsonify({"msg": "TOTP code required"}), 400
+            return jsonify({"msg": "Night mode: TOTP code required"}), 400
 
         # 验证TOTP
         credential = MFACredential.query.filter_by(
@@ -351,37 +380,76 @@ def open_door_confirm():
         totp = pyotp.TOTP(credential.credential_data)
         if not totp.verify(totp_code, valid_window=1):
             session.status = 'failed'
-            db.session.commit()
+            # ================= 新增：TOTP验证失败，增加失败计数 =================
+            _record_auth_failure(user.id)
+            # ================================================================
             return jsonify({"msg": "Invalid TOTP code"}), 401
 
         session.totp_verified = True
 
+    # ================= 新增：所有安全因子验证成功，重置失败计数 =================
+    _reset_auth_failures(user.id)
+    # =========================================================================
+
     # 所有因子验证通过，签发开门令牌
-    if session.device_verified and session.face_verified:
-        token = secrets.token_urlsafe(64)
-        unlock_token = UnlockToken(
-            token=token,
-            user_id=user.id,
-            request_id=request_id,
-            expires_at=datetime.now() + timedelta(seconds=60)
-        )
-        db.session.add(unlock_token)
+    token = secrets.token_urlsafe(64)
+    unlock_token = UnlockToken(
+        token=token,
+        user_id=user.id,
+        request_id=request_id,
+        expires_at=datetime.now() + timedelta(seconds=60)
+    )
+    db.session.add(unlock_token)
 
-        session.status = 'completed'
-        db.session.commit()
+    session.status = 'completed'
+    db.session.commit()
 
-        # 记录访问日志
-        log = AccessLog(action='UNLOCK', username=username)
-        db.session.add(log)
-        db.session.commit()
+    # 记录访问日志
+    log = AccessLog(action='UNLOCK', username=username)
+    db.session.add(log)
+    db.session.commit()
 
-        return jsonify({
-            "msg": "Authentication successful",
-            "unlock_token": token,
-            "expires_in": 60
-        }), 200
+    return jsonify({
+        "msg": "Authentication successful",
+        "unlock_token": token,
+        "expires_in": 60
+    }), 200
 
-    return jsonify({"msg": "Authentication incomplete"}), 400
+
+# ==================== 管理员设备解锁 ====================
+
+@mfa_bp.route('/mfa/admin/device/unlock', methods=['POST'])
+@jwt_required()
+def admin_unlock_device():
+    """管理员介入：解除特定用户的设备锁定"""
+    data = request.get_json()
+    target_username = data.get('target_username')
+
+    target_user = User.query.filter_by(username=target_username).first()
+    if not target_user:
+        return jsonify({"msg": "Target user not found"}), 404
+
+    device_cred = MFACredential.query.filter_by(
+        user_id=target_user.id, credential_type='device'
+    ).first()
+
+    if not device_cred:
+        return jsonify({"msg": "No device bound to this user"}), 404
+
+    if not getattr(device_cred, 'is_locked', False):
+        return jsonify({"msg": "Device is not locked"}), 200
+
+    # 执行解锁
+    device_cred.failed_attempts = 0
+    device_cred.is_locked = False
+    db.session.commit()
+
+    admin_name = get_jwt_identity()
+    log = AccessLog(action=f'ADMIN_UNLOCK_DEVICE_FOR_{target_username}', username=admin_name)
+    db.session.add(log)
+    db.session.commit()
+
+    return jsonify({"msg": f"Device for {target_username} has been successfully unlocked."}), 200
 
 
 # ==================== 访客授权 ====================
@@ -496,22 +564,50 @@ def revoke_guest_pass(pass_id):
     return jsonify({"msg": "Guest pass revoked"}), 200
 
 
-# ==================== 辅助函数 ====================
+# ==================== 辅助函数 (防爆破与策略引擎) ====================
 
-def _check_totp_required(user_id):
-    """判断是否需要TOTP（根据时间段或风险等级）"""
-    # 简单策略：如果用户绑定了TOTP，深夜时段（22:00-6:00）需要验证
-    credential = MFACredential.query.filter_by(
-        user_id=user_id,
-        credential_type='totp',
-        is_active=True
+def evaluate_mfa_policy(user_id):
+    """
+    场景因子评估：动态决定当前请求需要哪些验证因子。
+    返回包含所需因子标识符的列表，例: ['device', 'face', 'totp']
+    """
+    required_factors = ['device', 'face']
+    current_hour = datetime.now().hour
+    is_deep_night = current_hour >= 22 or current_hour < 6
+
+    if is_deep_night:
+        has_totp = MFACredential.query.filter_by(
+            user_id=user_id,
+            credential_type='totp',
+            is_active=True
+        ).first()
+
+        if has_totp:
+            required_factors.append('totp')
+
+    return required_factors
+
+
+def _record_auth_failure(user_id):
+    """处理认证失败：增加失败次数，达到5次则锁定设备"""
+    device_cred = MFACredential.query.filter_by(
+        user_id=user_id, credential_type='device'
     ).first()
 
-    if not credential:
-        return False
+    if device_cred:
+        device_cred.failed_attempts = getattr(device_cred, 'failed_attempts', 0) + 1
+        if device_cred.failed_attempts >= 5:
+            device_cred.is_locked = True
+    db.session.commit()
 
-    hour = datetime.now().hour
-    if hour >= 22 or hour < 6:
-        return True
 
-    return False
+def _reset_auth_failures(user_id):
+    """认证成功：重置失败次数归零"""
+    device_cred = MFACredential.query.filter_by(
+        user_id=user_id, credential_type='device'
+    ).first()
+
+    if device_cred and getattr(device_cred, 'failed_attempts', 0) > 0:
+        device_cred.failed_attempts = 0
+        device_cred.is_locked = False
+        db.session.commit()

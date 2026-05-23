@@ -348,6 +348,15 @@ POST /api/mfa/open-door/request
 }
 ```
 
+若该用户绑定的设备因连续 5 次认证失败被锁定，接口将返回 423：
+
+失败响应: 423 (设备已被安全锁定)：
+```json
+{
+  "msg": "Device is LOCKED due to multiple failed attempts. Please contact Administrator.",
+  "code": "DEVICE_LOCKED"
+}
+```
 前端拿到 `request_id` 后，等待树莓派或摄像头侧完成人脸识别上传。
 
 ## 13. 确认开门
@@ -428,7 +437,32 @@ POST /api/lock/unlock-token/verify
 }
 ```
 
-## 15. 创建设备心跳
+## 15. 管理员解除设备锁定
+
+需要 JWT
+
+```http
+POST /api/mfa/admin/device/unlock
+```
+
+请求：
+
+```json
+
+{
+  "target_username": "alice"
+}
+```
+成功响应 200
+
+```json
+
+{
+  "msg": "Device for alice has been successfully unlocked."
+}
+```
+
+## 16. 创建设备心跳
 
 通常给树莓派端调用，不需要 JWT。
 
@@ -465,7 +499,7 @@ POST /api/device/heartbeat
 }
 ```
 
-## 16. 查询设备在线状态
+## 17. 查询设备在线状态
 
 需要 JWT。
 
@@ -490,7 +524,7 @@ GET /api/device/status?device_id=RPI_LOCK_01
 }
 ```
 
-## 17. 查询人脸识别记录
+## 18. 查询人脸识别记录
 
 需要 JWT。
 
@@ -524,7 +558,7 @@ GET /api/face/logs?device_id=RPI_LOCK_01
 }
 ```
 
-## 18. 创建访客授权码
+## 19. 创建访客授权码
 
 需要 JWT。
 
@@ -555,7 +589,7 @@ POST /api/mfa/guest/create
 
 注意：`pass_code` 明文只返回这一次，前端需要当场展示或复制。
 
-## 19. 查询访客授权列表
+## 20. 查询访客授权列表
 
 需要 JWT。
 
@@ -580,7 +614,7 @@ GET /api/mfa/guest/list
 ]
 ```
 
-## 20. 验证访客授权码
+## 21. 验证访客授权码
 
 不需要 JWT。
 
@@ -606,7 +640,7 @@ POST /api/mfa/guest/verify
 }
 ```
 
-## 21. 撤销访客授权
+## 22. 撤销访客授权
 
 需要 JWT。
 
@@ -628,7 +662,7 @@ POST /api/mfa/guest/revoke/1
 }
 ```
 
-## 22. 获取报警记录
+## 23. 获取报警记录
 
 ```http
 GET /api/alarms
@@ -654,7 +688,7 @@ GET /api/alarms?status=pending&limit=20
 
 `snapshot` 如果不是图片路径，可能是 `无画面` 一类文本。
 
-## 23. 处理报警
+## 24. 处理报警
 
 需要 JWT。
 
@@ -693,7 +727,7 @@ ignored
 }
 ```
 
-## 24. 触发报警
+## 25. 触发报警
 
 通常给硬件或后端内部使用，前端如需测试也可以调用。
 
@@ -719,7 +753,7 @@ POST /api/trigger_alarm
 }
 ```
 
-## 25. 实时视频流
+## 26. 实时视频流
 
 用于页面 `<img>` 或视频预览。
 
@@ -739,7 +773,7 @@ GET /video_feed
 multipart/x-mixed-replace; boundary=frame
 ```
 
-## 26. 监控后台页面
+## 27. 监控后台页面
 
 后端内置 HTML 页面：
 
@@ -795,4 +829,13 @@ MFA 开门流程：
 前端查看人脸识别记录 /api/face/logs
 前端查看报警 /api/alarms
 前端处理报警 /api/alarms/{alarm_id}
+```
+设备锁定与异常处理（防暴力破解）：
+
+```text
+发起开门 /api/mfa/open-door/request 
+若连续5次认证失败，服务端触发锁定，返回 423 DEVICE_LOCKED
+前端捕获 423 状态，弹窗提示：“设备已锁定，请联系管理员”
+管理员登录后台，调用 /api/mfa/admin/device/unlock 解锁
+设备恢复正常认证流程
 ```
