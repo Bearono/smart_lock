@@ -5,6 +5,7 @@ from flask_jwt_extended import JWTManager
 from sqlalchemy import inspect, text
 from config import Config
 
+# 初始化扩展对象
 db = SQLAlchemy()
 bcrypt = Bcrypt()
 jwt = JWTManager()
@@ -13,11 +14,15 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
+    # 绑定 app 到扩展
     db.init_app(app)
     bcrypt.init_app(app)
     jwt.init_app(app)
 
-    # 1. 导入两个独立的蓝图文件
+    # 【关键修复】在此处显式导入模型，确保 db.create_all() 能发现它们
+    from app import models
+
+    # 蓝图导入
     from app.routes.video import video_bp
     from app.routes.alarm import alarm_bp
     from app.routes.auth import auth_bp
@@ -25,11 +30,10 @@ def create_app():
     from app.routes.lock import lock_bp
     from app.routes.device import device_bp
     from app.routes.face import face_bp
+    from app.routes.secure_receiver import secure_bp
 
-    from .routes.secure_receiver import secure_bp
+    # 注册蓝图
     app.register_blueprint(secure_bp)
-    # 2. 注册蓝图
-    # 视频流注册在根路径，报警接口也注册在根路径，确保 HTML 里的 /api/alarms 能访问到
     app.register_blueprint(video_bp)
     app.register_blueprint(alarm_bp)
     app.register_blueprint(auth_bp, url_prefix='/api')
@@ -39,6 +43,7 @@ def create_app():
     app.register_blueprint(face_bp, url_prefix='/api/face')
 
     with app.app_context():
+        # 现在 db.create_all() 会正确扫描到 models 中的所有表
         db.create_all()
         _ensure_schema_columns()
 
@@ -46,9 +51,10 @@ def create_app():
 
 
 def _ensure_schema_columns():
-    """Add columns introduced after the original demo DB was created."""
+    """升级数据库 Schema 以支持防爆破功能"""
     inspector = inspect(db.engine)
     existing_tables = set(inspector.get_table_names())
+
     column_specs = {
         'devices': {
             'camera_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
@@ -60,6 +66,10 @@ def _ensure_schema_columns():
             'handled_by': "VARCHAR(80)",
             'handled_at': "DATETIME",
         },
+        'mfa_credentials': {
+            'failed_attempts': "INTEGER DEFAULT 0",
+            'is_locked': "BOOLEAN DEFAULT 0",
+        }
     }
 
     for table_name, columns in column_specs.items():
