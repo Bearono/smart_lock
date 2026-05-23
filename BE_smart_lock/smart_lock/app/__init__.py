@@ -21,6 +21,7 @@ def create_app():
     from app.routes.alarm import alarm_bp
     from app.routes.auth import auth_bp
     from app.routes.mfa import mfa_bp
+    from app.routes.lock import lock_bp
 
     from .routes.secure_receiver import secure_bp
     app.register_blueprint(secure_bp)
@@ -30,6 +31,7 @@ def create_app():
     app.register_blueprint(alarm_bp)
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(mfa_bp, url_prefix='/api')
+    app.register_blueprint(lock_bp, url_prefix='/api/lock')
 
     with app.app_context():
         db.create_all()

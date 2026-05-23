@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pyotp
 import secrets
 import hashlib
+from .secure_payload import decrypt_secure_payload
 
 mfa_bp = Blueprint('mfa', __name__)
 
@@ -177,7 +178,13 @@ def open_door_request():
 @mfa_bp.route('/mfa/open-door/face-result', methods=['POST'])
 def receive_face_result():
     """接收树莓派上传的人脸识别结果"""
-    data = request.get_json()
+    data = request.get_json() or {}
+    if 'payload' in data and 'enc_key' in data:
+        try:
+            data = decrypt_secure_payload(data)
+        except Exception as exc:
+            return jsonify({"msg": "Invalid encrypted payload", "detail": str(exc)}), 400
+
     request_id = data.get('request_id')
     face_user_id = data.get('face_user_id')
     similarity_score = data.get('similarity_score')
