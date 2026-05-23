@@ -69,7 +69,7 @@ def _ensure_schema_columns():
         'mfa_credentials': {
             'failed_attempts': "INTEGER DEFAULT 0",
             'is_locked': "BOOLEAN DEFAULT 0",
-        }
+        },
     }
 
     for table_name, columns in column_specs.items():
