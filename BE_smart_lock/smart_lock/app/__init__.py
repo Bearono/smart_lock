@@ -31,9 +31,11 @@ def create_app():
     from app.routes.device import device_bp
     from app.routes.face import face_bp
     from app.routes.secure_receiver import secure_bp
+    from app.routes.security import security_bp
 
     # 注册蓝图
     app.register_blueprint(secure_bp)
+    app.register_blueprint(security_bp)
     app.register_blueprint(video_bp)
     app.register_blueprint(alarm_bp)
     app.register_blueprint(auth_bp, url_prefix='/api')
