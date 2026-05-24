@@ -839,3 +839,130 @@ MFA 开门流程：
 管理员登录后台，调用 /api/mfa/admin/device/unlock 解锁
 设备恢复正常认证流程
 ```
+
+---
+
+## 16. SPAKE2 安全握手接口
+
+该接口用于树莓派/硬件端与后端建立短期安全会话。后续 `/api/secure/upload`、`/api/mfa/open-door/face-result`、`/api/mfa/open-door/confirm` 等硬件端上报接口可使用本接口协商出的 `session_key` 进行 AES-CBC 加密和 HMAC-SHA256 完整性校验。
+
+```http
+POST /api/security/spake2/start
+```
+
+请求：
+
+```json
+{
+  "version": "SL-SEC-v2",
+  "device_id": "RPI_LOCK_01",
+  "client_pub": "base64-spake2-a-message",
+  "client_nonce": "base64-client-nonce",
+  "timestamp": 1710000000,
+  "request_id": "unique-request-id"
+}
+```
+
+字段说明：
+
+| 字段 | 说明 |
+|---|---|
+| `version` | 安全协议版本，当前为 `SL-SEC-v2` |
+| `device_id` | 设备编号，用于绑定安全会话 |
+| `client_pub` | 设备端 `SPAKE2_A.start()` 生成的消息，Base64 编码；字段名保留为 `client_pub` 以兼容旧接口命名 |
+| `client_nonce` | 设备端随机数，Base64 编码 |
+| `timestamp` | 请求时间戳，用于防止过期握手请求 |
+| `request_id` | 本次握手请求唯一标识 |
+
+成功响应 `200`：
+
+```json
+{
+  "version": "SL-SEC-v2",
+  "session_id": "session-id",
+  "server_pub": "base64-spake2-b-message",
+  "server_nonce": "base64-server-nonce",
+  "challenge": "base64-hmac-challenge",
+  "expires_at": 1710000300.0
+}
+```
+
+字段说明：
+
+| 字段 | 说明 |
+|---|---|
+| `session_id` | 后端生成的安全会话 ID |
+| `server_pub` | 后端 `SPAKE2_B.start()` 生成的消息，Base64 编码；字段名保留为 `server_pub` 以兼容旧接口命名 |
+| `server_nonce` | 后端随机数，Base64 编码 |
+| `challenge` | 后端基于 `session_key` 生成的 HMAC 挑战值，设备端用于验证握手成功 |
+| `expires_at` | 会话过期时间戳 |
+
+常见错误：
+
+```json
+{
+  "msg": "Invalid SPAKE2 start message"
+}
+```
+
+```json
+{
+  "msg": "SPAKE2 start message expired"
+}
+```
+
+```json
+{
+  "msg": "Invalid SPAKE2 message or nonce",
+  "detail": "..."
+}
+```
+
+## 17. 查询安全会话状态
+
+该接口用于调试或演示安全会话是否仍然有效。
+
+```http
+GET /api/security/session/<session_id>
+```
+
+成功响应 `200`：
+
+```json
+{
+  "active": true,
+  "device_id": "RPI_LOCK_01",
+  "expires_at": 1710000300.0
+}
+```
+
+会话不存在或已过期响应 `404`：
+
+```json
+{
+  "active": false
+}
+```
+
+## 18. v2 安全包格式说明
+
+硬件端通过 SPAKE2 握手得到 `session_key` 后，业务数据会被封装为 v2 安全包再发送到原有业务接口。例如 `/api/secure/upload` 仍是原接口，但请求体从旧版 `enc_key + payload` 扩展为如下格式：
+
+```json
+{
+  "header": {
+    "version": "SL-SEC-v2",
+    "session_id": "session-id",
+    "device_id": "RPI_LOCK_01",
+    "timestamp": 1710000000,
+    "request_id": "unique-request-id",
+    "nonce": "base64-random-nonce",
+    "unlock_token": "optional-token"
+  },
+  "iv": "base64-aes-cbc-iv",
+  "ciphertext": "base64-ciphertext",
+  "mac": "base64-hmac-sha256"
+}
+```
+
+后端处理顺序：先校验 `version`、`timestamp`、`request_id`、`nonce`、`session_id`、`device_id` 和 `mac`，通过后才使用 AES-CBC 解密 `ciphertext`。旧版 `enc_key + payload` 格式仍保留兼容。
