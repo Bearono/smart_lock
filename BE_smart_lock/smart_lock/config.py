@@ -21,3 +21,7 @@ class Config:
     SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "")
     SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD", "")
     RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL", "")
+
+    DEVICE_SERVICE_SCHEME = os.environ.get("DEVICE_SERVICE_SCHEME", "http")
+    DEVICE_SERVICE_PORT = int(os.environ.get("DEVICE_SERVICE_PORT", "5000"))
+    DEVICE_SERVICE_TIMEOUT = int(os.environ.get("DEVICE_SERVICE_TIMEOUT", "20"))

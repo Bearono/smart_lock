@@ -2,8 +2,8 @@
 import axios from 'axios'
 import { mockApi } from './mock'
 
-const API_BASE = 'http://localhost:5000'
-const USE_MOCK = true  // 改为 false 对接真实后端
+const API_BASE = process.env.VUE_APP_API_BASE || 'http://localhost:8000'
+const USE_MOCK = false
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -28,13 +28,13 @@ api.interceptors.response.use(
 )
 
 export const auth = USE_MOCK ? mockApi.auth : {
-  register: (username, password) => api.post('/auth/register', { username, password }),
+  register: (username, password, email) => api.post('/api/register', { username, password, email }),
   // 第一步：账号密码初验，返回临时通行证 + TOTP绑定状态
-  prelogin: (username, password) => api.post('/auth/login/pre', { username, password }),
+  prelogin: (username, email, password) => api.post('/api/login/pre', { username, email, password }),
   // 第二步A：已绑定用户验证TOTP，换正式Token
-  verifyMfa: (preToken, code) => api.post('/auth/login/mfa/verify', { pre_token: preToken, code }),
+  verifyMfa: (preToken, code) => api.post('/api/login/mfa/verify', { pre_token: preToken, code }),
   // 第二步B：首次登录绑定TOTP，换正式Token
-  bindTotpWithPreToken: (preToken, code) => api.post('/auth/login/mfa/bind', { pre_token: preToken, code })
+  bindTotpWithPreToken: (preToken, code) => api.post('/api/login/mfa/bind', { pre_token: preToken, code })
 }
 
 export const lock = USE_MOCK ? mockApi.lock : {
@@ -60,6 +60,7 @@ export const mfa = USE_MOCK ? mockApi.mfa : {
   unbindDevice: (deviceId) => api.post('/api/mfa/unbind/device', { device_id: deviceId }),
   openDoorRequest: (deviceId) => api.post('/api/mfa/open-door/request', { device_id: deviceId }),
   openDoorConfirm: (requestId, totpCode) => api.post('/api/mfa/open-door/confirm', { request_id: requestId, totp_code: totpCode }),
+  sendFaceResult: (payload) => api.post('/api/mfa/open-door/face-result', payload),
   adminUnlock: (targetUsername) => api.post('/api/mfa/admin/device/unlock', { target_username: targetUsername }),
   createGuest: (guestName, validHours = 24, maxUses = 1) =>
     api.post('/api/mfa/guest/create', { guest_name: guestName, valid_hours: validHours, max_uses: maxUses }),

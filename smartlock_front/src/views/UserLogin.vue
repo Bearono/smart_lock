@@ -1,221 +1,45 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center relative overflow-hidden bg-cover bg-center"
-       style="background-image: url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2072&auto=format&fit=crop');">
-
-    <div class="absolute inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm"></div>
-
-    <!-- 注册卡片（独立显示） -->
-    <div v-if="isRegisterMode" class="relative z-10 w-full max-w-md p-8 bg-gray-800 bg-opacity-70 backdrop-filter backdrop-blur-xl rounded-2xl border border-gray-600 shadow-2xl">
-      <div class="text-center mb-8">
-        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-600 mb-4 shadow-[0_0_15px_rgba(79,70,229,0.5)]">
-          <i class="fas fa-user-plus text-2xl text-white"></i>
-        </div>
-        <h2 class="text-3xl font-bold text-white tracking-widest">管理员注册</h2>
-        <p class="text-gray-300 text-xs mt-2 tracking-[0.2em] uppercase">创建新账号</p>
-      </div>
-
-      <form @submit.prevent="handleRegister" class="space-y-6">
-        <div class="relative group">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <i class="fas fa-user text-gray-400 group-focus-within:text-indigo-400 transition-colors"></i>
-          </div>
-          <input
-            v-model="regForm.username"
-            type="text"
-            placeholder="请输入用户名"
-            class="w-full pl-10 pr-4 py-3 bg-gray-900 bg-opacity-80 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-            required
-          >
-        </div>
-
-        <div class="relative group">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <i class="fas fa-envelope text-gray-400 group-focus-within:text-indigo-400 transition-colors"></i>
-          </div>
-          <input
-            v-model="regForm.email"
-            type="email"
-            placeholder="请输入邮箱地址（用于接收动态码）"
-            class="w-full pl-10 pr-4 py-3 bg-gray-900 bg-opacity-80 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-            required
-          >
-        </div>
-
-        <div class="relative group">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <i class="fas fa-lock text-gray-400 group-focus-within:text-indigo-400 transition-colors"></i>
-          </div>
-          <input
-            v-model="regForm.password"
-            type="password"
-            placeholder="请输入密码"
-            class="w-full pl-10 pr-4 py-3 bg-gray-900 bg-opacity-80 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-            required
-          >
-        </div>
-
-        <div class="relative group">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <i class="fas fa-check-circle text-gray-400 group-focus-within:text-indigo-400 transition-colors"></i>
-          </div>
-          <input
-            v-model="regForm.confirmPassword"
-            type="password"
-            placeholder="请再次确认密码"
-            class="w-full pl-10 pr-4 py-3 bg-gray-900 bg-opacity-80 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-            required
-          >
-        </div>
-
-        <div v-if="errorMsg" class="text-red-400 text-sm text-center bg-red-900/20 py-1 rounded border border-red-500/20">
-          <i class="fas fa-exclamation-triangle mr-1"></i> {{ errorMsg }}
-        </div>
-
-        <button
-          type="submit"
-          :disabled="isLoading"
-          class="w-full py-3 px-4 rounded-lg shadow-lg text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none transform hover:scale-[1.02] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed mt-4"
-        >
-          <span v-if="isLoading"><i class="fas fa-circle-notch fa-spin mr-2"></i>注册中...</span>
-          <span v-else>创建管理员账号</span>
-        </button>
+  <div class="page">
+    <div class="card" v-if="isRegisterMode">
+      <h2>Admin Register</h2>
+      <form @submit.prevent="handleRegister">
+        <input v-model="regForm.username" placeholder="Username" />
+        <input v-model="regForm.email" type="email" placeholder="Email" />
+        <input v-model="regForm.password" type="password" placeholder="Password" />
+        <input v-model="regForm.confirmPassword" type="password" placeholder="Confirm Password" />
+        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+        <button :disabled="isLoading">{{ isLoading ? 'Registering...' : 'Register' }}</button>
       </form>
-
-      <div class="mt-6 text-center">
-        <p class="text-sm text-gray-400">
-          已有账号?
-          <span @click="isRegisterMode = false; errorMsg = ''" class="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer ml-1 hover:underline transition select-none">
-            直接登录
-          </span>
-        </p>
-      </div>
+      <p class="link" @click="isRegisterMode = false; errorMsg = ''">Back to login</p>
     </div>
 
-    <!-- 登录卡片 -->
-    <div v-else class="relative z-10 w-full max-w-md p-8 bg-gray-800 bg-opacity-70 backdrop-filter backdrop-blur-xl rounded-2xl border border-gray-600 shadow-2xl transition-all duration-500"
-         :class="stepClass">
+    <div class="card" v-else>
+      <h2>SmartLock</h2>
+      <p>{{ stepLabel }}</p>
 
-      <div class="text-center mb-6">
-        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-600 mb-4 shadow-[0_0_15px_rgba(79,70,229,0.5)]">
-          <i class="fas fa-shield-alt text-2xl text-white"></i>
-        </div>
-        <h2 class="text-3xl font-bold text-white tracking-widest">SECURE<span class="text-indigo-400">VISION</span></h2>
-        <p class="text-gray-300 text-xs mt-2 tracking-[0.2em] uppercase">{{ stepLabel }}</p>
-      </div>
-
-      <!-- 步骤指示器 -->
-      <div v-if="step > 0" class="flex items-center justify-center gap-2 mb-6">
-        <div class="step-dot" :class="{ active: step >= 1, done: step > 1 }">1</div>
-        <div class="step-line" :class="{ active: step >= 2 }"></div>
-        <div class="step-dot" :class="{ active: step >= 2 }">2</div>
-      </div>
-
-      <!-- 步骤0：账号 + 邮箱 -->
-      <form v-if="step === 0" @submit.prevent="handlePreLogin" class="space-y-6">
-        <div class="relative group">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <i class="fas fa-user text-gray-400 group-focus-within:text-indigo-400 transition-colors"></i>
-          </div>
-          <input
-            v-model="form.username"
-            type="text"
-            placeholder="请输入用户名"
-            class="w-full pl-10 pr-4 py-3 bg-gray-900 bg-opacity-80 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-            required
-          >
-        </div>
-
-        <div class="relative group">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <i class="fas fa-envelope text-gray-400 group-focus-within:text-indigo-400 transition-colors"></i>
-          </div>
-          <input
-            v-model="form.email"
-            type="email"
-            placeholder="请输入邮箱地址"
-            class="w-full pl-10 pr-4 py-3 bg-gray-900 bg-opacity-80 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-            required
-          >
-        </div>
-
-        <div class="relative group">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <i class="fas fa-lock text-gray-400 group-focus-within:text-indigo-400 transition-colors"></i>
-          </div>
-          <input
-            v-model="form.password"
-            type="password"
-            placeholder="请输入密码"
-            class="w-full pl-10 pr-4 py-3 bg-gray-900 bg-opacity-80 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-            required
-          >
-        </div>
-
-        <div v-if="errorMsg" class="text-red-400 text-sm text-center bg-red-900/20 py-1 rounded border border-red-500/20">
-          <i class="fas fa-exclamation-triangle mr-1"></i> {{ errorMsg }}
-        </div>
-
-        <button
-          type="submit"
-          :disabled="isLoading"
-          class="w-full py-3 px-4 rounded-lg shadow-lg text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none transform hover:scale-[1.02] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed mt-4"
-        >
-          <span v-if="isLoading"><i class="fas fa-circle-notch fa-spin mr-2"></i>发送中...</span>
-          <span v-else>获取动态验证码</span>
-        </button>
-
-        <div class="mt-6 text-center">
-          <p class="text-sm text-gray-400">
-            还没有账号?
-            <span @click="isRegisterMode = true; errorMsg = ''" class="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer ml-1 hover:underline transition select-none">
-              立即注册
-            </span>
-          </p>
-        </div>
+      <form v-if="step === 0" @submit.prevent="handlePreLogin">
+        <input v-model="form.username" placeholder="Username" />
+        <input v-model="form.email" type="email" placeholder="Email" />
+        <input v-model="form.password" type="password" placeholder="Password" />
+        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+        <button :disabled="isLoading">{{ isLoading ? 'Sending...' : 'Get MFA Code' }}</button>
+        <p class="link" @click="isRegisterMode = true; errorMsg = ''">Create account</p>
       </form>
 
-      <!-- 步骤1：输入邮箱收到的动态码 -->
-      <form v-else-if="step === 1" @submit.prevent="handleMfaVerify" class="space-y-5">
-        <div class="text-center mb-4">
-          <i class="fas fa-envelope-open-text text-4xl text-indigo-400 mb-2 block"></i>
-          <p class="text-gray-300 text-sm">动态码已发送到</p>
-          <p class="text-indigo-400 font-bold text-base truncate max-w-full">{{ form.email }}</p>
+      <form v-else @submit.prevent="handleMfaVerify">
+        <div v-if="needsTotpBind" class="info">
+          <div>First login requires TOTP binding</div>
+          <div class="mono">{{ totpSecret }}</div>
+          <div class="mono small">{{ totpQrUri }}</div>
         </div>
 
-        <div class="relative group">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <i class="fas fa-key text-gray-400 group-focus-within:text-indigo-400 transition-colors"></i>
-          </div>
-          <input
-            v-model="form.otpCode"
-            type="text"
-            maxlength="6"
-            placeholder="请输入6位动态码"
-            class="w-full pl-10 pr-4 py-3 bg-gray-900 bg-opacity-80 border border-gray-600 rounded-lg text-white text-center text-xl tracking-[0.25em] font-bold focus:outline-none focus:border-indigo-500 transition-all"
-            required
-          >
-        </div>
-
-        <div v-if="errorMsg" class="text-red-400 text-sm text-center bg-red-900/20 py-1 rounded border border-red-500/20">
-          <i class="fas fa-exclamation-triangle mr-1"></i> {{ errorMsg }}
-        </div>
-
-        <button
-          type="submit"
-          :disabled="isLoading || form.otpCode.length !== 6"
-          class="w-full py-3 px-4 rounded-lg shadow-lg text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none transform hover:scale-[1.02] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed mt-4"
-        >
-          <span v-if="isLoading"><i class="fas fa-circle-notch fa-spin mr-2"></i>验证中...</span>
-          <span v-else>确认验证</span>
+        <input v-model="form.otpCode" maxlength="6" placeholder="6-digit code" />
+        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+        <button :disabled="isLoading || form.otpCode.length !== 6">
+          {{ isLoading ? 'Verifying...' : (needsTotpBind ? 'Bind and Login' : 'Confirm Login') }}
         </button>
-
-        <div class="text-center">
-          <button type="button" @click="step = 0; errorMsg = ''; form.otpCode = ''" class="text-gray-400 hover:text-gray-300 text-sm">
-            <i class="fas fa-arrow-left mr-1"></i>重新输入账号
-          </button>
-        </div>
+        <p class="link" @click="resetToLogin">Back</p>
       </form>
-
     </div>
   </div>
 </template>
@@ -231,6 +55,10 @@ export default {
       isLoading: false,
       errorMsg: '',
       step: 0,
+      needsTotpBind: false,
+      totpSecret: '',
+      totpQrUri: '',
+      preToken: '',
       form: {
         username: '',
         email: '',
@@ -242,53 +70,57 @@ export default {
         email: '',
         password: '',
         confirmPassword: ''
-      },
-      preToken: ''
-    };
+      }
+    }
   },
   computed: {
     stepLabel() {
-      if (this.step === 0) return '智能安防控制终端'
-      if (this.step === 1) return '邮箱动态验证'
-      return ''
-    },
-    stepClass() {
-      if (this.step === 1) return 'h-[540px]'
-      return 'h-[560px]'
+      if (this.step === 0) return 'Login'
+      return this.needsTotpBind ? 'TOTP Binding' : 'MFA Verification'
     }
   },
   methods: {
+    resetToLogin() {
+      this.step = 0
+      this.errorMsg = ''
+      this.form.otpCode = ''
+    },
     async handlePreLogin() {
       this.errorMsg = ''
-      if (!this.form.username || !this.form.password || !this.form.email) {
-        this.errorMsg = '请输入用户名、邮箱和密码'
+      if (!this.form.username || !this.form.email || !this.form.password) {
+        this.errorMsg = 'Please fill username, email and password'
         return
       }
       this.isLoading = true
       try {
         const res = await auth.prelogin(this.form.username, this.form.email, this.form.password)
         this.preToken = res.data.pre_token
+        this.needsTotpBind = !res.data.totp_bound
+        this.totpSecret = res.data.secret || ''
+        this.totpQrUri = res.data.qr_uri || ''
         this.step = 1
       } catch (error) {
-        this.errorMsg = error?.response?.data?.msg || '账号、邮箱或密码错误'
+        this.errorMsg = error?.response?.data?.msg || 'Login failed'
       } finally {
         this.isLoading = false
       }
     },
     async handleMfaVerify() {
       if (this.form.otpCode.length !== 6) {
-        this.errorMsg = '请输入6位验证码'
+        this.errorMsg = 'Enter a 6-digit code'
         return
       }
       this.isLoading = true
       this.errorMsg = ''
       try {
-        const res = await auth.verifyMfa(this.preToken, this.form.otpCode)
+        const res = this.needsTotpBind
+          ? await auth.bindTotpWithPreToken(this.preToken, this.form.otpCode)
+          : await auth.verifyMfa(this.preToken, this.form.otpCode)
         localStorage.setItem('token', res.data.access_token)
         localStorage.setItem('username', this.form.username)
         this.$router.push('/dashboard')
       } catch (error) {
-        this.errorMsg = error?.response?.data?.msg || '验证码错误'
+        this.errorMsg = error?.response?.data?.msg || 'Code error'
         this.form.otpCode = ''
       } finally {
         this.isLoading = false
@@ -296,16 +128,12 @@ export default {
     },
     async handleRegister() {
       this.errorMsg = ''
-      if (!this.regForm.username || !this.regForm.password) {
-        this.errorMsg = '请输入账号和密码'
-        return
-      }
-      if (!this.regForm.email) {
-        this.errorMsg = '请输入邮箱地址'
+      if (!this.regForm.username || !this.regForm.email || !this.regForm.password) {
+        this.errorMsg = 'Please fill registration fields'
         return
       }
       if (this.regForm.password !== this.regForm.confirmPassword) {
-        this.errorMsg = '两次输入的密码不一致'
+        this.errorMsg = 'Passwords do not match'
         return
       }
       this.isLoading = true
@@ -315,27 +143,58 @@ export default {
         this.form.username = this.regForm.username
         this.form.email = this.regForm.email
         this.regForm = { username: '', email: '', password: '', confirmPassword: '' }
-        alert('注册成功，请登录')
       } catch (error) {
-        this.errorMsg = error?.response?.data?.msg || '注册失败'
+        this.errorMsg = error?.response?.data?.msg || 'Register failed'
       } finally {
         this.isLoading = false
       }
     }
   }
-};
+}
 </script>
 
 <style scoped>
-.step-dot {
-  width: 28px; height: 28px; border-radius: 50%;
-  border: 2px solid #4b5563;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; color: #6b7280; background: #1f2937;
-  transition: all 0.3s;
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  color: #fff;
 }
-.step-dot.active { border-color: #6366f1; color: #6366f1; }
-.step-dot.done { border-color: #10b981; background: #10b981; color: white; }
-.step-line { width: 40px; height: 2px; background: #4b5563; transition: background 0.3s; }
-.step-line.active { background: #6366f1; }
+.card {
+  width: 100%;
+  max-width: 420px;
+  padding: 32px;
+  border-radius: 20px;
+  background: rgba(17, 24, 39, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+input, button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #111827;
+  color: #fff;
+  box-sizing: border-box;
+}
+button {
+  background: #4f46e5;
+  border: none;
+  cursor: pointer;
+}
+.error { color: #f87171; font-size: 12px; margin-top: 8px; }
+.link { margin-top: 12px; color: #93c5fd; cursor: pointer; }
+.info {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(79, 70, 229, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 10px;
+  font-size: 12px;
+}
+.mono { word-break: break-all; font-family: monospace; margin-top: 8px; }
+.small { color: #cbd5e1; }
 </style>

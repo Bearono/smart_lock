@@ -8,22 +8,23 @@ import cv2
 import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+from requests import HTTPError
 
 from AesCBCalgorithm import AesEncrypt, genKey
 from ECCalgorithm import encrypt_aes_key_ecc
-from security_protocol import PROTOCOL_VERSION, SecureEnvelope, Spake2Client, SecuritySession
+from security_protocol import SecureEnvelope, Spake2Client
 
 
 class NetworkTransmitter:
-    def __init__(self, remote_url, device_id="RPI_LOCK_01", device_password=None):
+    def __init__(self, remote_url, device_id=None, device_password=None):
         self.remote_url = remote_url.rstrip("/")
-        self.device_id = device_id
+        self.device_id = device_id or os.getenv("SMART_LOCK_DEVICE_ID", "door_01")
         self.device_password = device_password or os.getenv(
             "SMART_LOCK_DEVICE_PASSWORD",
             "ChangeMe-Spake2-Device-Password",
         )
         self.backend_pub_key = self._load_backend_public_key()
-        self.security_session = None  # type: ignore[var-annotated]
+        self.security_session = None
 
     def _load_backend_public_key(self):
         base_dir = Path(__file__).resolve().parent
@@ -47,9 +48,9 @@ class NetworkTransmitter:
                 load_errors.append(f"{key_path}: {exc}")
 
         if load_errors:
-            print("加载后端公钥失败: " + " | ".join(load_errors))
+            print("Failed to load backend public key: " + " | ".join(load_errors))
         else:
-            print("未找到可用的 backend_pub.pem；v1 兼容模式不可用，v2 SPAKE2 模式仍可尝试。")
+            print("backend_pub.pem not found; legacy v1 fallback is unavailable.")
         return None
 
     def _ensure_secure_session(self):
@@ -65,7 +66,7 @@ class NetworkTransmitter:
         )
         response.raise_for_status()
         self.security_session = client.finish(state, response.json())
-        print(f">>> [安全模块] SPAKE2 会话建立成功: {self.security_session.session_id}")
+        print(f">>> [Security] SPAKE2 session established: {self.security_session.session_id}")
         return self.security_session
 
     def _send_encrypted_v2(self, endpoint, data_dict, unlock_token=None):
@@ -107,12 +108,26 @@ class NetworkTransmitter:
             return {"status": "success", "raw_response": response.text}
 
     def _send_encrypted(self, endpoint, data_dict, unlock_token=None):
-        # v2：SPAKE2 风格 PAKE + AES-CBC + HMAC + timestamp/request_id/device_id/nonce
         try:
             return self._send_encrypted_v2(endpoint, data_dict, unlock_token=unlock_token)
+        except HTTPError as exc:
+            response = exc.response
+            if response is not None and 400 <= response.status_code < 500:
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = {"msg": response.text or str(exc)}
+                payload.setdefault("status", "error")
+                payload["http_status"] = response.status_code
+                return payload
+
+            print(f">>> [Security] v2 secure send failed, trying legacy fallback: {exc}")
+            try:
+                return self._send_encrypted_legacy(endpoint, data_dict)
+            except Exception as legacy_exc:
+                return {"status": "error", "msg": str(legacy_exc), "v2_error": str(exc)}
         except Exception as exc:
-            # 为了不破坏原有演示流程，保留 v1 兼容回退。
-            print(f">>> [安全模块] v2 安全发送失败，尝试 v1 兼容模式: {exc}")
+            print(f">>> [Security] v2 secure send failed, trying legacy fallback: {exc}")
             try:
                 return self._send_encrypted_legacy(endpoint, data_dict)
             except Exception as legacy_exc:
@@ -141,7 +156,6 @@ class NetworkTransmitter:
         return self._send_encrypted("/api/secure/upload", data)
 
     def send_auth_result(self, request_id, face_user_id, similarity_score, liveness_score=None):
-        """发送人脸认证结果到后端 MFA 服务。"""
         data = {
             "request_id": request_id,
             "device_id": self.device_id,
@@ -153,7 +167,6 @@ class NetworkTransmitter:
         return self._send_encrypted("/api/mfa/open-door/face-result", data)
 
     def request_unlock_token(self, request_id, unlock_token=None):
-        """请求或提交开门令牌。unlock_token 会进入已认证 MAC 头部，防篡改。"""
         data = {
             "request_id": request_id,
             "device_id": self.device_id,

@@ -278,6 +278,10 @@ export const mockApi = {
         }
       }
     },
+    sendFaceResult: async (_payload) => {
+      await delay()
+      return { data: { msg: 'Face verified' } }
+    },
     openDoorConfirm: async (_requestId, _totpCode) => {
       await delay()
       return {

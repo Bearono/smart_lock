@@ -1,8 +1,11 @@
-from flask import Blueprint, request, jsonify
+import os
+import requests
+from flask import Blueprint, request, jsonify, current_app
 from app import db
 from app.models import (
     AccessLog,
     AuthSession,
+    Device,
     FaceRecognitionLog,
     GuestPass,
     MFACredential,
@@ -270,12 +273,25 @@ def open_door_request():
     # 评估当前场景需要哪些认证因子
     required_factors = evaluate_mfa_policy(user.id)
 
+    device_dispatch = None
+    if 'face' in required_factors:
+        try:
+            device_dispatch = _dispatch_face_challenge(device_id, request_id, nonce)
+        except RuntimeError as exc:
+            session.status = 'failed'
+            db.session.commit()
+            return jsonify({
+                "msg": str(exc),
+                "code": "DEVICE_DISPATCH_FAILED"
+            }), 502
+
     return jsonify({
         "msg": "Auth session created",
         "request_id": request_id,
         "nonce": nonce,
         "requires_face": 'face' in required_factors,
-        "requires_totp": 'totp' in required_factors
+        "requires_totp": 'totp' in required_factors,
+        "device_dispatch": device_dispatch
     }), 200
 
 
@@ -283,7 +299,7 @@ def open_door_request():
 def receive_face_result():
     """接收树莓派上传的人脸识别结果"""
     data = request.get_json() or {}
-    if 'payload' in data and 'enc_key' in data:
+    if ('payload' in data and 'enc_key' in data) or data.get('header', {}).get('version'):
         try:
             data = decrypt_secure_payload(data)
         except Exception as exc:
@@ -304,7 +320,8 @@ def receive_face_result():
 
     # 验证人脸结果
     user = User.query.get(session.user_id)
-    passed = face_user_id == user.username and similarity_score >= 0.7
+    normalized_face_user_id = _normalize_face_user_id(face_user_id)
+    passed = normalized_face_user_id == user.username and similarity_score >= 0.7
     db.session.add(FaceRecognitionLog(
         request_id=request_id,
         device_id=device_id,
@@ -318,7 +335,7 @@ def receive_face_result():
 
     if passed:
         session.face_verified = True
-        session.face_user_id = face_user_id
+        session.face_user_id = normalized_face_user_id
         session.similarity_score = similarity_score
         session.status = 'face_verified'
         db.session.commit()
@@ -611,3 +628,83 @@ def _reset_auth_failures(user_id):
         device_cred.failed_attempts = 0
         device_cred.is_locked = False
         db.session.commit()
+
+
+def _resolve_device_service_base(device_id):
+    env_key = f"SMART_LOCK_DEVICE_URL_{device_id.upper()}"
+    override = os.environ.get(env_key)
+    if override:
+        return override.rstrip('/')
+    global_override = os.environ.get("SMART_LOCK_DEVICE_URL")
+    if global_override:
+        return global_override.rstrip('/')
+
+    device = Device.query.filter_by(device_id=device_id).first()
+    if not device or not device.ip_address:
+        return (
+            f"{current_app.config['DEVICE_SERVICE_SCHEME']}://"
+            f"localhost:{current_app.config['DEVICE_SERVICE_PORT']}"
+        )
+
+    raw = device.ip_address.strip()
+    if raw.startswith('http://') or raw.startswith('https://'):
+        return raw.rstrip('/')
+    if ':' in raw and raw.count(':') == 1:
+        return f"{current_app.config['DEVICE_SERVICE_SCHEME']}://{raw}"
+    return (
+        f"{current_app.config['DEVICE_SERVICE_SCHEME']}://"
+        f"{raw}:{current_app.config['DEVICE_SERVICE_PORT']}"
+    )
+
+
+def _dispatch_face_challenge(device_id, request_id, nonce):
+    base_url = _resolve_device_service_base(device_id)
+    try:
+        response = requests.post(
+            f"{base_url}/auth_challenge",
+            json={"request_id": request_id, "nonce": nonce},
+            timeout=current_app.config['DEVICE_SERVICE_TIMEOUT'],
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Failed to reach device service for {device_id}: {exc}") from exc
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Device {device_id} returned invalid JSON") from exc
+
+    backend_reply = payload.get('backend_reply') or {}
+    if payload.get('status') == 'error':
+        raise RuntimeError(payload.get('message') or f"Device {device_id} reported an error")
+    if backend_reply.get('msg') == 'Face verification failed':
+        raise RuntimeError(f"Device {device_id} completed recognition but face verification failed")
+
+    return {
+        "device_url": base_url,
+        "frame_source": payload.get('frame_source'),
+        "recognition": payload.get('recognition'),
+        "backend_reply": backend_reply,
+    }
+
+
+def _normalize_face_user_id(face_user_id):
+    if not face_user_id:
+        return face_user_id
+
+    raw_mapping = os.environ.get("SMART_LOCK_FACE_ID_MAP", "").strip()
+    if not raw_mapping:
+        return face_user_id
+
+    mapping = {}
+    for pair in raw_mapping.split(','):
+        pair = pair.strip()
+        if not pair or '=' not in pair:
+            continue
+        source, target = pair.split('=', 1)
+        source = source.strip()
+        target = target.strip()
+        if source and target:
+            mapping[source] = target
+
+    return mapping.get(face_user_id, face_user_id)
