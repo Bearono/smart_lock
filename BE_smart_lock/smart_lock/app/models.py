@@ -60,8 +60,10 @@ class AlarmLog(db.Model):
             'id': self.id,
             'time': self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
             'type': self.alarm_type,
+            'alarm_type': self.alarm_type,
             'message': self.message,
             'snapshot': self.snapshot_path,
+            'snapshot_path': self.snapshot_path,
             'status': self.status,
             'handled_by': self.handled_by,
             'handled_at': self.handled_at.strftime("%Y-%m-%d %H:%M:%S") if self.handled_at else None

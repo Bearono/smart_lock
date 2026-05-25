@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+node_modules/
+dist/
+outputs/
+
+.idea/
+.vscode/
+
+.DS_Store
+Thumbs.db

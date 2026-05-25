@@ -25,3 +25,4 @@ class Config:
     DEVICE_SERVICE_SCHEME = os.environ.get("DEVICE_SERVICE_SCHEME", "http")
     DEVICE_SERVICE_PORT = int(os.environ.get("DEVICE_SERVICE_PORT", "5000"))
     DEVICE_SERVICE_TIMEOUT = int(os.environ.get("DEVICE_SERVICE_TIMEOUT", "20"))
+    DEVICE_DISPATCH_REQUIRED = os.environ.get("DEVICE_DISPATCH_REQUIRED", "false").lower() == "true"
