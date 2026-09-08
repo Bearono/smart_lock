@@ -32,9 +32,12 @@ POST /api/register
 
 ```json
 {
-  "msg": "Registered successfully"
+  "msg": "Registration submitted, waiting for admin approval",
+  "status": "pending"
 }
 ```
+
+注册后账号处于 `pending` 状态，**必须由管理员通过 `/api/admin/users/<id>/approve` 审批通过后才能登录**。
 
 常见错误：
 
@@ -63,7 +66,8 @@ POST /api/login
 
 ```json
 {
-  "access_token": "jwt-token-string"
+  "access_token": "jwt-token-string",
+  "role": "user"
 }
 ```
 
@@ -72,6 +76,15 @@ POST /api/login
 ```json
 {
   "msg": "Invalid credentials"
+}
+```
+
+账号未通过审批响应 `403`：
+
+```json
+{
+  "msg": "Account is pending admin approval",
+  "status": "pending"
 }
 ```
 
@@ -966,3 +979,61 @@ GET /api/security/session/<session_id>
 ```
 
 后端处理顺序：先校验 `version`、`timestamp`、`request_id`、`nonce`、`session_id`、`device_id` 和 `mac`，通过后才使用 AES-CBC 解密 `ciphertext`。旧版 `enc_key + payload` 格式仍保留兼容。
+
+## 19. 用户管理（管理员）
+
+以下接口需 JWT，且当前用户的 `role` 必须为 `admin`，否则返回 `403 {"msg": "Admin privilege required"}`。
+
+### 19.1 列出全部用户
+
+```http
+GET /api/admin/users
+GET /api/admin/users?status=pending
+```
+
+成功响应：
+
+```json
+[
+  {
+    "id": 2,
+    "username": "bearono",
+    "role": "user",
+    "status": "pending",
+    "created_at": "2026-06-29 22:00:00",
+    "approved_at": null,
+    "approved_by": null
+  }
+]
+```
+
+### 19.2 待审批用户
+
+```http
+GET /api/admin/users/pending
+```
+
+### 19.3 批准用户
+
+```http
+POST /api/admin/users/<user_id>/approve
+```
+
+成功响应：
+
+```json
+{ "msg": "User approved", "user": { "...": "..." } }
+```
+
+### 19.4 驳回用户
+
+```http
+POST /api/admin/users/<user_id>/reject
+```
+
+成功响应：
+
+```json
+{ "msg": "User rejected", "user": { "...": "..." } }
+```
+

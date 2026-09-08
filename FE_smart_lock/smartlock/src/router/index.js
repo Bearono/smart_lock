@@ -3,6 +3,7 @@ import VueRouter from 'vue-router'
 // 引入两个页面组件
 import UserLogin from '../views/UserLogin.vue'
 import SmartDashboard from '../views/SmartDashboard.vue'
+import GuestVerify from '../views/GuestVerify.vue'
 
 Vue.use(VueRouter)
 
@@ -16,6 +17,11 @@ const routes = [
     path: '/dashboard',
     name: 'Dashboard',
     component: SmartDashboard
+  },
+  {
+    path: '/guest',
+    name: 'GuestVerify',
+    component: GuestVerify
   }
 ]
 

@@ -1,10 +1,66 @@
-from flask import Blueprint, request, jsonify
+import base64
+import os
+import time
 
-from .secure_payload import decrypt_secure_payload
-# 导入原本 video.py 里的共享变量，这样解密后的图能直接在网页显示
+from flask import Blueprint, current_app, jsonify, request
+from flask_jwt_extended import jwt_required
+
 from app import utils
+from .secure_payload import decrypt_secure_payload
+
 
 secure_bp = Blueprint('secure', __name__)
+
+
+def save_snapshot_image(image_b64, prefix="snapshot"):
+    if not image_b64:
+        return None
+
+    image_bytes = base64.b64decode(image_b64)
+    utils.global_frame_bytes = image_bytes
+
+    save_dir = current_app.config['UPLOAD_FOLDER']
+    os.makedirs(save_dir, exist_ok=True)
+    filename = f"{prefix}_{int(time.time() * 1000)}.jpg"
+    filepath = os.path.join(save_dir, filename)
+    with open(filepath, "wb") as image_file:
+        image_file.write(image_bytes)
+
+    return f"/static/captures/{filename}"
+
+
+@secure_bp.route('/api/snapshot/clear', methods=['POST'])
+@jwt_required()
+def clear_snapshot():
+    """删除指定的快照文件；不带 filename 则清空当前实时帧。"""
+    data = request.get_json() or {}
+    snapshot_path = data.get('snapshot') or data.get('snapshot_url') or ''
+
+    utils.global_frame_bytes = None
+
+    if not snapshot_path:
+        return jsonify({"msg": "Live frame cleared"}), 200
+
+    prefix = '/static/captures/'
+    if not snapshot_path.startswith(prefix):
+        return jsonify({"msg": "Invalid snapshot path"}), 400
+
+    filename = os.path.basename(snapshot_path[len(prefix):])
+    if not filename or filename in ('.', '..'):
+        return jsonify({"msg": "Invalid snapshot path"}), 400
+
+    save_dir = current_app.config['UPLOAD_FOLDER']
+    filepath = os.path.abspath(os.path.join(save_dir, filename))
+    if not filepath.startswith(os.path.abspath(save_dir) + os.sep):
+        return jsonify({"msg": "Invalid snapshot path"}), 400
+
+    if os.path.isfile(filepath):
+        try:
+            os.remove(filepath)
+        except OSError as exc:
+            return jsonify({"msg": "Failed to remove file", "detail": str(exc)}), 500
+
+    return jsonify({"msg": "Snapshot cleared"}), 200
 
 
 @secure_bp.route('/api/secure/upload', methods=['POST'])
@@ -14,17 +70,17 @@ def handle_rpi_data():
     try:
         business_data = decrypt_secure_payload(data)
 
-        # 3. 业务对接：如果是图片数据，直接同步到 video 监控页面
         if 'image' in business_data:
-            import base64
+            snapshot_path = save_snapshot_image(business_data['image'], prefix="upload")
+            return jsonify({
+                "status": "success",
+                "msg": "Data received securely",
+                "snapshot": snapshot_path,
+                "snapshot_url": snapshot_path,
+            }), 200
 
-            image_bytes = base64.b64decode(business_data['image'])
-            # 【关键对接点】直接修改 utils 里的全局变量，前端页面就会变
-            utils.global_frame_bytes = image_bytes
-            print(">>> [安全模块] 成功解密并更新了一帧实时画面")
+        return jsonify({"status": "success", "msg": "Data received securely"}), 200
 
-        return jsonify({"status": "success", "msg": "数据已安全送达并解密"}), 200
-
-    except Exception as e:
-        print(f"解密失败: {e}")
-        return jsonify({"status": "error", "msg": "解密失败，请检查密钥"}), 400
+    except Exception as exc:
+        print(f"Secure payload decrypt failed: {exc}")
+        return jsonify({"status": "error", "msg": "Secure payload decrypt failed"}), 400

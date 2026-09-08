@@ -72,6 +72,8 @@ http://localhost:8000
 | `DEVICE_DISPATCH_REQUIRED` | 人脸挑战下发失败时是否直接报错。联调阶段建议 `false`，无树莓派也可走通流程 | `false` |
 | `SMART_LOCK_DEVICE_URL` | 默认设备端服务地址，用于后端下发人脸挑战 | 空 |
 | `SMART_LOCK_DEVICE_URL_<DEVICE_ID>` | 指定设备的服务地址，例如 `SMART_LOCK_DEVICE_URL_LOCK_1` | 空 |
+| `ADMIN_USERNAME` | 启动时自动创建/迁移的管理员账号名 | `admin` |
+| `ADMIN_PASSWORD` | 默认管理员密码（首启动有效，请改后再上线） | `admin123` |
 
 联调阶段如果还没有树莓派端服务，可以保持：
 
@@ -127,14 +129,37 @@ VUE_APP_API_BASE=http://localhost:8000
 
 1. 启动后端：`BE_smart_lock\smart_lock\run.py`
 2. 启动前端：`FE_smart_lock\smartlock` 下执行 `npm run serve`
-3. 前端注册用户：`POST /api/register`
-4. 首次登录走预登录：`POST /api/login/pre`
-5. 按返回的 TOTP 密钥绑定 MFA：`POST /api/login/mfa/bind`
-6. 登录后绑定设备：`POST /api/mfa/bind/device`
-7. 发起开门认证：`POST /api/mfa/open-door/request`
-8. 确认开门并获取开门令牌：`POST /api/mfa/open-door/confirm`
+3. 使用默认管理员账号登录：`admin / admin123`（可通过环境变量 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 覆盖）
+4. 普通用户注册：`POST /api/register`（落库为 `pending`，需要 admin 批准后才能登录）
+5. admin 在前端 Admin 面板批准用户
+6. 用户登录走预登录：`POST /api/login/pre`
+7. 按返回的 TOTP 密钥绑定 MFA：`POST /api/login/mfa/bind`
+8. 登录后绑定设备：`POST /api/mfa/bind/device`
+9. 发起开门认证：`POST /api/mfa/open-door/request`
+10. 确认开门并获取开门令牌：`POST /api/mfa/open-door/confirm`
 
 完整接口字段请查看 [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)。
+
+## 录入人脸模板
+
+第一次使用真人识别需要先生成你自己的人脸模板（替换示例模板 `template_user_001.npy`）：
+
+```bash
+cd paspberry_pi/cv/code
+python enroll_face.py --user <你的用户名>
+# 预览窗口出现后，正脸对准摄像头，按 SPACE 拍 8 张；按 q 提前退出
+```
+
+无显示器场景（树莓派 SSH）：
+
+```bash
+python enroll_face.py --user <你的用户名> --headless --samples 8
+```
+
+录入完成后会保存到 `data/templates/templates/template_<用户名>.npy`。注意 **用户名必须与后端注册账号完全一致**，否则后端 `face_user_id` 比对失败。模板在网关进程内缓存，新模板生效有两种方式：
+
+- 重启 `paspberry_pi/app.py`
+- 或调用 `POST http://<树莓派IP>:5000/reload_templates` 在线刷新
 
 ## 代码检查
 

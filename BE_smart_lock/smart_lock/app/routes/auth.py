@@ -11,7 +11,7 @@ auth_bp = Blueprint('auth', __name__)
 TEMP_LOGIN_SESSIONS = {}
 
 
-def _build_login_session(user_id, username, totp_bound, credential_id=None, secret=None):
+def _build_login_session(user_id, username, totp_bound, credential_id=None, secret=None, role='user'):
     pre_token = secrets.token_urlsafe(32)
     TEMP_LOGIN_SESSIONS[pre_token] = {
         "user_id": user_id,
@@ -19,6 +19,7 @@ def _build_login_session(user_id, username, totp_bound, credential_id=None, secr
         "totp_bound": totp_bound,
         "credential_id": credential_id,
         "secret": secret,
+        "role": role,
         "expires_at": datetime.now() + timedelta(minutes=5),
     }
     return pre_token
@@ -35,6 +36,17 @@ def _pop_login_session(pre_token):
     return session
 
 
+def _check_account_status(user):
+    """登录前置校验：返回 (ok, msg, http_status)。"""
+    if user.status == 'pending':
+        return False, "Account is pending admin approval", 403
+    if user.status == 'rejected':
+        return False, "Account has been rejected by admin", 403
+    if user.status != 'approved':
+        return False, "Account is not active", 403
+    return True, None, None
+
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
@@ -47,10 +59,18 @@ def register():
         return jsonify({"msg": "User exists"}), 400
 
     hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
-    new_user = User(username=username, password_hash=hashed_pw)
+    new_user = User(
+        username=username,
+        password_hash=hashed_pw,
+        role='user',
+        status='pending',
+    )
     db.session.add(new_user)
     db.session.commit()
-    return jsonify({"msg": "Registered successfully"}), 201
+    return jsonify({
+        "msg": "Registration submitted, waiting for admin approval",
+        "status": "pending",
+    }), 201
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -62,10 +82,15 @@ def login():
         return jsonify({"msg": "Username and password are required"}), 400
 
     user = User.query.filter_by(username=username).first()
-    if user and bcrypt.check_password_hash(user.password_hash, password):
-        token = create_access_token(identity=user.username)
-        return jsonify(access_token=token), 200
-    return jsonify({"msg": "Invalid credentials"}), 401
+    if not user or not bcrypt.check_password_hash(user.password_hash, password):
+        return jsonify({"msg": "Invalid credentials"}), 401
+
+    ok, msg, code = _check_account_status(user)
+    if not ok:
+        return jsonify({"msg": msg, "status": user.status}), code
+
+    token = create_access_token(identity=user.username)
+    return jsonify(access_token=token, role=user.role), 200
 
 
 @auth_bp.route('/login/pre', methods=['POST'])
@@ -80,6 +105,10 @@ def prelogin():
     if not user or not bcrypt.check_password_hash(user.password_hash, password):
         return jsonify({"msg": "Invalid credentials"}), 401
 
+    ok, msg, code = _check_account_status(user)
+    if not ok:
+        return jsonify({"msg": msg, "status": user.status}), code
+
     credential = MFACredential.query.filter_by(
         user_id=user.id,
         credential_type='totp',
@@ -87,10 +116,11 @@ def prelogin():
     ).first()
 
     if credential:
-        pre_token = _build_login_session(user.id, user.username, True)
+        pre_token = _build_login_session(user.id, user.username, True, role=user.role)
         return jsonify({
             "pre_token": pre_token,
             "totp_bound": True,
+            "role": user.role,
             "msg": "MFA required",
         }), 200
 
@@ -117,6 +147,7 @@ def prelogin():
         False,
         credential_id=pending.id,
         secret=pending.credential_data,
+        role=user.role,
     )
     return jsonify({
         "pre_token": pre_token,
@@ -124,6 +155,7 @@ def prelogin():
         "secret": pending.credential_data,
         "qr_uri": totp.provisioning_uri(name=user.username, issuer_name="SmartLock"),
         "credential_id": pending.id,
+        "role": user.role,
         "msg": "TOTP binding required",
     }), 200
 
@@ -152,7 +184,7 @@ def verify_mfa():
         return jsonify({"msg": "Invalid TOTP code"}), 401
 
     token = create_access_token(identity=session["username"])
-    return jsonify(access_token=token), 200
+    return jsonify(access_token=token, role=session.get("role", "user")), 200
 
 
 @auth_bp.route('/login/mfa/bind', methods=['POST'])
@@ -178,4 +210,4 @@ def bind_totp_with_pre_token():
     db.session.commit()
 
     token = create_access_token(identity=session["username"])
-    return jsonify(access_token=token), 200
+    return jsonify(access_token=token, role=session.get("role", "user")), 200

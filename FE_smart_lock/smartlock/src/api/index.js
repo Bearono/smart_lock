@@ -16,10 +16,14 @@ api.interceptors.request.use(config => {
   return config
 })
 
+const PUBLIC_401_PATHS = ['/api/mfa/guest/verify', '/api/login/pre', '/api/login/mfa/verify', '/api/login/mfa/bind']
+
 api.interceptors.response.use(
   response => response,
   error => {
-    if (error.response?.status === 401) {
+    const url = error.config?.url || ''
+    const isPublic = PUBLIC_401_PATHS.some(p => url.includes(p))
+    if (error.response?.status === 401 && !isPublic) {
       localStorage.removeItem('token')
       window.location.href = '/'
     }
@@ -61,6 +65,7 @@ export const mfa = USE_MOCK ? mockApi.mfa : {
   openDoorRequest: (deviceId) => api.post('/api/mfa/open-door/request', { device_id: deviceId }),
   openDoorConfirm: (requestId, totpCode) => api.post('/api/mfa/open-door/confirm', { request_id: requestId, totp_code: totpCode }),
   sendFaceResult: (payload) => api.post('/api/mfa/open-door/face-result', payload),
+  clearSnapshot: (snapshotPath) => api.post('/api/snapshot/clear', { snapshot: snapshotPath }),
   adminUnlock: (targetUsername) => api.post('/api/mfa/admin/device/unlock', { target_username: targetUsername }),
   createGuest: (guestName, validHours = 24, maxUses = 1) =>
     api.post('/api/mfa/guest/create', { guest_name: guestName, valid_hours: validHours, max_uses: maxUses }),
@@ -85,6 +90,16 @@ export const face = USE_MOCK ? mockApi.face : {
     if (deviceId) url += `&device_id=${deviceId}`
     return api.get(url)
   }
+}
+
+export const admin = {
+  listUsers: (status) => {
+    const url = status ? `/api/admin/users?status=${status}` : '/api/admin/users'
+    return api.get(url)
+  },
+  listPending: () => api.get('/api/admin/users/pending'),
+  approve: (userId) => api.post(`/api/admin/users/${userId}/approve`),
+  reject: (userId) => api.post(`/api/admin/users/${userId}/reject`)
 }
 
 export default api

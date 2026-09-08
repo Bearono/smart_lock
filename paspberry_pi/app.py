@@ -17,6 +17,7 @@ if str(CV_CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CV_CODE_DIR))
 
 from recognize import recognize  # noqa: E402
+from recognize import reload_templates  # noqa: E402
 
 
 def _read_image(image_path: Path):
@@ -52,6 +53,13 @@ camera = CameraManager()
 @app.route("/")
 def index():
     return "Smart lock device service is running."
+
+
+@app.route("/reload_templates", methods=["POST"])
+def reload_face_templates():
+    """录入新人脸模板后，调用此接口刷新进程内缓存，无需重启服务。"""
+    reload_templates()
+    return jsonify({"status": "success", "msg": "Templates reloaded"}), 200
 
 
 @app.route("/recognition_and_send", methods=["POST"])
@@ -152,6 +160,8 @@ def handle_auth_challenge():
         face_user_id=user_id,
         similarity_score=confidence,
         liveness_score=0.85,
+        frame=frame,
+        session_nonce=nonce,
     )
 
     backend_status = int(auth_result.get("http_status") or 200)

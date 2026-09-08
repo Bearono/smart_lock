@@ -116,7 +116,7 @@ def recognize(
     templates_dir: str = None,
     conf_threshold: float = 0.5,
     margin_ratio: float = 0.2,
-    match_threshold: float = 0.65,
+    match_threshold: float = 0.90,
 ) -> Tuple[Optional[str], float]:
     if templates_dir is None:
         templates_dir = _DEFAULT_TEMPLATES_DIR
@@ -205,7 +205,7 @@ def recognize_from_path(
     templates_dir: str = None,
     conf_threshold: float = 0.5,
     margin_ratio: float = 0.2,
-    match_threshold: float = 0.65,
+    match_threshold: float = 0.90,
 ) -> Tuple[Optional[str], float]:
     if templates_dir is None:
         templates_dir = _DEFAULT_TEMPLATES_DIR

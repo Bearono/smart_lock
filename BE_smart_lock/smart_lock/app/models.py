@@ -8,6 +8,24 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
+    # 'admin' 或 'user'。admin 可审批、可解除设备锁定。
+    role = db.Column(db.String(20), default='user')
+    # 'pending' 注册后待审批；'approved' 可登录；'rejected' 已驳回。
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    approved_at = db.Column(db.DateTime)
+    approved_by = db.Column(db.String(80))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'role': self.role,
+            'status': self.status,
+            'created_at': self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            'approved_at': self.approved_at.strftime("%Y-%m-%d %H:%M:%S") if self.approved_at else None,
+            'approved_by': self.approved_by,
+        }
 
 
 # 2. 设备状态表

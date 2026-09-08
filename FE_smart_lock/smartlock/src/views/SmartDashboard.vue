@@ -13,6 +13,7 @@
         <button @click="openTab('mfa')">MFA</button>
         <button @click="openTab('face')">Face</button>
         <button @click="openTab('alarm')">Alarms</button>
+        <button v-if="isAdmin" @click="openTab('admin')">Admin</button>
         <button @click="logout">Logout</button>
       </div>
     </header>
@@ -20,6 +21,10 @@
     <main class="grid">
       <section class="panel video">
         <img :src="videoUrl" alt="video feed" />
+        <div class="video-toolbar">
+          <button @click="clearLiveFeed">Clear feed</button>
+          <span v-if="feedMsg" class="hint">{{ feedMsg }}</span>
+        </div>
       </section>
 
       <section class="panel">
@@ -149,6 +154,33 @@
             </tbody>
           </table>
         </div>
+
+        <div v-else-if="currentModal === 'admin'">
+          <div class="admin-toolbar">
+            <button @click="fetchPendingUsers">Pending only</button>
+            <button @click="fetchAllUsers">Show all</button>
+            <span v-if="adminMsg" class="hint">{{ adminMsg }}</span>
+          </div>
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in adminUsers" :key="u.id">
+                <td>{{ u.id }}</td>
+                <td>{{ u.username }}</td>
+                <td>{{ u.role }}</td>
+                <td>{{ u.status }}</td>
+                <td>{{ u.created_at }}</td>
+                <td>
+                  <button v-if="u.status === 'pending'" @click="approveUser(u)">Approve</button>
+                  <button v-if="u.status === 'pending'" @click="rejectUser(u)">Reject</button>
+                  <button v-if="u.status !== 'pending'" @click="adminUnlockDevice(u)">Unlock device</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -160,6 +192,10 @@
           <button @click="showMfaDoorModal = false">Close</button>
         </div>
         <p v-if="mfaDoorMsg">{{ mfaDoorMsg }}</p>
+        <div v-if="mfaSnapshotUrl" class="snapshot-wrap">
+          <img class="mfa-snapshot" :src="mfaSnapshotUrl" alt="face snapshot" />
+          <button class="snapshot-clear" @click="clearSnapshot">Clear snapshot</button>
+        </div>
         <div v-if="mfaStep === 1">
           <button @click="requestMfaDoor">Start Request</button>
         </div>
@@ -180,7 +216,7 @@
 </template>
 
 <script>
-import { lock, alarm, mfa, device, face } from '../api/index'
+import { lock, alarm, mfa, device, face, admin } from '../api/index'
 
 export default {
   name: 'SmartDashboard',
@@ -212,9 +248,14 @@ export default {
       mfaRequestId: '',
       requiresTotp: false,
       faceStatus: 'PENDING',
+      mfaSnapshotUrl: '',
       mfaTotpCode: '',
       mfaDoorMsg: '',
-      mfaDoorSuccess: false
+      mfaDoorSuccess: false,
+      role: localStorage.getItem('role') || 'user',
+      adminUsers: [],
+      adminMsg: '',
+      feedMsg: ''
     }
   },
   computed: {
@@ -223,6 +264,9 @@ export default {
     },
     lockButtonLabel() {
       return this.isLocked ? 'Unlock' : 'Lock'
+    },
+    isAdmin() {
+      return this.role === 'admin'
     }
   },
   async mounted() {
@@ -250,7 +294,8 @@ export default {
         guest: 'Guest',
         mfa: 'MFA',
         face: 'Face',
-        alarm: 'Alarms'
+        alarm: 'Alarms',
+        admin: 'Admin'
       }
       this.modalTitle = titles[tab]
       this.currentModal = tab
@@ -258,6 +303,7 @@ export default {
       if (tab === 'face') this.loadFaceLogs()
       if (tab === 'alarm') this.fetchAlarms()
       if (tab === 'mfa') this.fetchMfaStatus()
+      if (tab === 'admin') this.fetchPendingUsers()
     },
     async fetchLockStatus() {
       try {
@@ -357,7 +403,14 @@ export default {
       this.mfaDoorMsg = ''
       this.mfaDoorSuccess = false
       this.faceStatus = 'PENDING'
+      this.mfaSnapshotUrl = ''
       this.mfaTotpCode = ''
+    },
+    absoluteBackendUrl(path) {
+      if (!path) return ''
+      if (/^https?:\/\//.test(path)) return path
+      const base = process.env.VUE_APP_API_BASE || 'http://localhost:8000'
+      return `${base.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`
     },
     async requestMfaDoor() {
       this.mfaStep = 1
@@ -368,6 +421,11 @@ export default {
         this.requiresTotp = !!res.data.requires_totp
         const backendReply = res.data.device_dispatch?.backend_reply || {}
         this.faceStatus = backendReply.msg || 'DISPATCHED'
+        const snapshot = res.data.device_dispatch?.snapshot || backendReply.snapshot_url || backendReply.snapshot
+        this.mfaSnapshotUrl = this.absoluteBackendUrl(snapshot)
+        if (this.mfaSnapshotUrl) {
+          this.videoUrl = `${this.videoUrl.split('?')[0]}?t=${Date.now()}`
+        }
         this.mfaDoorMsg = res.data.device_dispatch
           ? `Device linked: ${res.data.device_dispatch.device_url}`
           : 'Face challenge sent to device'
@@ -394,12 +452,36 @@ export default {
         this.mfaDoorMsg = error?.response?.data?.msg || 'Confirm failed'
       }
     },
+    async clearSnapshot() {
+      const url = this.mfaSnapshotUrl
+      this.mfaSnapshotUrl = ''
+      if (!url) return
+      const idx = url.indexOf('/static/captures/')
+      if (idx < 0) return
+      const path = url.slice(idx)
+      try {
+        await mfa.clearSnapshot(path)
+      } catch (error) {
+        this.mfaDoorMsg = error?.response?.data?.msg || 'Clear failed'
+      }
+    },
+    async clearLiveFeed() {
+      this.feedMsg = ''
+      try {
+        await mfa.clearSnapshot('')
+        this.videoUrl = `${this.videoUrl.split('?')[0]}?t=${Date.now()}`
+        this.feedMsg = 'Live feed cleared'
+      } catch (error) {
+        this.feedMsg = error?.response?.data?.msg || 'Clear failed'
+      }
+    },
     resetMfaDoor() {
       this.showMfaDoorModal = false
       this.mfaStep = 0
       this.mfaRequestId = ''
       this.requiresTotp = false
       this.faceStatus = 'PENDING'
+      this.mfaSnapshotUrl = ''
       this.mfaTotpCode = ''
       this.mfaDoorMsg = ''
       this.mfaDoorSuccess = false
@@ -407,7 +489,54 @@ export default {
     logout() {
       localStorage.removeItem('token')
       localStorage.removeItem('username')
+      localStorage.removeItem('role')
       this.$router.push('/')
+    },
+    async fetchPendingUsers() {
+      this.adminMsg = ''
+      try {
+        const res = await admin.listPending()
+        this.adminUsers = res.data || []
+        if (!this.adminUsers.length) this.adminMsg = 'No pending users'
+      } catch (error) {
+        this.adminMsg = error?.response?.data?.msg || 'Load failed'
+      }
+    },
+    async fetchAllUsers() {
+      this.adminMsg = ''
+      try {
+        const res = await admin.listUsers()
+        this.adminUsers = res.data || []
+      } catch (error) {
+        this.adminMsg = error?.response?.data?.msg || 'Load failed'
+      }
+    },
+    async approveUser(user) {
+      try {
+        await admin.approve(user.id)
+        this.adminMsg = `Approved ${user.username}`
+        await this.fetchPendingUsers()
+      } catch (error) {
+        this.adminMsg = error?.response?.data?.msg || 'Approve failed'
+      }
+    },
+    async rejectUser(user) {
+      try {
+        await admin.reject(user.id)
+        this.adminMsg = `Rejected ${user.username}`
+        await this.fetchPendingUsers()
+      } catch (error) {
+        this.adminMsg = error?.response?.data?.msg || 'Reject failed'
+      }
+    },
+    async adminUnlockDevice(user) {
+      this.adminMsg = ''
+      try {
+        const res = await mfa.adminUnlock(user.username)
+        this.adminMsg = res?.data?.msg || `Unlocked ${user.username}`
+      } catch (error) {
+        this.adminMsg = error?.response?.data?.msg || 'Unlock failed'
+      }
     }
   }
 }
@@ -431,7 +560,11 @@ export default {
   border-radius: 16px;
   padding: 16px;
 }
+.video { display: flex; flex-direction: column; gap: 8px; }
 .video img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; min-height: 320px; }
+.video-toolbar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.snapshot-wrap { position: relative; }
+.snapshot-clear { position: absolute; top: 12px; right: 8px; background: #b91c1c; border-color: #7f1d1d; }
 .table-panel { margin-top: 12px; }
 table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 th, td { padding: 8px; border-bottom: 1px solid #243044; text-align: left; font-size: 12px; }
@@ -458,5 +591,8 @@ button { cursor: pointer; }
 }
 .dialog.narrow { width: min(560px, 92vw); }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; }
+.mfa-snapshot { width: 100%; max-height: 260px; object-fit: cover; border-radius: 10px; margin: 8px 0; border: 1px solid #334155; }
+.admin-toolbar { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.hint { color: #cbd5e1; font-size: 12px; }
 .mono { font-family: monospace; word-break: break-all; }
 </style>

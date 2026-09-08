@@ -1,16 +1,18 @@
 <template>
   <div class="page">
     <div class="card" v-if="isRegisterMode">
-      <h2>Admin Register</h2>
+      <h2>Register</h2>
+      <p class="hint">New accounts require admin approval before login.</p>
       <form @submit.prevent="handleRegister">
         <input v-model="regForm.username" placeholder="Username" />
         <input v-model="regForm.email" type="email" placeholder="Email" />
         <input v-model="regForm.password" type="password" placeholder="Password" />
         <input v-model="regForm.confirmPassword" type="password" placeholder="Confirm Password" />
         <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
-        <button :disabled="isLoading">{{ isLoading ? 'Registering...' : 'Register' }}</button>
+        <p v-if="successMsg" class="success">{{ successMsg }}</p>
+        <button :disabled="isLoading">{{ isLoading ? 'Submitting...' : 'Submit for approval' }}</button>
       </form>
-      <p class="link" @click="isRegisterMode = false; errorMsg = ''">Back to login</p>
+      <p class="link" @click="backToLogin">Back to login</p>
     </div>
 
     <div class="card" v-else>
@@ -22,8 +24,10 @@
         <input v-model="form.email" type="email" placeholder="Email" />
         <input v-model="form.password" type="password" placeholder="Password" />
         <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+        <p v-if="successMsg" class="success">{{ successMsg }}</p>
         <button :disabled="isLoading">{{ isLoading ? 'Sending...' : 'Get MFA Code' }}</button>
-        <p class="link" @click="isRegisterMode = true; errorMsg = ''">Create account</p>
+        <p class="link" @click="goRegister">Create account</p>
+        <p class="link" @click="goGuest">Guest access</p>
       </form>
 
       <form v-else @submit.prevent="handleMfaVerify">
@@ -54,11 +58,13 @@ export default {
       isRegisterMode: false,
       isLoading: false,
       errorMsg: '',
+      successMsg: '',
       step: 0,
       needsTotpBind: false,
       totpSecret: '',
       totpQrUri: '',
       preToken: '',
+      role: 'user',
       form: {
         username: '',
         email: '',
@@ -85,8 +91,21 @@ export default {
       this.errorMsg = ''
       this.form.otpCode = ''
     },
+    goRegister() {
+      this.isRegisterMode = true
+      this.errorMsg = ''
+      this.successMsg = ''
+    },
+    goGuest() {
+      this.$router.push('/guest')
+    },
+    backToLogin() {
+      this.isRegisterMode = false
+      this.errorMsg = ''
+    },
     async handlePreLogin() {
       this.errorMsg = ''
+      this.successMsg = ''
       if (!this.form.username || !this.form.email || !this.form.password) {
         this.errorMsg = 'Please fill username, email and password'
         return
@@ -98,9 +117,17 @@ export default {
         this.needsTotpBind = !res.data.totp_bound
         this.totpSecret = res.data.secret || ''
         this.totpQrUri = res.data.qr_uri || ''
+        this.role = res.data.role || 'user'
         this.step = 1
       } catch (error) {
-        this.errorMsg = error?.response?.data?.msg || 'Login failed'
+        const data = error?.response?.data
+        if (data?.status === 'pending') {
+          this.errorMsg = 'Your account is pending admin approval. Please wait.'
+        } else if (data?.status === 'rejected') {
+          this.errorMsg = 'Your registration was rejected by admin.'
+        } else {
+          this.errorMsg = data?.msg || 'Login failed'
+        }
       } finally {
         this.isLoading = false
       }
@@ -118,6 +145,7 @@ export default {
           : await auth.verifyMfa(this.preToken, this.form.otpCode)
         localStorage.setItem('token', res.data.access_token)
         localStorage.setItem('username', this.form.username)
+        localStorage.setItem('role', res.data.role || this.role || 'user')
         this.$router.push('/dashboard')
       } catch (error) {
         this.errorMsg = error?.response?.data?.msg || 'Code error'
@@ -128,6 +156,7 @@ export default {
     },
     async handleRegister() {
       this.errorMsg = ''
+      this.successMsg = ''
       if (!this.regForm.username || !this.regForm.email || !this.regForm.password) {
         this.errorMsg = 'Please fill registration fields'
         return
@@ -139,10 +168,11 @@ export default {
       this.isLoading = true
       try {
         await auth.register(this.regForm.username, this.regForm.password, this.regForm.email)
-        this.isRegisterMode = false
+        this.successMsg = 'Submitted. Please wait for admin approval before logging in.'
         this.form.username = this.regForm.username
         this.form.email = this.regForm.email
         this.regForm = { username: '', email: '', password: '', confirmPassword: '' }
+        setTimeout(() => { this.isRegisterMode = false }, 1500)
       } catch (error) {
         this.errorMsg = error?.response?.data?.msg || 'Register failed'
       } finally {
@@ -186,6 +216,8 @@ button {
   cursor: pointer;
 }
 .error { color: #f87171; font-size: 12px; margin-top: 8px; }
+.success { color: #4ade80; font-size: 12px; margin-top: 8px; }
+.hint { color: #cbd5e1; font-size: 12px; margin-top: -4px; margin-bottom: 8px; }
 .link { margin-top: 12px; color: #93c5fd; cursor: pointer; }
 .info {
   margin-top: 12px;

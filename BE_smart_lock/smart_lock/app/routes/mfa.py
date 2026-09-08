@@ -17,7 +17,9 @@ from datetime import datetime, timedelta
 import pyotp
 import secrets
 import hashlib
+from .secure_receiver import save_snapshot_image
 from .secure_payload import decrypt_secure_payload
+from .security_protocol import PROTOCOL_VERSION
 
 mfa_bp = Blueprint('mfa', __name__)
 
@@ -278,32 +280,21 @@ def open_door_request():
         try:
             device_dispatch = _dispatch_face_challenge(device_id, request_id, nonce)
         except RuntimeError as exc:
-            if current_app.config.get('DEVICE_DISPATCH_REQUIRED'):
-                session.status = 'failed'
-                db.session.commit()
-                return jsonify({
-                    "msg": str(exc),
-                    "code": "DEVICE_DISPATCH_FAILED"
-                }), 502
-
-            session.face_verified = True
-            session.face_user_id = user.username
-            session.similarity_score = 1.0
-            session.status = 'face_verified'
+            session.status = 'failed'
             db.session.add(FaceRecognitionLog(
                 request_id=request_id,
                 device_id=device_id,
                 expected_username=user.username,
-                face_user_id=user.username,
-                similarity_score=1.0,
-                passed=True,
-                failure_reason='device_dispatch_bypassed_for_development',
+                face_user_id=None,
+                similarity_score=0.0,
+                passed=False,
+                failure_reason=f'device_dispatch_failed: {exc}',
             ))
             db.session.commit()
-            device_dispatch = {
-                "status": "bypassed",
-                "reason": str(exc),
-            }
+            return jsonify({
+                "msg": str(exc),
+                "code": "DEVICE_DISPATCH_FAILED"
+            }), 502
 
     return jsonify({
         "msg": "Auth session created",
@@ -317,18 +308,26 @@ def open_door_request():
 
 @mfa_bp.route('/mfa/open-door/face-result', methods=['POST'])
 def receive_face_result():
-    """接收树莓派上传的人脸识别结果"""
-    data = request.get_json() or {}
-    if ('payload' in data and 'enc_key' in data) or data.get('header', {}).get('version'):
-        try:
-            data = decrypt_secure_payload(data)
-        except Exception as exc:
-            return jsonify({"msg": "Invalid encrypted payload", "detail": str(exc)}), 400
+    """接收树莓派上传的人脸识别结果。必须使用 v2 加密信封（PAKE + AES-CBC + HMAC）。"""
+    raw = request.get_json() or {}
+
+    # 强制要求 v2 加密信封：拒绝明文与旧版 ECC 兼容包
+    if raw.get('header', {}).get('version') != PROTOCOL_VERSION:
+        return jsonify({"msg": "Encrypted v2 payload required"}), 401
+
+    try:
+        data = decrypt_secure_payload(raw)
+    except Exception as exc:
+        return jsonify({"msg": "Invalid encrypted payload", "detail": str(exc)}), 400
 
     request_id = data.get('request_id')
     face_user_id = data.get('face_user_id')
     similarity_score = data.get('similarity_score')
     device_id = data.get('device_id')
+    session_nonce = data.get('session_nonce')
+    snapshot_path = data.get('snapshot')
+    if not snapshot_path and data.get('snapshot_image'):
+        snapshot_path = save_snapshot_image(data.get('snapshot_image'), prefix=f"face_{device_id or 'device'}")
 
     # 查找认证会话
     session = AuthSession.query.filter_by(request_id=request_id).first()
@@ -338,10 +337,32 @@ def receive_face_result():
     if session.status != 'pending':
         return jsonify({"msg": "Session already processed"}), 400
 
+    # 校验 nonce：Pi 必须回传 open-door/request 阶段签发的 session.nonce
+    if not session_nonce or session_nonce != session.nonce:
+        session.status = 'failed'
+        db.session.add(FaceRecognitionLog(
+            request_id=request_id,
+            device_id=device_id,
+            expected_username=session.user.username if session.user else None,
+            face_user_id=face_user_id,
+            similarity_score=similarity_score,
+            passed=False,
+            failure_reason='session_nonce_mismatch',
+        ))
+        db.session.commit()
+        return jsonify({"msg": "Session nonce mismatch"}), 401
+
     # 验证人脸结果
     user = User.query.get(session.user_id)
     normalized_face_user_id = _normalize_face_user_id(face_user_id)
-    passed = normalized_face_user_id == user.username and similarity_score >= 0.7
+    # 0.90 对应 dlib face_recognition 建议的"严格"档：
+    # 同一人日常波动 0.90+；不同人相似五官上限 ~0.75。门锁属于严格场景。
+    FACE_MATCH_THRESHOLD = 0.90
+    passed = (
+        normalized_face_user_id == user.username
+        and similarity_score is not None
+        and similarity_score >= FACE_MATCH_THRESHOLD
+    )
     db.session.add(FaceRecognitionLog(
         request_id=request_id,
         device_id=device_id,
@@ -349,7 +370,7 @@ def receive_face_result():
         face_user_id=face_user_id,
         similarity_score=similarity_score,
         passed=passed,
-        snapshot_path=data.get('snapshot'),
+        snapshot_path=snapshot_path,
         failure_reason=None if passed else 'face_user_or_score_mismatch',
     ))
 
@@ -363,14 +384,20 @@ def receive_face_result():
         required_factors = evaluate_mfa_policy(user.id)
         return jsonify({
             "msg": "Face verified",
-            "requires_totp": 'totp' in required_factors
+            "requires_totp": 'totp' in required_factors,
+            "snapshot": snapshot_path,
+            "snapshot_url": snapshot_path,
         }), 200
     else:
         session.status = 'failed'
         # ================= 新增：人脸验证失败，增加失败计数 =================
         _record_auth_failure(user.id)
         # ==============================================================
-        return jsonify({"msg": "Face verification failed"}), 401
+        return jsonify({
+            "msg": "Face verification failed",
+            "snapshot": snapshot_path,
+            "snapshot_url": snapshot_path,
+        }), 401
 
 
 @mfa_bp.route('/mfa/open-door/confirm', methods=['POST'])
@@ -459,6 +486,11 @@ def open_door_confirm():
 @jwt_required()
 def admin_unlock_device():
     """管理员介入：解除特定用户的设备锁定"""
+    admin_name = get_jwt_identity()
+    admin_user = User.query.filter_by(username=admin_name).first()
+    if not admin_user or admin_user.role != 'admin':
+        return jsonify({"msg": "Admin privilege required"}), 403
+
     data = request.get_json()
     target_username = data.get('target_username')
 
@@ -481,14 +513,11 @@ def admin_unlock_device():
     device_cred.is_locked = False
     db.session.commit()
 
-    admin_name = get_jwt_identity()
     log = AccessLog(action=f'ADMIN_UNLOCK_DEVICE_FOR_{target_username}', username=admin_name)
     db.session.add(log)
     db.session.commit()
 
     return jsonify({"msg": f"Device for {target_username} has been successfully unlocked."}), 200
-
-
 # ==================== 访客授权 ====================
 
 @mfa_bp.route('/mfa/guest/create', methods=['POST'])
@@ -685,9 +714,24 @@ def _dispatch_face_challenge(device_id, request_id, nonce):
             json={"request_id": request_id, "nonce": nonce},
             timeout=current_app.config['DEVICE_SERVICE_TIMEOUT'],
         )
-        response.raise_for_status()
     except requests.RequestException as exc:
         raise RuntimeError(f"Failed to reach device service for {device_id}: {exc}") from exc
+
+    # 网关（树莓派）返回非 2xx 时，把它 JSON 里的 message/detail 抽出来一起抛，
+    # 前端拿到的 502 才有根因，而不是只有一个 "500 Server Error"。
+    if response.status_code >= 400:
+        detail = None
+        try:
+            body = response.json()
+            detail = body.get('detail') or body.get('message') or body.get('msg')
+            backend_reply = body.get('backend_reply') or {}
+            if not detail:
+                detail = backend_reply.get('msg') or backend_reply.get('detail')
+        except ValueError:
+            detail = (response.text or '').strip()[:300]
+        raise RuntimeError(
+            f"Device {device_id} returned HTTP {response.status_code}: {detail or 'no detail from device'}"
+        )
 
     try:
         payload = response.json()
@@ -705,6 +749,7 @@ def _dispatch_face_challenge(device_id, request_id, nonce):
         "frame_source": payload.get('frame_source'),
         "recognition": payload.get('recognition'),
         "backend_reply": backend_reply,
+        "snapshot": backend_reply.get('snapshot') or backend_reply.get('snapshot_url'),
     }
 
 

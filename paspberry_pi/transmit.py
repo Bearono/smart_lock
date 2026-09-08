@@ -155,15 +155,20 @@ class NetworkTransmitter:
         }
         return self._send_encrypted("/api/secure/upload", data)
 
-    def send_auth_result(self, request_id, face_user_id, similarity_score, liveness_score=None):
+    def send_auth_result(self, request_id, face_user_id, similarity_score, liveness_score=None, frame=None, session_nonce=None):
         data = {
             "request_id": request_id,
             "device_id": self.device_id,
             "face_user_id": face_user_id,
             "similarity_score": similarity_score,
             "liveness_score": liveness_score or 0.0,
+            "session_nonce": session_nonce,
             "timestamp": int(time.time()),
         }
+        if frame is not None:
+            success, buffer = cv2.imencode(".jpg", frame)
+            if success:
+                data["snapshot_image"] = base64.b64encode(buffer).decode("utf-8")
         return self._send_encrypted("/api/mfa/open-door/face-result", data)
 
     def request_unlock_token(self, request_id, unlock_token=None):

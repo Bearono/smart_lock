@@ -3,6 +3,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager
 from sqlalchemy import inspect, text
+from datetime import datetime
+import os
 from config import Config
 
 # 初始化扩展对象
@@ -39,6 +41,7 @@ def create_app():
     from app.routes.face import face_bp
     from app.routes.secure_receiver import secure_bp
     from app.routes.security import security_bp
+    from app.routes.admin import admin_bp
 
     # 注册蓝图
     app.register_blueprint(secure_bp)
@@ -50,11 +53,13 @@ def create_app():
     app.register_blueprint(lock_bp, url_prefix='/api/lock')
     app.register_blueprint(device_bp, url_prefix='/api/device')
     app.register_blueprint(face_bp, url_prefix='/api/face')
+    app.register_blueprint(admin_bp, url_prefix='/api/admin')
 
     with app.app_context():
         # 现在 db.create_all() 会正确扫描到 models 中的所有表
         db.create_all()
         _ensure_schema_columns()
+        _bootstrap_admin()
 
     return app
 
@@ -79,6 +84,14 @@ def _ensure_schema_columns():
             'failed_attempts': "INTEGER DEFAULT 0",
             'is_locked': "BOOLEAN DEFAULT 0",
         },
+        # 旧库升级时，已存在的用户默认放行为 approved，避免演示被卡住。
+        'users': {
+            'role': "VARCHAR(20) DEFAULT 'user'",
+            'status': "VARCHAR(20) DEFAULT 'approved'",
+            'created_at': "DATETIME",
+            'approved_at': "DATETIME",
+            'approved_by': "VARCHAR(80)",
+        },
     }
 
     for table_name, columns in column_specs.items():
@@ -88,4 +101,36 @@ def _ensure_schema_columns():
         for column_name, ddl in columns.items():
             if column_name not in existing_columns:
                 db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
+    db.session.commit()
+
+
+def _bootstrap_admin():
+    """启动时确保至少存在一个管理员账号。"""
+    from app.models import User
+
+    admin_username = os.environ.get("ADMIN_USERNAME", "admin")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+
+    admin = User.query.filter_by(role='admin').first()
+    if admin:
+        return
+
+    existing = User.query.filter_by(username=admin_username).first()
+    if existing:
+        existing.role = 'admin'
+        existing.status = 'approved'
+        if not existing.approved_at:
+            existing.approved_at = datetime.now()
+        db.session.commit()
+        return
+
+    admin = User(
+        username=admin_username,
+        password_hash=bcrypt.generate_password_hash(admin_password).decode('utf-8'),
+        role='admin',
+        status='approved',
+        approved_at=datetime.now(),
+        approved_by='system',
+    )
+    db.session.add(admin)
     db.session.commit()
