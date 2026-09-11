@@ -12,9 +12,17 @@ db = SQLAlchemy()
 bcrypt = Bcrypt()
 jwt = JWTManager()
 
-def create_app():
+def create_app(config_overrides=None):
     app = Flask(__name__)
     app.config.from_object(Config)
+    if config_overrides:
+        app.config.update(config_overrides)
+
+    @app.before_request
+    def validate_json_object():
+        from flask import request, jsonify
+        if request.is_json and not isinstance(request.get_json(silent=True), dict):
+            return jsonify(msg='JSON request body must be an object'), 400
 
     @app.after_request
     def add_cors_headers(response):
@@ -27,6 +35,18 @@ def create_app():
     db.init_app(app)
     bcrypt.init_app(app)
     jwt.init_app(app)
+
+    @jwt.token_verification_loader
+    def verify_login_assurance(_header, payload):
+        from app.models import User, MFACredential
+        user = User.query.filter_by(username=payload.get('sub')).first()
+        return bool(user and user.status == 'approved' and payload.get('mfa') is True
+                    and MFACredential.query.filter_by(user_id=user.id, credential_type='totp', is_active=True).first())
+
+    @jwt.token_verification_failed_loader
+    def invalid_login_assurance(_header, _payload):
+        from flask import jsonify
+        return jsonify(msg='MFA login required or account authorization revoked', code='LOGIN_REQUIRED'), 401
 
     # 【关键修复】在此处显式导入模型，确保 db.create_all() 能发现它们
     from app import models
@@ -70,7 +90,15 @@ def _ensure_schema_columns():
     existing_tables = set(inspector.get_table_names())
 
     column_specs = {
+        # Existing unbound sessions/tokens/passes remain unusable after migration.
+        'auth_sessions': {
+            'device_id': 'VARCHAR(50)',
+            'requires_totp': 'BOOLEAN DEFAULT 0',
+        },
+        'unlock_tokens': {'device_id': 'VARCHAR(50)'},
+        'guest_passes': {'device_id': 'VARCHAR(50)'},
         'devices': {
+            'reported_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
             'camera_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
             'ip_address': "VARCHAR(45)",
             'is_online': "BOOLEAN DEFAULT 0",

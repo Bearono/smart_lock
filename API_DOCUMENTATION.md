@@ -1,1039 +1,143 @@
-# 智能锁后端接口文档
+# 智能门锁 API
 
-后端默认地址：
+后端默认 `http://localhost:8000`。请求体使用 JSON。除注明公开或设备接口外，携带 `Authorization: Bearer <access_token>`；JWT 必须由完成 TOTP 的登录流程签发，账号必须处于 approved 且仍有有效 TOTP 凭证。
 
-```text
-http://<后端IP>:8000
-```
+## 登录与管理员
 
-需要登录态的接口请在请求头携带 JWT：
+| 接口 | 请求 / 说明 |
+| --- | --- |
+| `POST /api/register` | `{username, password}`；201，账号 pending |
+| `POST /api/login/pre` | `{username, password}`；200，返回登录挑战 |
+| `POST /api/login` | 与 `/login/pre` 完全相同，不再直接签发 JWT |
+| `POST /api/login/mfa/bind` | `{pre_token, code}`；首次绑定，返回 `{access_token, role}` |
+| `POST /api/login/mfa/verify` | `{pre_token, code}`；已绑定用户登录，返回 `{access_token, role}` |
+| `GET /api/admin/users?status=pending` | 管理员查询用户 |
+| `GET /api/admin/users/pending` | 管理员查询待审批用户 |
+| `POST /api/admin/users/<id>/approve` | 管理员批准 |
+| `POST /api/admin/users/<id>/reject` | 管理员驳回，后续受保护请求立即拒绝 |
 
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
+登录挑战响应含 `pre_token`、`totp_bound`、`role`、`msg`。首次绑定另含 `secret`、`qr_uri`、`credential_id`。挑战 5 分钟有效，最多 5 次验证码尝试；成功后只能消费一次。返回 `restart_login=true` 时重新输入账号密码。临时挑战存数据库，可跨后端进程处理。
 
-## 1. 用户注册
+## TOTP 与设备绑定
 
-```http
-POST /api/register
-```
+| 接口 | 请求 / 说明 |
+| --- | --- |
+| `GET /api/mfa/status` | 返回 `{totp_bound, devices}` |
+| `POST /api/mfa/bind/totp` | 生成待激活凭证，返回 `{secret, qr_uri, credential_id}` |
+| `POST /api/mfa/verify/totp` | `{code, credential_id?}`；验证或激活 TOTP |
+| `POST /api/mfa/unbind/totp` | 解绑；之后须重新走首次登录绑定 |
+| `POST /api/mfa/bind/device` | `{device_id, device_pubkey?}`；恢复绑定不清除安全锁定 |
+| `POST /api/mfa/unbind/device` | `{device_id}`；同时作废该用户该设备的认证、令牌及访客授权 |
+| `POST /api/mfa/admin/device/unlock` | 管理员提交 `{target_username}`，清除该用户设备绑定的安全锁定 |
 
-请求：
+## 完整开门流程
 
-```json
-{
-  "username": "alice",
-  "password": "123456"
-}
-```
+### 1. 发起认证
 
-成功响应 `201`：
+`POST /api/mfa/open-door/request`，JWT，`{device_id}`。
 
-```json
-{
-  "msg": "Registration submitted, waiting for admin approval",
-  "status": "pending"
-}
-```
+响应：`{request_id, nonce, requires_face, requires_totp, device_dispatch}`。会话有效期 5 分钟，绑定指定设备。夜间创建的会话要求 TOTP，策略在该会话内固定。未绑定返回 403；安全锁定返回 423；设备派发失败返回 502。
 
-注册后账号处于 `pending` 状态，**必须由管理员通过 `/api/admin/users/<id>/approve` 审批通过后才能登录**。
+默认要求设备派发成功。显式设置 `DEVICE_DISPATCH_REQUIRED=false` 后，连接失败/超时返回 200 和 `device_dispatch.status="pending"`，等待测试设备的合法加密上报；不会设置 `face_verified=true`。其他设备错误仍返回 502。
 
-常见错误：
+### 2. 人脸结果（设备 v2 加密接口）
 
-```json
-{
-  "msg": "User exists"
-}
-```
-
-## 2. 用户登录
-
-```http
-POST /api/login
-```
-
-请求：
+`POST /api/mfa/open-door/face-result`，请求体必须是下述 v2 信封。解密业务内容：
 
 ```json
 {
-  "username": "alice",
-  "password": "123456"
-}
-```
-
-成功响应 `200`：
-
-```json
-{
-  "access_token": "jwt-token-string",
-  "role": "user"
-}
-```
-
-失败响应 `401`：
-
-```json
-{
-  "msg": "Invalid credentials"
-}
-```
-
-账号未通过审批响应 `403`：
-
-```json
-{
-  "msg": "Account is pending admin approval",
-  "status": "pending"
-}
-```
-
-## 3. 查询门锁状态
-
-需要 JWT。
-
-```http
-GET /api/lock/status?device_id=door_01
-```
-
-`device_id` 可选，默认 `door_01`。
-
-成功响应：
-
-```json
-{
+  "request_id": "第一步的request_id",
   "device_id": "door_01",
-  "status": "LOCKED",
-  "battery": 90,
-  "last_update": "2026-05-23 15:20:00"
+  "session_nonce": "第一步的nonce",
+  "face_user_id": "alice",
+  "similarity_score": 0.95
 }
 ```
 
-`status` 可能值：
+可选 `snapshot_image`（Base64 JPEG）。业务设备必须与安全会话及开门认证设备一致。明文上报 401，MAC/重放错误 400，错误设备 403，过期会话 410，已处理会话 400/409。用户名匹配且有限数值相似度 ≥ 0.90 才通过。该阈值是项目配置选择，不代表已测得的误识率或活体保证。
 
-```text
-LOCKED
-UNLOCKED
-```
+### 3. 确认认证
 
-## 4. 控制门锁
+`POST /api/mfa/open-door/confirm`，JWT，`{request_id, totp_code?}`。
 
-需要 JWT。
+成功返回 `{unlock_token, device_id, expires_in: 60}`。会话只能签发一次，重复或并发重复确认返回 409；过期返回 410；缺少人脸或认证失败返回 401；所需 TOTP 未提供返回 400。签发时尚未改变门锁目标状态。
 
-```http
-POST /api/lock/control
-```
+### 4. 消费令牌
 
-请求：
+`POST /api/lock/unlock-token/verify`，无需 JWT，凭令牌授权：
 
 ```json
-{
-  "device_id": "door_01",
-  "action": "UNLOCK"
-}
+{"device_id":"door_01","unlock_token":"第三步返回的令牌"}
 ```
 
-`action` 可选值：
-
-```text
-LOCK
-UNLOCK
-```
-
-成功响应：
-
-```json
-{
-  "status": "success",
-  "msg": "指令已下发并更新状态",
-  "new_status": "UNLOCK"
-}
-```
-
-## 5. 获取开锁历史
-
-需要 JWT。
-
-```http
-GET /api/lock/history?page=1&per_page=10
-```
-
-成功响应：
-
-```json
-{
-  "total": 25,
-  "pages": 3,
-  "current_page": 1,
-  "data": [
-    {
-      "id": 1,
-      "username": "alice",
-      "action": "UNLOCK",
-      "timestamp": "2026-05-23 15:20:00"
-    }
-  ]
-}
-```
-
-## 6. 绑定 TOTP
-
-需要 JWT。
-
-```http
-POST /api/mfa/bind/totp
-```
-
-请求：
-
-```json
-{}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "TOTP secret generated",
-  "secret": "BASE32SECRET",
-  "qr_uri": "otpauth://totp/SmartLock:alice?secret=BASE32SECRET&issuer=SmartLock",
-  "credential_id": 1
-}
-```
-
-前端可以使用 `qr_uri` 生成二维码，让用户用认证器 App 扫码。
-
-## 7. 验证 TOTP
-
-需要 JWT。
-
-```http
-POST /api/mfa/verify/totp
-```
-
-绑定确认场景：
-
-```json
-{
-  "credential_id": 1,
-  "code": "123456"
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "TOTP bound successfully"
-}
-```
-
-普通验证场景：
-
-```json
-{
-  "code": "123456"
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "TOTP verified"
-}
-```
-
-## 8. 绑定设备
-
-需要 JWT。
-
-```http
-POST /api/mfa/bind/device
-```
-
-请求：
-
-```json
-{
-  "device_id": "RPI_LOCK_01",
-  "device_pubkey": "optional-public-key"
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "Device bound successfully"
-}
-```
-
-## 9. 查询 MFA 状态
-
-需要 JWT。
-
-```http
-GET /api/mfa/status
-```
-
-成功响应：
-
-```json
-{
-  "totp_bound": true,
-  "devices": [
-    {
-      "credential_id": 1,
-      "device_id": "RPI_LOCK_01",
-      "is_active": true,
-      "created_at": "2026-05-23 15:20:00"
-    }
-  ]
-}
-```
-
-## 10. 解绑 TOTP
-
-需要 JWT。
-
-```http
-POST /api/mfa/unbind/totp
-```
-
-成功响应：
-
-```json
-{
-  "msg": "TOTP unbound successfully"
-}
-```
-
-## 11. 解绑设备
-
-需要 JWT。
-
-```http
-POST /api/mfa/unbind/device
-```
-
-请求：
-
-```json
-{
-  "device_id": "RPI_LOCK_01"
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "Device unbound successfully"
-}
-```
-
-## 12. 发起开门认证
-
-需要 JWT。
-
-```http
-POST /api/mfa/open-door/request
-```
-
-请求：
-
-```json
-{
-  "device_id": "RPI_LOCK_01"
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "Auth session created",
-  "request_id": "request-id-string",
-  "nonce": "nonce-string",
-  "requires_face": true,
-  "requires_totp": false
-}
-```
-
-若该用户绑定的设备因连续 5 次认证失败被锁定，接口将返回 423：
-
-失败响应: 423 (设备已被安全锁定)：
-```json
-{
-  "msg": "Device is LOCKED due to multiple failed attempts. Please contact Administrator.",
-  "code": "DEVICE_LOCKED"
-}
-```
-前端拿到 `request_id` 后，等待树莓派或摄像头侧完成人脸识别上传。
-
-## 13. 确认开门
-
-需要 JWT。
-
-```http
-POST /api/mfa/open-door/confirm
-```
-
-不需要 TOTP 时：
-
-```json
-{
-  "request_id": "request-id-string"
-}
-```
-
-需要 TOTP 时：
-
-```json
-{
-  "request_id": "request-id-string",
-  "totp_code": "123456"
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "Authentication successful",
-  "unlock_token": "unlock-token-string",
-  "expires_in": 60
-}
-```
-
-失败或未完成：
-
-```json
-{
-  "msg": "Authentication incomplete"
-}
-```
-
-## 14. 消费开门令牌
-
-通常给硬件端调用。用于消费 `/api/mfa/open-door/confirm` 或 `/api/mfa/guest/verify` 返回的 `unlock_token`。
-
-```http
-POST /api/lock/unlock-token/verify
-```
-
-请求：
-
-```json
-{
-  "device_id": "RPI_LOCK_01",
-  "unlock_token": "unlock-token-string"
-}
-```
-
-成功响应：
+成功返回：
 
 ```json
 {
   "msg": "Unlock token accepted",
-  "device_id": "RPI_LOCK_01",
-  "new_status": "UNLOCKED"
+  "device_id": "door_01",
+  "new_status": "UNLOCKED",
+  "command_accepted": true,
+  "hardware_confirmed": false
 }
 ```
 
-常见错误：
+消费与目标状态更新在同一事务中完成。令牌过期、已使用返回 401/409；错误设备或授权撤销返回 403。令牌是敏感的短期持有凭证，不写入日志或持久化前端存储。
+
+**这表示指令已被后端接受，不表示物理门锁已打开。** 当前代码没有 GPIO 驱动或命令级硬件回执。前端只在消费成功后显示指令已接受，网络失败可重试消费；若第一次已在后端成功但响应丢失，重试会报令牌已使用，应查询状态，不能推断硬件执行成功。
+
+`POST /api/lock/control` 仅允许 JWT 用户对已绑定设备发送 `{device_id, action:"LOCK"}`。`UNLOCK` 固定返回 403 `MFA_REQUIRED`，管理员也不能绕过。
+
+## 访客授权
+
+| 接口 | 请求 / 说明 |
+| --- | --- |
+| `POST /api/mfa/guest/create` | JWT；`{device_id, guest_name?, valid_hours:24, max_uses:1}`，必须绑定设备。小时范围 1–168，次数 1–100 |
+| `GET /api/mfa/guest/list` | JWT；当前用户创建的授权列表，包含 device_id |
+| `POST /api/mfa/guest/verify` | 公开；`{pass_code}`，返回绑定设备的 `{unlock_token, device_id, expires_in}` |
+| `POST /api/mfa/guest/revoke/<id>` | JWT；撤销自己的授权，未消费的访客令牌也失效 |
+
+授权码明文只在创建时返回，数据库保存其摘要。验证时原子扣减可签发次数；失败消费不会自动退还。页面会保留未成功消费的令牌用于网络重试，不会再次验证访客码消耗额外次数。访客也必须完成上述第四步，不能把签发令牌当作已开门。
+
+## SPAKE2 与安全信封
+
+设备调用 `POST /api/security/spake2/start`：
 
 ```json
-{
-  "msg": "Unlock token expired"
-}
+{"version":"SL-SEC-v2","device_id":"door_01","client_pub":"Base64 SPAKE2_A消息","client_nonce":"Base64随机数","timestamp":1780000000,"request_id":"唯一ID"}
 ```
 
-## 15. 管理员解除设备锁定
-
-需要 JWT
-
-```http
-POST /api/mfa/admin/device/unlock
-```
-
-请求：
-
-```json
-
-{
-  "target_username": "alice"
-}
-```
-成功响应 200
-
-```json
-
-{
-  "msg": "Device for alice has been successfully unlocked."
-}
-```
-
-## 16. 创建设备心跳
-
-通常给树莓派端调用，不需要 JWT。
-
-```http
-POST /api/device/heartbeat
-```
-
-请求：
-
-```json
-{
-  "device_id": "RPI_LOCK_01",
-  "battery": 86,
-  "camera_status": "OK",
-  "lock_status": "LOCKED",
-  "ip": "192.168.1.20"
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "Heartbeat received",
-  "device": {
-    "device_id": "RPI_LOCK_01",
-    "status": "LOCKED",
-    "battery": 86,
-    "camera_status": "OK",
-    "ip_address": "192.168.1.20",
-    "is_online": true,
-    "last_update": "2026-05-23 15:20:00"
-  }
-}
-```
-
-## 17. 查询设备在线状态
-
-需要 JWT。
-
-```http
-GET /api/device/status
-GET /api/device/status?device_id=RPI_LOCK_01
-```
-
-不传 `device_id` 时返回设备列表；传入时返回单个设备。
-
-成功响应：
-
-```json
-{
-  "device_id": "RPI_LOCK_01",
-  "status": "LOCKED",
-  "battery": 86,
-  "camera_status": "OK",
-  "ip_address": "192.168.1.20",
-  "is_online": true,
-  "last_update": "2026-05-23 15:20:00"
-}
-```
-
-## 18. 查询人脸识别记录
-
-需要 JWT。
-
-```http
-GET /api/face/logs?page=1&per_page=10
-GET /api/face/logs?passed=false
-GET /api/face/logs?device_id=RPI_LOCK_01
-```
-
-成功响应：
-
-```json
-{
-  "total": 25,
-  "pages": 3,
-  "current_page": 1,
-  "data": [
-    {
-      "id": 1,
-      "request_id": "request-id-string",
-      "device_id": "RPI_LOCK_01",
-      "expected_username": "alice",
-      "face_user_id": "alice",
-      "similarity_score": 0.92,
-      "passed": true,
-      "snapshot": "/static/captures/face_123.jpg",
-      "failure_reason": null,
-      "timestamp": "2026-05-23 15:20:00"
-    }
-  ]
-}
-```
-
-## 19. 创建访客授权码
-
-需要 JWT。
-
-```http
-POST /api/mfa/guest/create
-```
-
-请求：
-
-```json
-{
-  "guest_name": "Bob",
-  "valid_hours": 24,
-  "max_uses": 1
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "Guest pass created",
-  "pass_code": "plain-pass-code",
-  "valid_until": "2026-05-24T15:20:00",
-  "max_uses": 1
-}
-```
-
-注意：`pass_code` 明文只返回这一次，前端需要当场展示或复制。
-
-## 20. 查询访客授权列表
-
-需要 JWT。
-
-```http
-GET /api/mfa/guest/list
-```
-
-成功响应：
-
-```json
-[
-  {
-    "id": 1,
-    "guest_name": "Bob",
-    "valid_from": "2026-05-23T15:20:00",
-    "valid_until": "2026-05-24T15:20:00",
-    "max_uses": 1,
-    "used_count": 0,
-    "is_active": true,
-    "created_at": "2026-05-23 15:20:00"
-  }
-]
-```
-
-## 21. 验证访客授权码
-
-不需要 JWT。
-
-```http
-POST /api/mfa/guest/verify
-```
-
-请求：
-
-```json
-{
-  "pass_code": "plain-pass-code"
-}
-```
-
-成功响应：
-
-```json
-{
-  "msg": "Guest pass verified",
-  "unlock_token": "unlock-token-string",
-  "expires_in": 60
-}
-```
-
-## 22. 撤销访客授权
-
-需要 JWT。
-
-```http
-POST /api/mfa/guest/revoke/{pass_id}
-```
-
-示例：
-
-```http
-POST /api/mfa/guest/revoke/1
-```
-
-成功响应：
-
-```json
-{
-  "msg": "Guest pass revoked"
-}
-```
-
-## 23. 获取报警记录
-
-```http
-GET /api/alarms
-GET /api/alarms?status=pending&limit=20
-```
-
-成功响应：
-
-```json
-[
-  {
-    "id": 1,
-    "time": "2026-05-23 15:20:00",
-    "type": "异常开门",
-    "message": "检测到异常",
-    "snapshot": "/static/captures/alarm_123.jpg",
-    "status": "pending",
-    "handled_by": null,
-    "handled_at": null
-  }
-]
-```
-
-`snapshot` 如果不是图片路径，可能是 `无画面` 一类文本。
-
-## 24. 处理报警
-
-需要 JWT。
-
-```http
-PATCH /api/alarms/{alarm_id}
-```
-
-请求：
-
-```json
-{
-  "status": "resolved"
-}
-```
-
-`status` 可选值：
-
-```text
-pending
-resolved
-ignored
-```
-
-成功响应：
-
-```json
-{
-  "id": 1,
-  "time": "2026-05-23 15:20:00",
-  "type": "异常开门",
-  "message": "检测到异常",
-  "snapshot": "/static/captures/alarm_123.jpg",
-  "status": "resolved",
-  "handled_by": "alice",
-  "handled_at": "2026-05-23 15:30:00"
-}
-```
-
-## 25. 触发报警
-
-通常给硬件或后端内部使用，前端如需测试也可以调用。
-
-```http
-POST /api/trigger_alarm
-```
-
-请求：
-
-```json
-{
-  "type": "异常开门",
-  "message": "检测到异常"
-}
-```
-
-成功响应：
-
-```json
-{
-  "status": "success",
-  "snapshot": "/static/captures/alarm_123.jpg"
-}
-```
-
-## 26. 实时视频流
-
-用于页面 `<img>` 或视频预览。
-
-```http
-GET /video_feed
-```
-
-前端示例：
-
-```html
-<img src="http://<后端IP>:8000/video_feed" />
-```
-
-返回类型：
-
-```text
-multipart/x-mixed-replace; boundary=frame
-```
-
-## 27. 监控后台页面
-
-后端内置 HTML 页面：
-
-```http
-GET /
-```
-
-主要用于简单调试，不一定需要前端集成。
-
-## 前端推荐流程
-
-普通账号登录：
-
-```text
-注册 /api/register
-登录 /api/login
-保存 access_token
-查询门锁状态 /api/lock/status
-控制门锁 /api/lock/control
-查看历史 /api/lock/history
-```
-
-MFA 开门流程：
-
-```text
-登录
-绑定设备 /api/mfa/bind/device
-查询 MFA 状态 /api/mfa/status
-可选绑定 TOTP /api/mfa/bind/totp -> /api/mfa/verify/totp
-发起开门 /api/mfa/open-door/request
-等待人脸识别完成
-确认开门 /api/mfa/open-door/confirm
-拿到 unlock_token
-硬件消费令牌 /api/lock/unlock-token/verify
-```
-
-访客流程：
-
-```text
-主人登录
-创建访客码 /api/mfa/guest/create
-查看访客码列表 /api/mfa/guest/list
-访客提交授权码 /api/mfa/guest/verify
-拿到 unlock_token
-硬件消费令牌 /api/lock/unlock-token/verify
-```
-
-摄像头与安全中心：
-
-```text
-树莓派定时上报 /api/device/heartbeat
-前端查看设备状态 /api/device/status
-前端查看人脸识别记录 /api/face/logs
-前端查看报警 /api/alarms
-前端处理报警 /api/alarms/{alarm_id}
-```
-设备锁定与异常处理（防暴力破解）：
-
-```text
-发起开门 /api/mfa/open-door/request 
-若连续5次认证失败，服务端触发锁定，返回 423 DEVICE_LOCKED
-前端捕获 423 状态，弹窗提示：“设备已锁定，请联系管理员”
-管理员登录后台，调用 /api/mfa/admin/device/unlock 解锁
-设备恢复正常认证流程
-```
-
----
-
-## 16. SPAKE2 安全握手接口
-
-该接口用于树莓派/硬件端与后端建立短期安全会话。后续 `/api/secure/upload`、`/api/mfa/open-door/face-result`、`/api/mfa/open-door/confirm` 等硬件端上报接口可使用本接口协商出的 `session_key` 进行 AES-CBC 加密和 HMAC-SHA256 完整性校验。
-
-```http
-POST /api/security/spake2/start
-```
-
-请求：
-
-```json
-{
-  "version": "SL-SEC-v2",
-  "device_id": "RPI_LOCK_01",
-  "client_pub": "base64-spake2-a-message",
-  "client_nonce": "base64-client-nonce",
-  "timestamp": 1710000000,
-  "request_id": "unique-request-id"
-}
-```
-
-字段说明：
-
-| 字段 | 说明 |
-|---|---|
-| `version` | 安全协议版本，当前为 `SL-SEC-v2` |
-| `device_id` | 设备编号，用于绑定安全会话 |
-| `client_pub` | 设备端 `SPAKE2_A.start()` 生成的消息，Base64 编码；字段名保留为 `client_pub` 以兼容旧接口命名 |
-| `client_nonce` | 设备端随机数，Base64 编码 |
-| `timestamp` | 请求时间戳，用于防止过期握手请求 |
-| `request_id` | 本次握手请求唯一标识 |
-
-成功响应 `200`：
-
-```json
-{
-  "version": "SL-SEC-v2",
-  "session_id": "session-id",
-  "server_pub": "base64-spake2-b-message",
-  "server_nonce": "base64-server-nonce",
-  "challenge": "base64-hmac-challenge",
-  "expires_at": 1710000300.0
-}
-```
-
-字段说明：
-
-| 字段 | 说明 |
-|---|---|
-| `session_id` | 后端生成的安全会话 ID |
-| `server_pub` | 后端 `SPAKE2_B.start()` 生成的消息，Base64 编码；字段名保留为 `server_pub` 以兼容旧接口命名 |
-| `server_nonce` | 后端随机数，Base64 编码 |
-| `challenge` | 后端基于 `session_key` 生成的 HMAC 挑战值，设备端用于验证握手成功 |
-| `expires_at` | 会话过期时间戳 |
-
-常见错误：
-
-```json
-{
-  "msg": "Invalid SPAKE2 start message"
-}
-```
-
-```json
-{
-  "msg": "SPAKE2 start message expired"
-}
-```
-
-```json
-{
-  "msg": "Invalid SPAKE2 message or nonce",
-  "detail": "..."
-}
-```
-
-## 17. 查询安全会话状态
-
-该接口用于调试或演示安全会话是否仍然有效。
-
-```http
-GET /api/security/session/<session_id>
-```
-
-成功响应 `200`：
-
-```json
-{
-  "active": true,
-  "device_id": "RPI_LOCK_01",
-  "expires_at": 1710000300.0
-}
-```
-
-会话不存在或已过期响应 `404`：
-
-```json
-{
-  "active": false
-}
-```
-
-## 18. v2 安全包格式说明
-
-硬件端通过 SPAKE2 握手得到 `session_key` 后，业务数据会被封装为 v2 安全包再发送到原有业务接口。例如 `/api/secure/upload` 仍是原接口，但请求体从旧版 `enc_key + payload` 扩展为如下格式：
+响应含 `session_id`、`server_pub`、`server_nonce`、`challenge`、`expires_at` 和 `version`。客户端计算共享密钥并验证 challenge。业务信封：
 
 ```json
 {
   "header": {
-    "version": "SL-SEC-v2",
-    "session_id": "session-id",
-    "device_id": "RPI_LOCK_01",
-    "timestamp": 1710000000,
-    "request_id": "unique-request-id",
-    "nonce": "base64-random-nonce",
-    "unlock_token": "optional-token"
+    "version":"SL-SEC-v2", "session_id":"...", "device_id":"door_01",
+    "timestamp":1780000000, "request_id":"本条消息唯一ID", "nonce":"Base64随机数"
   },
-  "iv": "base64-aes-cbc-iv",
-  "ciphertext": "base64-ciphertext",
-  "mac": "base64-hmac-sha256"
+  "iv":"Base64 IV", "ciphertext":"Base64 AES-CBC密文", "mac":"Base64 HMAC-SHA256"
 }
 ```
 
-后端处理顺序：先校验 `version`、`timestamp`、`request_id`、`nonce`、`session_id`、`device_id` 和 `mac`，通过后才使用 AES-CBC 解密 `ciphertext`。旧版 `enc_key + payload` 格式仍保留兼容。
+信封 request_id 与业务开门 request_id 用途不同；业务内容可携带原开门 request_id。后端先核对时间、会话、设备和 MAC，再解密；消息 ID 和 nonce 防重放。默认安全会话 300 秒、时钟容差 120 秒。当前安全会话与防重放缓存仅在单进程内有效，重启后设备应重新握手。
 
-## 19. 用户管理（管理员）
+`GET /api/security/session/<id>` 查询安全会话是否有效。通用 `/api/secure/upload` 仍保留历史 ECC 格式兼容；人脸、心跳、状态同步不接受该兼容格式。
 
-以下接口需 JWT，且当前用户的 `role` 必须为 `admin`，否则返回 `403 {"msg": "Admin privilege required"}`。
+## 设备状态与日志
 
-### 19.1 列出全部用户
+| 接口 | 权限 / 说明 |
+| --- | --- |
+| `POST /api/device/heartbeat` | v2 加密；业务 `{device_id, battery?, camera_status?, lock_status?, ip?}` |
+| `POST /api/lock/sync` | v2 加密；业务 `{device_id}`，返回 `{target_status}` |
+| `GET /api/lock/status?device_id=door_01` | JWT；目标状态和电量 |
+| `GET /api/device/status?device_id=door_01` | JWT；可省略 ID 查询列表 |
+| `GET /api/lock/history?page=1&per_page=10` | JWT；操作记录分页 |
+| `GET /api/face/logs?page=1&per_page=10` | JWT；可按 passed、device_id 过滤 |
+| `GET /api/alarms?status=pending&limit=10` | 历史公开告警查询 |
+| `PATCH /api/alarms/<id>` | JWT；`{status:"resolved"}`，可选 pending/resolved/ignored |
+| `POST /api/trigger_alarm` | 历史告警触发接口，会尝试发送配置的邮件 |
+| `POST /api/secure/upload` | 安全信封；业务可含 Base64 `image` |
+| `POST /api/snapshot/clear` | JWT；`{snapshot:"/static/captures/xxx.jpg"}`，省略清空实时帧 |
+| `GET /video_feed` | 历史 MJPEG 预览接口 |
 
-```http
-GET /api/admin/users
-GET /api/admin/users?status=pending
-```
-
-成功响应：
-
-```json
-[
-  {
-    "id": 2,
-    "username": "bearono",
-    "role": "user",
-    "status": "pending",
-    "created_at": "2026-06-29 22:00:00",
-    "approved_at": null,
-    "approved_by": null
-  }
-]
-```
-
-### 19.2 待审批用户
-
-```http
-GET /api/admin/users/pending
-```
-
-### 19.3 批准用户
-
-```http
-POST /api/admin/users/<user_id>/approve
-```
-
-成功响应：
-
-```json
-{ "msg": "User approved", "user": { "...": "..." } }
-```
-
-### 19.4 驳回用户
-
-```http
-POST /api/admin/users/<user_id>/reject
-```
-
-成功响应：
-
-```json
-{ "msg": "User rejected", "user": { "...": "..." } }
-```
-
+设备 `status` 是目标状态，`reported_status` 是设备最近一次上报的实际状态；心跳不会覆盖目标状态。两分钟内心跳视为在线。发送指令不会伪造新的心跳或上线状态。

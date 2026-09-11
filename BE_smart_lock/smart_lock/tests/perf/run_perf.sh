@@ -32,7 +32,7 @@ if [ -z "$SKIP_PREPARE" ]; then
     python "$SCRIPT_DIR/prepare_data.py"
 fi
 
-USER_CLASS=""
+USER_CLASS="SmartLockUser"
 LABEL_SUFFIX=""
 if [ -n "$LOGIN_ONLY" ]; then
     USER_CLASS="LoginOnlyUser"

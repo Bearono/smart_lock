@@ -150,6 +150,7 @@ export default {
       } catch (error) {
         this.errorMsg = error?.response?.data?.msg || 'Code error'
         this.form.otpCode = ''
+        if (error?.response?.data?.restart_login) this.step = 0
       } finally {
         this.isLoading = false
       }

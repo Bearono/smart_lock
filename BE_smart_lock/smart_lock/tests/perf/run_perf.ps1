@@ -38,7 +38,7 @@ if (-not $SkipPrepare) {
     if ($LASTEXITCODE -ne 0) { throw "prepare_data.py failed" }
 }
 
-$userClass = ""
+$userClass = "SmartLockUser"
 $labelSuffix = ""
 if ($LoginOnly) {
     $userClass = "LoginOnlyUser"

@@ -121,12 +121,16 @@ class NetworkTransmitter:
                 payload["http_status"] = response.status_code
                 return payload
 
+            if endpoint == '/api/mfa/open-door/face-result':
+                return {'status': 'error', 'msg': str(exc), 'http_status': 502}
             print(f">>> [Security] v2 secure send failed, trying legacy fallback: {exc}")
             try:
                 return self._send_encrypted_legacy(endpoint, data_dict)
             except Exception as legacy_exc:
                 return {"status": "error", "msg": str(legacy_exc), "v2_error": str(exc)}
         except Exception as exc:
+            if endpoint == '/api/mfa/open-door/face-result':
+                return {'status': 'error', 'msg': str(exc), 'http_status': 502}
             print(f">>> [Security] v2 secure send failed, trying legacy fallback: {exc}")
             try:
                 return self._send_encrypted_legacy(endpoint, data_dict)
@@ -171,10 +175,17 @@ class NetworkTransmitter:
                 data["snapshot_image"] = base64.b64encode(buffer).decode("utf-8")
         return self._send_encrypted("/api/mfa/open-door/face-result", data)
 
-    def request_unlock_token(self, request_id, unlock_token=None):
-        data = {
-            "request_id": request_id,
-            "device_id": self.device_id,
-            "timestamp": int(time.time()),
-        }
-        return self._send_encrypted("/api/mfa/open-door/confirm", data, unlock_token=unlock_token)
+    def consume_unlock_token(self, unlock_token):
+        """Consume a browser-issued bearer capability; this is not GPIO acknowledgement."""
+        response = requests.post(
+            f'{self.remote_url}/api/lock/unlock-token/verify',
+            json={'device_id': self.device_id, 'unlock_token': unlock_token}, timeout=10)
+        response.raise_for_status()
+        return response.json()
+
+    def heartbeat(self, lock_status, **status):
+        return self._send_encrypted_v2('/api/device/heartbeat',
+                                       dict(status, device_id=self.device_id, lock_status=lock_status))
+
+    def sync_lock(self):
+        return self._send_encrypted_v2('/api/lock/sync', {'device_id': self.device_id})

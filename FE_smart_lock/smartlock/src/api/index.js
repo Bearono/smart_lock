@@ -16,14 +16,14 @@ api.interceptors.request.use(config => {
   return config
 })
 
-const PUBLIC_401_PATHS = ['/api/mfa/guest/verify', '/api/login/pre', '/api/login/mfa/verify', '/api/login/mfa/bind']
+const PUBLIC_401_PATHS = ['/api/mfa/guest/verify', '/api/lock/unlock-token/verify', '/api/mfa/open-door/', '/api/login/pre', '/api/login/mfa/verify', '/api/login/mfa/bind']
 
 api.interceptors.response.use(
   response => response,
   error => {
     const url = error.config?.url || ''
     const isPublic = PUBLIC_401_PATHS.some(p => url.includes(p))
-    if (error.response?.status === 401 && !isPublic) {
+    if (error.response?.status === 401 && (!isPublic || error.response?.data?.code === 'LOGIN_REQUIRED')) {
       localStorage.removeItem('token')
       window.location.href = '/'
     }
@@ -42,6 +42,7 @@ export const auth = USE_MOCK ? mockApi.auth : {
 }
 
 export const lock = USE_MOCK ? mockApi.lock : {
+  consumeToken: (unlockToken, deviceId) => api.post('/api/lock/unlock-token/verify', { unlock_token: unlockToken, device_id: deviceId }),
   getStatus: (deviceId = 'door_01') => api.get(`/api/lock/status?device_id=${deviceId}`),
   control: (action, deviceId = 'door_01') => api.post('/api/lock/control', { action, device_id: deviceId }),
   getHistory: (page = 1, perPage = 10) => api.get(`/api/lock/history?page=${page}&per_page=${perPage}`)
@@ -67,8 +68,8 @@ export const mfa = USE_MOCK ? mockApi.mfa : {
   sendFaceResult: (payload) => api.post('/api/mfa/open-door/face-result', payload),
   clearSnapshot: (snapshotPath) => api.post('/api/snapshot/clear', { snapshot: snapshotPath }),
   adminUnlock: (targetUsername) => api.post('/api/mfa/admin/device/unlock', { target_username: targetUsername }),
-  createGuest: (guestName, validHours = 24, maxUses = 1) =>
-    api.post('/api/mfa/guest/create', { guest_name: guestName, valid_hours: validHours, max_uses: maxUses }),
+  createGuest: (guestName, validHours = 24, maxUses = 1, deviceId) =>
+    api.post('/api/mfa/guest/create', { guest_name: guestName, valid_hours: validHours, max_uses: maxUses, device_id: deviceId }),
   verifyGuest: (passCode) => api.post('/api/mfa/guest/verify', { pass_code: passCode }),
   listGuest: () => api.get('/api/mfa/guest/list'),
   revokeGuest: (passId) => api.post(`/api/mfa/guest/revoke/${passId}`)

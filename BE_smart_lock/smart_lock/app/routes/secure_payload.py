@@ -93,7 +93,11 @@ def _decrypt_v2(packet: Dict[str, Any]) -> Dict[str, Any]:
     _remember(SEEN_REQUEST_IDS, request_id)
     _remember(SEEN_NONCES, nonce)
     business = json.loads(plaintext.decode("utf-8"))
-    business.setdefault("device_id", device_id)
+    if not isinstance(business, dict):
+        raise ValueError('Business payload must be an object')
+    if business.get('device_id', device_id) != device_id:
+        raise ValueError('Envelope/business device mismatch')
+    business['device_id'] = device_id
     business.setdefault("request_id", request_id)
     business.setdefault("timestamp", timestamp)
     if header.get("unlock_token"):

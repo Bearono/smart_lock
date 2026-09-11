@@ -31,7 +31,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from app import create_app, db, bcrypt  # noqa: E402
-from app.models import AccessLog, FaceRecognitionLog, MFACredential, User  # noqa: E402
+from app.models import (AccessLog, FaceRecognitionLog, MFACredential, User,
+                        LoginChallenge, AuthSession, UnlockToken, GuestPass)  # noqa: E402
+from client import test_totp_secret
 
 
 PERF_USER_PREFIX = os.environ.get("PERF_USER_PREFIX", "perf_user_")
@@ -96,6 +98,13 @@ def seed():
                 existing_device.failed_attempts = 0
                 existing_device.is_locked = False
 
+            totp = MFACredential.query.filter_by(user_id=user.id, credential_type='totp').first()
+            if not totp:
+                totp = MFACredential(user_id=user.id, credential_type='totp', credential_data='')
+                db.session.add(totp)
+            totp.credential_data = test_totp_secret(username)
+            totp.is_active = True
+
         _ensure_history_rows()
 
         db.session.commit()
@@ -136,6 +145,10 @@ def cleanup():
         usernames = [_username_for(i) for i in range(1, PERF_USER_COUNT + 1)]
         users = User.query.filter(User.username.in_(usernames)).all()
         user_ids = [u.id for u in users]
+
+        for model in (LoginChallenge, AuthSession, UnlockToken):
+            model.query.filter(model.user_id.in_(user_ids)).delete(synchronize_session=False)
+        GuestPass.query.filter(GuestPass.created_by.in_(user_ids)).delete(synchronize_session=False)
 
         removed_creds = MFACredential.query.filter(
             MFACredential.user_id.in_(user_ids)

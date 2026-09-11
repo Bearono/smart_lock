@@ -2,6 +2,18 @@ from app import db
 from datetime import datetime
 
 
+class LoginChallenge(db.Model):
+    __tablename__ = 'login_challenges'
+    id = db.Column(db.Integer, primary_key=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    credential_id = db.Column(db.Integer, db.ForeignKey('mfa_credentials.id'), nullable=False)
+    binding = db.Column(db.Boolean, nullable=False)
+    attempts = db.Column(db.Integer, default=0, nullable=False)
+    consumed = db.Column(db.Boolean, default=False, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+
 # 1. 用户表
 class User(db.Model):
     __tablename__ = 'users'
@@ -34,16 +46,18 @@ class Device(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.String(50), unique=True, nullable=False)
     status = db.Column(db.String(20), default="LOCKED")
+    reported_status = db.Column(db.String(20), default='UNKNOWN')
     battery = db.Column(db.Integer, default=100)
     camera_status = db.Column(db.String(20), default="UNKNOWN")
     ip_address = db.Column(db.String(45))
     is_online = db.Column(db.Boolean, default=False)
-    last_update = db.Column(db.DateTime, default=datetime.now)
+    last_update = db.Column(db.DateTime)
 
     def to_dict(self):
         return {
             'device_id': self.device_id,
             'status': self.status,
+            'reported_status': self.reported_status,
             'battery': self.battery,
             'camera_status': self.camera_status,
             'ip_address': self.ip_address,
@@ -113,6 +127,8 @@ class AuthSession(db.Model):
     request_id = db.Column(db.String(64), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     nonce = db.Column(db.String(64), nullable=False)
+    device_id = db.Column(db.String(50))
+    requires_totp = db.Column(db.Boolean, default=False)
     status = db.Column(db.String(20), default='pending')  # pending, face_verified, totp_required, completed, failed
     device_verified = db.Column(db.Boolean, default=False)
     face_verified = db.Column(db.Boolean, default=False)
@@ -130,6 +146,7 @@ class UnlockToken(db.Model):
     token = db.Column(db.String(128), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     request_id = db.Column(db.String(64), nullable=False)
+    device_id = db.Column(db.String(50))
     is_used = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.now)
     expires_at = db.Column(db.DateTime, nullable=False)
@@ -142,6 +159,7 @@ class GuestPass(db.Model):
     pass_code = db.Column(db.String(128), unique=True, nullable=False)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     guest_name = db.Column(db.String(80))
+    device_id = db.Column(db.String(50))
     valid_from = db.Column(db.DateTime, nullable=False)
     valid_until = db.Column(db.DateTime, nullable=False)
     max_uses = db.Column(db.Integer, default=1)
@@ -153,6 +171,7 @@ class GuestPass(db.Model):
         return {
             'id': self.id,
             'guest_name': self.guest_name,
+            'device_id': self.device_id,
             'valid_from': self.valid_from.isoformat() if self.valid_from else None,
             'valid_until': self.valid_until.isoformat() if self.valid_until else None,
             'max_uses': self.max_uses,

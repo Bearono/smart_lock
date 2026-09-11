@@ -13,15 +13,14 @@
         />
         <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
         <button :disabled="isLoading || !passCode">
-          {{ isLoading ? 'Verifying...' : 'Verify and Unlock' }}
+          {{ isLoading ? 'Working...' : (credential ? 'Retry command' : 'Verify and request unlock') }}
         </button>
         <p class="link" @click="backToLogin">Back to login</p>
       </form>
 
       <div v-else class="success-box">
-        <p class="success">Door unlocked</p>
-        <p class="hint">This token is valid for {{ expiresIn }} seconds.</p>
-        <p class="mono small">{{ unlockToken }}</p>
+        <p class="success">Unlock command accepted</p>
+        <p class="hint">Hardware execution has not been confirmed.</p>
         <button @click="reset">Verify another code</button>
         <p class="link" @click="backToLogin">Back to login</p>
       </div>
@@ -30,7 +29,8 @@
 </template>
 
 <script>
-import { mfa } from '../api/index'
+import { mfa, lock } from '../api/index'
+import { consumeDoorToken } from '../api/doorFlow'
 
 export default {
   name: 'GuestVerify',
@@ -40,12 +40,12 @@ export default {
       isLoading: false,
       errorMsg: '',
       unlocked: false,
-      unlockToken: '',
-      expiresIn: 0
+      credential: null
     }
   },
   methods: {
     async handleVerify() {
+      if (this.isLoading) return
       this.errorMsg = ''
       const code = this.passCode.trim()
       if (!code) {
@@ -54,12 +54,16 @@ export default {
       }
       this.isLoading = true
       try {
-        const res = await mfa.verifyGuest(code)
-        this.unlockToken = res.data.unlock_token
-        this.expiresIn = res.data.expires_in || 60
+        if (!this.credential) {
+          const res = await mfa.verifyGuest(code)
+          this.credential = res.data
+        }
+        await consumeDoorToken(this.credential, lock.consumeToken)
+        this.credential = null
         this.unlocked = true
       } catch (error) {
-        this.errorMsg = error?.response?.data?.msg || 'Verify failed'
+        this.errorMsg = error?.response?.data?.msg || error.message || 'Verify failed'
+        if (error?.response && error.response.status < 500) this.credential = null
       } finally {
         this.isLoading = false
       }
@@ -67,8 +71,7 @@ export default {
     reset() {
       this.passCode = ''
       this.unlocked = false
-      this.unlockToken = ''
-      this.expiresIn = 0
+      this.credential = null
       this.errorMsg = ''
     },
     backToLogin() {

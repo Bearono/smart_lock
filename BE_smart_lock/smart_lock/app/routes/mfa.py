@@ -1,7 +1,9 @@
 import os
+import math
 import requests
 from flask import Blueprint, request, jsonify, current_app
 from app import db
+from app.door_auth import device_binding, record_failure, reset_failures
 from app.models import (
     AccessLog,
     AuthSession,
@@ -22,6 +24,10 @@ from .secure_payload import decrypt_secure_payload
 from .security_protocol import PROTOCOL_VERSION
 
 mfa_bp = Blueprint('mfa', __name__)
+
+
+class DeviceUnavailable(RuntimeError):
+    """Only connection failures may leave a development challenge pending."""
 
 
 # ==================== TOTP 绑定、解绑与状态 ====================
@@ -71,7 +77,7 @@ def bind_totp():
 @jwt_required()
 def verify_totp():
     """验证TOTP码（用于绑定确认或开门认证）"""
-    data = request.get_json()
+    data = request.get_json() or {}
     code = data.get('code')
     credential_id = data.get('credential_id')  # 绑定时需要
 
@@ -166,8 +172,10 @@ def unbind_totp():
 @jwt_required()
 def bind_device():
     """绑定设备（存储设备ID和公钥）"""
-    data = request.get_json()
+    data = request.get_json() or {}
     device_id = data.get('device_id')
+    if not isinstance(device_id, str) or not device_id or len(device_id) > 50:
+        return jsonify(msg='Valid device_id is required'), 400
     device_pubkey = data.get('device_pubkey')  # 设备公钥（可选）
 
     username = get_jwt_identity()
@@ -178,10 +186,12 @@ def bind_device():
         user_id=user.id,
         credential_type='device',
         device_id=device_id,
-        is_active=True
-    ).first()
+    ).order_by(MFACredential.is_locked.desc(), MFACredential.id.asc()).first()
     if existing:
-        return jsonify({"msg": "Device already bound"}), 400
+        # Rebinding must never reset a security lockout.
+        existing.is_active = True
+        db.session.commit()
+        return jsonify({"msg": "Device bound successfully"}), 200
 
     credential = MFACredential(
         user_id=user.id,
@@ -209,16 +219,22 @@ def unbind_device():
     if not user:
         return jsonify({"msg": "User not found"}), 404
 
-    credential = MFACredential.query.filter_by(
+    credentials = MFACredential.query.filter_by(
         user_id=user.id,
         credential_type='device',
         device_id=device_id,
         is_active=True,
-    ).first()
-    if not credential:
+    )
+    if not credentials.first():
         return jsonify({"msg": "Device binding not found"}), 404
 
-    credential.is_active = False
+    credentials.update({MFACredential.is_active: False}, synchronize_session=False)
+    AuthSession.query.filter_by(user_id=user.id, device_id=device_id).update(
+        {AuthSession.status: 'failed'}, synchronize_session=False)
+    UnlockToken.query.filter_by(user_id=user.id, device_id=device_id).update(
+        {UnlockToken.is_used: True}, synchronize_session=False)
+    GuestPass.query.filter_by(created_by=user.id, device_id=device_id).update(
+        {GuestPass.is_active: False}, synchronize_session=False)
     db.session.commit()
 
     return jsonify({"msg": "Device unbound successfully"}), 200
@@ -230,19 +246,16 @@ def unbind_device():
 @jwt_required()
 def open_door_request():
     """发起开门请求（拦截已锁定设备）"""
-    data = request.get_json()
+    data = request.get_json() or {}
     device_id = data.get('device_id')
+    if not isinstance(device_id, str) or not device_id or len(device_id) > 50:
+        return jsonify(msg='Valid device_id is required'), 400
 
     username = get_jwt_identity()
     user = User.query.filter_by(username=username).first()
 
     # 验证设备绑定
-    device_bound = MFACredential.query.filter_by(
-        user_id=user.id,
-        credential_type='device',
-        device_id=device_id,
-        is_active=True
-    ).first()
+    device_bound = device_binding(user.id, device_id)
     if not device_bound:
         return jsonify({"msg": "Device not bound"}), 403
 
@@ -261,10 +274,13 @@ def open_door_request():
     request_id = secrets.token_hex(32)
     nonce = secrets.token_hex(32)
 
+    required_factors = evaluate_mfa_policy(user.id)
     session = AuthSession(
         request_id=request_id,
         user_id=user.id,
         nonce=nonce,
+        device_id=device_id,
+        requires_totp='totp' in required_factors,
         status='pending',
         device_verified=True,  # 设备已验证
         expires_at=datetime.now() + timedelta(minutes=5)
@@ -279,6 +295,15 @@ def open_door_request():
     if 'face' in required_factors:
         try:
             device_dispatch = _dispatch_face_challenge(device_id, request_id, nonce)
+        except DeviceUnavailable as exc:
+            if not current_app.config['DEVICE_DISPATCH_REQUIRED']:
+                # No synthetic face success: a simulator must submit an authenticated v2 result.
+                return jsonify(msg='Auth session pending encrypted face result', request_id=request_id,
+                               nonce=nonce, requires_face=True, requires_totp=session.requires_totp,
+                               device_dispatch={'status': 'pending', 'detail': str(exc)}), 200
+            session.status = 'failed'
+            db.session.commit()
+            return jsonify(msg=str(exc), code='DEVICE_DISPATCH_FAILED'), 502
         except RuntimeError as exc:
             session.status = 'failed'
             db.session.add(FaceRecognitionLog(
@@ -312,7 +337,7 @@ def receive_face_result():
     raw = request.get_json() or {}
 
     # 强制要求 v2 加密信封：拒绝明文与旧版 ECC 兼容包
-    if raw.get('header', {}).get('version') != PROTOCOL_VERSION:
+    if not isinstance(raw.get('header'), dict) or raw['header'].get('version') != PROTOCOL_VERSION:
         return jsonify({"msg": "Encrypted v2 payload required"}), 401
 
     try:
@@ -322,12 +347,12 @@ def receive_face_result():
 
     request_id = data.get('request_id')
     face_user_id = data.get('face_user_id')
+    if face_user_id is not None and not isinstance(face_user_id, str):
+        return jsonify(msg='face_user_id must be a string or null'), 400
     similarity_score = data.get('similarity_score')
     device_id = data.get('device_id')
     session_nonce = data.get('session_nonce')
     snapshot_path = data.get('snapshot')
-    if not snapshot_path and data.get('snapshot_image'):
-        snapshot_path = save_snapshot_image(data.get('snapshot_image'), prefix=f"face_{device_id or 'device'}")
 
     # 查找认证会话
     session = AuthSession.query.filter_by(request_id=request_id).first()
@@ -336,6 +361,24 @@ def receive_face_result():
 
     if session.status != 'pending':
         return jsonify({"msg": "Session already processed"}), 400
+    if not session.expires_at or session.expires_at <= datetime.now():
+        return jsonify(msg='Authentication session expired'), 410
+    if not session.device_id or session.device_id != device_id:
+        return jsonify(msg='Device does not match authentication session'), 403
+    user = db.session.get(User, session.user_id)
+    binding = device_binding(session.user_id, device_id)
+    if not user or user.status != 'approved' or not binding or binding.is_locked:
+        return jsonify(msg='Device or account authorization revoked'), 403
+    if (not isinstance(similarity_score, (int, float)) or isinstance(similarity_score, bool)
+            or not math.isfinite(similarity_score) or not -1 <= similarity_score <= 1):
+        return jsonify(msg='Invalid similarity_score'), 400
+    claimed = AuthSession.query.filter(
+        AuthSession.id == session.id, AuthSession.status == 'pending',
+        AuthSession.expires_at > datetime.now(),
+    ).update({AuthSession.status: 'processing'}, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify(msg='Session already processed or expired'), 409
 
     # 校验 nonce：Pi 必须回传 open-door/request 阶段签发的 session.nonce
     if not session_nonce or session_nonce != session.nonce:
@@ -343,26 +386,27 @@ def receive_face_result():
         db.session.add(FaceRecognitionLog(
             request_id=request_id,
             device_id=device_id,
-            expected_username=session.user.username if session.user else None,
+            expected_username=user.username,
             face_user_id=face_user_id,
             similarity_score=similarity_score,
             passed=False,
             failure_reason='session_nonce_mismatch',
         ))
+        record_failure(user.id, device_id)
         db.session.commit()
         return jsonify({"msg": "Session nonce mismatch"}), 401
 
     # 验证人脸结果
-    user = User.query.get(session.user_id)
     normalized_face_user_id = _normalize_face_user_id(face_user_id)
-    # 0.90 对应 dlib face_recognition 建议的"严格"档：
-    # 同一人日常波动 0.90+；不同人相似五官上限 ~0.75。门锁属于严格场景。
+    # Project threshold; accuracy and spoof resistance require independent evaluation.
     FACE_MATCH_THRESHOLD = 0.90
     passed = (
         normalized_face_user_id == user.username
         and similarity_score is not None
         and similarity_score >= FACE_MATCH_THRESHOLD
     )
+    if not snapshot_path and data.get('snapshot_image'):
+        snapshot_path = save_snapshot_image(data.get('snapshot_image'), prefix='face')
     db.session.add(FaceRecognitionLog(
         request_id=request_id,
         device_id=device_id,
@@ -381,17 +425,17 @@ def receive_face_result():
         session.status = 'face_verified'
         db.session.commit()
 
-        required_factors = evaluate_mfa_policy(user.id)
         return jsonify({
             "msg": "Face verified",
-            "requires_totp": 'totp' in required_factors,
+            "requires_totp": session.requires_totp,
             "snapshot": snapshot_path,
             "snapshot_url": snapshot_path,
         }), 200
     else:
         session.status = 'failed'
         # ================= 新增：人脸验证失败，增加失败计数 =================
-        _record_auth_failure(user.id)
+        record_failure(user.id, device_id)
+        db.session.commit()
         # ==============================================================
         return jsonify({
             "msg": "Face verification failed",
@@ -404,7 +448,7 @@ def receive_face_result():
 @jwt_required()
 def open_door_confirm():
     """确认开门（汇总所有因子，签发开门令牌）"""
-    data = request.get_json()
+    data = request.get_json() or {}
     request_id = data.get('request_id')
     totp_code = data.get('totp_code')  # 如果需要TOTP
 
@@ -416,11 +460,21 @@ def open_door_confirm():
     if not session:
         return jsonify({"msg": "Invalid session"}), 404
 
+    if not session.expires_at or session.expires_at <= datetime.now():
+        return jsonify(msg='Authentication session expired'), 410
+    if session.status == 'completed':
+        return jsonify(msg='Authentication session already completed'), 409
+    binding = device_binding(user.id, session.device_id)
+    if not binding or binding.is_locked:
+        return jsonify(msg='Device authorization revoked or locked'), 403
+
     if session.status == 'failed':
         return jsonify({"msg": "Authentication failed"}), 401
 
-    # 获取当前场景下的 MFA 安全策略
-    required_factors = evaluate_mfa_policy(user.id)
+    # Use the policy fixed when the challenge was created, including across clock boundaries.
+    required_factors = ['device', 'face']
+    if session.requires_totp:
+        required_factors.append('totp')
 
     # 1. 核验生物因子 (人脸)
     if 'face' in required_factors and not session.face_verified:
@@ -441,18 +495,30 @@ def open_door_confirm():
             credential_type='totp',
             is_active=True
         ).first()
+        if not credential:
+            return jsonify(msg='TOTP credential no longer active'), 403
         totp = pyotp.TOTP(credential.credential_data)
         if not totp.verify(totp_code, valid_window=1):
-            session.status = 'failed'
+            claimed = AuthSession.query.filter_by(id=session.id, status='face_verified').update(
+                {AuthSession.status: 'failed'}, synchronize_session=False)
             # ================= 新增：TOTP验证失败，增加失败计数 =================
-            _record_auth_failure(user.id)
+            if claimed:
+                record_failure(user.id, session.device_id)
+            db.session.commit()
             # ================================================================
             return jsonify({"msg": "Invalid TOTP code"}), 401
 
         session.totp_verified = True
 
     # ================= 新增：所有安全因子验证成功，重置失败计数 =================
-    _reset_auth_failures(user.id)
+    claimed = AuthSession.query.filter(
+        AuthSession.id == session.id, AuthSession.status == 'face_verified',
+        AuthSession.expires_at > datetime.now(),
+    ).update({AuthSession.status: 'completed'}, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify(msg='Authentication session already processed or expired'), 409
+    reset_failures(user.id, session.device_id)
     # =========================================================================
 
     # 所有因子验证通过，签发开门令牌
@@ -461,21 +527,20 @@ def open_door_confirm():
         token=token,
         user_id=user.id,
         request_id=request_id,
+        device_id=session.device_id,
         expires_at=datetime.now() + timedelta(seconds=60)
     )
     db.session.add(unlock_token)
 
-    session.status = 'completed'
-    db.session.commit()
-
     # 记录访问日志
-    log = AccessLog(action='UNLOCK', username=username)
+    log = AccessLog(action='UNLOCK_TOKEN_ISSUED', username=username)
     db.session.add(log)
     db.session.commit()
 
     return jsonify({
         "msg": "Authentication successful",
         "unlock_token": token,
+        "device_id": session.device_id,
         "expires_in": 60
     }), 200
 
@@ -498,19 +563,17 @@ def admin_unlock_device():
     if not target_user:
         return jsonify({"msg": "Target user not found"}), 404
 
-    device_cred = MFACredential.query.filter_by(
+    device_creds = MFACredential.query.filter_by(
         user_id=target_user.id, credential_type='device'
-    ).first()
+    ).all()
 
-    if not device_cred:
+    if not device_creds:
         return jsonify({"msg": "No device bound to this user"}), 404
 
-    if not getattr(device_cred, 'is_locked', False):
-        return jsonify({"msg": "Device is not locked"}), 200
-
     # 执行解锁
-    device_cred.failed_attempts = 0
-    device_cred.is_locked = False
+    for device_cred in device_creds:
+        device_cred.failed_attempts = 0
+        device_cred.is_locked = False
     db.session.commit()
 
     log = AccessLog(action=f'ADMIN_UNLOCK_DEVICE_FOR_{target_username}', username=admin_name)
@@ -524,13 +587,20 @@ def admin_unlock_device():
 @jwt_required()
 def create_guest_pass():
     """创建访客临时授权"""
-    data = request.get_json()
+    data = request.get_json() or {}
+    device_id = data.get('device_id')
     guest_name = data.get('guest_name')
     valid_hours = data.get('valid_hours', 24)
     max_uses = data.get('max_uses', 1)
 
     username = get_jwt_identity()
     user = User.query.filter_by(username=username).first()
+    binding = device_binding(user.id, device_id)
+    if not binding or binding.is_locked:
+        return jsonify(msg='Active device binding required'), 403
+    if (type(valid_hours) is not int or not 1 <= valid_hours <= 168
+            or type(max_uses) is not int or not 1 <= max_uses <= 100):
+        return jsonify(msg='valid_hours must be 1-168 and max_uses 1-100'), 400
 
     # 生成授权码
     pass_code = secrets.token_urlsafe(16)
@@ -540,6 +610,7 @@ def create_guest_pass():
         pass_code=pass_hash,
         created_by=user.id,
         guest_name=guest_name,
+        device_id=device_id,
         valid_from=datetime.now(),
         valid_until=datetime.now() + timedelta(hours=valid_hours),
         max_uses=max_uses
@@ -558,14 +629,20 @@ def create_guest_pass():
 @mfa_bp.route('/mfa/guest/verify', methods=['POST'])
 def verify_guest_pass():
     """验证访客授权码并开门"""
-    data = request.get_json()
+    data = request.get_json() or {}
     pass_code = data.get('pass_code')
+    if not isinstance(pass_code, str) or not pass_code:
+        return jsonify(msg='pass_code is required'), 400
 
     pass_hash = hashlib.sha256(pass_code.encode()).hexdigest()
     guest_pass = GuestPass.query.filter_by(pass_code=pass_hash, is_active=True).first()
 
     if not guest_pass:
         return jsonify({"msg": "Invalid pass code"}), 401
+    owner = db.session.get(User, guest_pass.created_by)
+    binding = device_binding(guest_pass.created_by, guest_pass.device_id)
+    if not owner or owner.status != 'approved' or not binding or binding.is_locked:
+        return jsonify(msg='Guest authorization revoked'), 403
 
     # 检查有效期
     now = datetime.now()
@@ -576,27 +653,35 @@ def verify_guest_pass():
     if guest_pass.used_count >= guest_pass.max_uses:
         return jsonify({"msg": "Pass code usage limit reached"}), 401
 
+    claimed = GuestPass.query.filter(
+        GuestPass.id == guest_pass.id, GuestPass.is_active.is_(True),
+        GuestPass.valid_from <= now, GuestPass.valid_until > now,
+        GuestPass.used_count < GuestPass.max_uses,
+    ).update({GuestPass.used_count: GuestPass.used_count + 1}, synchronize_session=False)
+    if not claimed:
+        db.session.rollback()
+        return jsonify(msg='Guest pass expired, revoked or exhausted'), 409
+
     # 签发开门令牌
     token = secrets.token_urlsafe(64)
     unlock_token = UnlockToken(
         token=token,
         user_id=guest_pass.created_by,
         request_id=f"guest_{guest_pass.id}",
+        device_id=guest_pass.device_id,
         expires_at=datetime.now() + timedelta(seconds=60)
     )
     db.session.add(unlock_token)
 
-    guest_pass.used_count += 1
-    db.session.commit()
-
     # 记录访问日志
-    log = AccessLog(action='GUEST_UNLOCK', username=guest_pass.guest_name or 'Guest')
+    log = AccessLog(action='GUEST_TOKEN_ISSUED', username=guest_pass.guest_name or 'Guest')
     db.session.add(log)
     db.session.commit()
 
     return jsonify({
         "msg": "Guest pass verified",
         "unlock_token": token,
+        "device_id": guest_pass.device_id,
         "expires_in": 60
     }), 200
 
@@ -620,7 +705,7 @@ def revoke_guest_pass(pass_id):
     username = get_jwt_identity()
     user = User.query.filter_by(username=username).first()
 
-    guest_pass = GuestPass.query.get(pass_id)
+    guest_pass = db.session.get(GuestPass, pass_id)
     if not guest_pass or guest_pass.created_by != user.id:
         return jsonify({"msg": "Pass not found"}), 404
 
@@ -642,41 +727,9 @@ def evaluate_mfa_policy(user_id):
     is_deep_night = current_hour >= 22 or current_hour < 6
 
     if is_deep_night:
-        has_totp = MFACredential.query.filter_by(
-            user_id=user_id,
-            credential_type='totp',
-            is_active=True
-        ).first()
-
-        if has_totp:
-            required_factors.append('totp')
+        required_factors.append('totp')
 
     return required_factors
-
-
-def _record_auth_failure(user_id):
-    """处理认证失败：增加失败次数，达到5次则锁定设备"""
-    device_cred = MFACredential.query.filter_by(
-        user_id=user_id, credential_type='device'
-    ).first()
-
-    if device_cred:
-        device_cred.failed_attempts = getattr(device_cred, 'failed_attempts', 0) + 1
-        if device_cred.failed_attempts >= 5:
-            device_cred.is_locked = True
-    db.session.commit()
-
-
-def _reset_auth_failures(user_id):
-    """认证成功：重置失败次数归零"""
-    device_cred = MFACredential.query.filter_by(
-        user_id=user_id, credential_type='device'
-    ).first()
-
-    if device_cred and getattr(device_cred, 'failed_attempts', 0) > 0:
-        device_cred.failed_attempts = 0
-        device_cred.is_locked = False
-        db.session.commit()
 
 
 def _resolve_device_service_base(device_id):
@@ -714,8 +767,10 @@ def _dispatch_face_challenge(device_id, request_id, nonce):
             json={"request_id": request_id, "nonce": nonce},
             timeout=current_app.config['DEVICE_SERVICE_TIMEOUT'],
         )
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        raise DeviceUnavailable(f"Failed to reach device service for {device_id}: {exc}") from exc
     except requests.RequestException as exc:
-        raise RuntimeError(f"Failed to reach device service for {device_id}: {exc}") from exc
+        raise RuntimeError(f"Device dispatch failed for {device_id}: {exc}") from exc
 
     # 网关（树莓派）返回非 2xx 时，把它 JSON 里的 message/detail 抽出来一起抛，
     # 前端拿到的 502 才有根因，而不是只有一个 "500 Server Error"。

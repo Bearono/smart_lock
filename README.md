@@ -1,187 +1,109 @@
 # Smart Lock
 
-智能门锁摄像头项目，包含后端服务、前端界面、树莓派端网关/摄像头程序以及人脸识别相关代码。项目支持账号登录、TOTP 多因素认证、设备绑定、摄像头人脸校验、开门令牌、访客通行码、告警记录、设备心跳和门锁状态管理。
+智能门锁演示项目，包含 Flask 后端、Vue 2 前端、树莓派摄像头网关与人脸识别工具。
 
-本项目用于智能门锁摄像头系统的本地开发、联调与功能演示。
+## 项目结构
 
-## 目录结构
+| 目录 | 用途 |
+| --- | --- |
+| `BE_smart_lock/smart_lock/app` | 数据模型、登录 MFA、设备授权、访客授权、安全通信与日志 |
+| `FE_smart_lock/smartlock/src` | 登录、控制台、访客页面与 Axios 接口 |
+| `paspberry_pi/app.py` | 设备主入口；监听 5000，处理摄像头与人脸挑战 |
+| `paspberry_pi/cv/code` | 人脸录入、128 维特征提取、模板比对及基准测试 |
+| `paspberry_pi/cv/code/gateway` | 旧入口兼容包装，调用上面的同一套设备实现 |
+| `wanganCV` | 独立人脸实验工具与 FastAPI 检测服务 |
+| `BE_smart_lock/smart_lock/tests` | 隔离回归测试与性能工具 |
 
-```text
-.
-├── BE_smart_lock/              # 后端 Flask 服务
-│   └── smart_lock/
-│       ├── app/                # 应用代码、模型、路由
-│       ├── config.py           # 后端配置
-│       ├── requirements.txt    # Python 依赖
-│       └── run.py              # 后端启动入口
-├── FE_smart_lock/              # 前端项目
-│   └── smartlock/              # Vue 2 前端源码
-├── paspberry_pi/               # 树莓派端摄像头/网关代码
-├── wanganCV/                   # 人脸识别相关代码
-└── API_DOCUMENTATION.md        # 前后端接口文档
-```
+## 启动后端与前端
 
-## 技术栈
-
-- 后端：Flask、Flask-SQLAlchemy、Flask-JWT-Extended、Flask-Bcrypt、PyMySQL、pyotp、cryptography
-- 前端：Vue 2、Vue Router、Axios、Vue CLI
-- 数据库：默认 SQLite，支持通过 `DATABASE_URL` 切换到 MySQL
-- 设备端：树莓派摄像头采集、人脸识别结果上报、门锁控制联动
-
-## 后端启动
-
-进入后端目录：
+建议使用 Python 3.11。不要依赖仓库内历史提交的 `venv`，它包含其他机器的绝对路径。
 
 ```powershell
-cd BE_smart_lock\smart_lock
-```
-
-创建并激活 Python 虚拟环境：
-
-```powershell
+cd BE_smart_lock/smart_lock
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-安装依赖：
-
-```powershell
 pip install -r requirements.txt
-```
-
-启动服务：
-
-```powershell
+$env:JWT_SECRET_KEY = '<固定的随机密钥>'
+$env:ADMIN_PASSWORD = '<首次启动管理员密码>'
 python run.py
 ```
 
-默认监听地址：
-
-```text
-http://localhost:8000
-```
-
-后端启动时会自动创建数据库表。默认数据库文件为 Flask instance 目录下的 `smart_lock.db`。
-
-## 后端环境变量
-
-| 变量名 | 说明 | 默认值 |
-| --- | --- | --- |
-| `DATABASE_URL` | 数据库连接地址，例如 MySQL 可使用 `mysql+pymysql://user:password@host:3306/dbname?charset=utf8mb4` | `sqlite:///smart_lock.db` |
-| `JWT_SECRET_KEY` | JWT 签名密钥，生产环境必须固定配置 | 随机生成 |
-| `DEVICE_DISPATCH_REQUIRED` | 人脸挑战下发失败时是否直接报错。联调阶段建议 `false`，无树莓派也可走通流程 | `false` |
-| `SMART_LOCK_DEVICE_URL` | 默认设备端服务地址，用于后端下发人脸挑战 | 空 |
-| `SMART_LOCK_DEVICE_URL_<DEVICE_ID>` | 指定设备的服务地址，例如 `SMART_LOCK_DEVICE_URL_LOCK_1` | 空 |
-| `ADMIN_USERNAME` | 启动时自动创建/迁移的管理员账号名 | `admin` |
-| `ADMIN_PASSWORD` | 默认管理员密码（首启动有效，请改后再上线） | `admin123` |
-
-联调阶段如果还没有树莓派端服务，可以保持：
+后端默认 `http://localhost:8000`。启动会创建表、补齐兼容字段及初始化管理员。旧的无设备绑定认证会话、开门令牌、访客码不可继续使用；需重新发起认证或创建访客码。旧 JWT 不含 MFA 登录标记，也必须重新登录。数据库升级前请备份。
 
 ```powershell
-$env:DEVICE_DISPATCH_REQUIRED = "false"
-```
-
-这样 `/api/mfa/open-door/request` 在设备派发失败时会走开发兜底，方便前端先完成流程联调。正式接入设备后建议改为：
-
-```powershell
-$env:DEVICE_DISPATCH_REQUIRED = "true"
-```
-
-## 前端启动
-
-进入前端目录：
-
-```powershell
-cd FE_smart_lock\smartlock
-```
-
-安装依赖：
-
-```powershell
+cd FE_smart_lock/smartlock
 npm ci
-```
-
-启动开发服务：
-
-```powershell
 npm run serve
 ```
 
-构建生产包：
+前端通过 `.env.local` 中的 `VUE_APP_API_BASE=http://<后端IP>:8000` 指定后端，视频与 API 使用相同地址。
 
-```powershell
-npm run build
+## 登录和开门
+
+1. 新注册用户为 `pending`，由管理员在 Admin 页面批准。初始管理员用户名默认为 `admin`。
+2. `/api/login` 和 `/api/login/pre` 都只返回短期登录挑战。首次登录绑定 TOTP，之后使用 TOTP 完成登录。没有密码直通 JWT 的入口。
+3. 登录后绑定目标设备；设备服务的 `SMART_LOCK_DEVICE_ID` 必须与绑定 ID 一致。
+4. 发起开门请求，后端保存设备 ID、有效期、nonce 和本次所需因子，再派发人脸挑战。
+5. 设备完成识别，通过 SPAKE2 + AES-CBC + HMAC 上报人脸结果。后端核对设备、nonce、身份、分数与有效期。
+6. 前端确认认证，获得一次性、绑定设备、60 秒有效的令牌，再调用消费接口。
+
+**令牌签发不等于开门。** 消费成功只表示后端接受开门指令并更新目标状态。当前仓库没有 GPIO 执行器及命令级硬件回执，页面会明确显示硬件执行尚未确认。心跳中的实际状态与后端目标状态分开保存。
+
+夜间 22:00–06:00 创建的认证会话要求额外输入 TOTP；该策略在本次会话有效期内保持不变。连续五次失败锁定对应用户与设备的绑定，解绑重绑不会清除锁定；管理员可解除。解绑会使已有会话、令牌和访客授权失效。
+
+## 设备与人脸录入
+
+```bash
+cd paspberry_pi
+pip install -r cv/code/gateway/requirements.txt
+# 设置 BACKEND_URL、SMART_LOCK_DEVICE_ID、SMART_LOCK_DEVICE_PASSWORD
+python app.py
 ```
-
-前端默认请求后端：
-
-```text
-http://localhost:8000
-```
-
-如需修改后端地址，可在前端目录创建 `.env.local`：
-
-```text
-VUE_APP_API_BASE=http://localhost:8000
-```
-
-## 常用联调流程
-
-1. 启动后端：`BE_smart_lock\smart_lock\run.py`
-2. 启动前端：`FE_smart_lock\smartlock` 下执行 `npm run serve`
-3. 使用默认管理员账号登录：`admin / admin123`（可通过环境变量 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 覆盖）
-4. 普通用户注册：`POST /api/register`（落库为 `pending`，需要 admin 批准后才能登录）
-5. admin 在前端 Admin 面板批准用户
-6. 用户登录走预登录：`POST /api/login/pre`
-7. 按返回的 TOTP 密钥绑定 MFA：`POST /api/login/mfa/bind`
-8. 登录后绑定设备：`POST /api/mfa/bind/device`
-9. 发起开门认证：`POST /api/mfa/open-door/request`
-10. 确认开门并获取开门令牌：`POST /api/mfa/open-door/confirm`
-
-完整接口字段请查看 [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)。
-
-## 录入人脸模板
-
-第一次使用真人识别需要先生成你自己的人脸模板（替换示例模板 `template_user_001.npy`）：
 
 ```bash
 cd paspberry_pi/cv/code
-python enroll_face.py --user <你的用户名>
-# 预览窗口出现后，正脸对准摄像头，按 SPACE 拍 8 张；按 q 提前退出
+python enroll_face.py --user <后端用户名>
+python enroll_face.py --user <后端用户名> --headless --samples 8
 ```
 
-无显示器场景（树莓派 SSH）：
+模板保存到 `paspberry_pi/cv/code/data/templates/templates/`。录入后重启设备服务，或向设备的 `/reload_templates` 发送 POST。用户名必须与后端账号一致，可用 `SMART_LOCK_FACE_ID_MAP=源ID=目标用户名` 配置映射。
 
-```bash
-python enroll_face.py --user <你的用户名> --headless --samples 8
-```
+摄像头失败默认报错。仅显式设置 `SMART_LOCK_ALLOW_TEST_IMAGES=true` 时才允许设备读取测试图片；这不是活体检测。当前没有实现活体算法。
 
-录入完成后会保存到 `data/templates/templates/template_<用户名>.npy`。注意 **用户名必须与后端注册账号完全一致**，否则后端 `face_user_id` 比对失败。模板在网关进程内缓存，新模板生效有两种方式：
+## 主要配置
 
-- 重启 `paspberry_pi/app.py`
-- 或调用 `POST http://<树莓派IP>:5000/reload_templates` 在线刷新
+| 变量 | 默认 / 用途 |
+| --- | --- |
+| `DATABASE_URL` | `sqlite:///smart_lock.db`；可指定 MySQL URL |
+| `JWT_SECRET_KEY` | 默认随机；稳定运行需固定 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin123`；仅用于管理员初始化 |
+| `DEVICE_DISPATCH_REQUIRED` | `true`；设备无法连接则认证请求失败 |
+| `SMART_LOCK_DEVICE_URL` | 后端访问设备的固定 URL，优先于心跳 IP |
+| `SMART_LOCK_DEVICE_URL_<大写设备ID>` | 单设备 URL 覆盖 |
+| `SMART_LOCK_DEVICE_PASSWORD` | 两端共享设备口令；请替换演示默认值 |
+| `SMART_LOCK_PASSWORD_<设备ID>` | 后端单设备口令覆盖 |
+| `BACKEND_URL` | 设备端访问后端的 URL |
+| `SMART_LOCK_DEVICE_ID` | 设备端 ID，默认 `door_01` |
 
-## 代码检查
+无摄像头联调可设置 `DEVICE_DISPATCH_REQUIRED=false`。**只有连接失败或超时**会留下等待状态；仍必须通过测试客户端提交合法加密人脸结果，不会自动通过人脸认证。设备明确拒绝、识别失败或返回无效响应均失败。模拟测试口令和账号仅用于隔离环境。
 
-后端基础检查：
+目前安全通信会话及防重放缓存为单进程内存结构，多进程部署需要进一步迁移共享会话存储。SQLite 并发写有局限；回归测试覆盖 SQLite 的并发争用，未覆盖 MySQL 部署。默认 `run.py` 是开发服务器。
+
+## 验证
 
 ```powershell
-$env:PYTHONDONTWRITEBYTECODE = "1"
-$env:PYTHONPATH = "BE_smart_lock\smart_lock"
-python -B -c "from app import create_app; app = create_app(); print('app created', len(app.url_map._rules))"
+cd BE_smart_lock/smart_lock
+python -B -m unittest discover -s tests -p 'test_*.py' -v
+# 兼容入口：python test_mfa.py
 ```
 
-前端构建检查：
+测试使用临时 SQLite 数据库和真实 SPAKE2 信封，不连接摄像头、不发送邮件、不修改演示数据库。
 
 ```powershell
-cd FE_smart_lock\smartlock
-npm ci
+cd FE_smart_lock/smartlock
+npm test
+npm run lint -- --no-fix
 npm run build
 ```
 
-## 注意事项
-
-- 不要提交 `__pycache__`、`.pyc`、`node_modules`、`dist`、`outputs`、IDE 配置等生成文件。
-- 后端默认开启 CORS，便于本地前后端分端口联调。
-- 当前前端使用 Vue 2，安装依赖时可能出现 Vue 2 EOL 或依赖漏洞提示，联调可先忽略，后续可单独规划升级。
-- 生产环境必须配置固定的 `JWT_SECRET_KEY`，并将 `DEVICE_DISPATCH_REQUIRED` 设置为 `true`。
+接口见 [API_DOCUMENTATION.md](API_DOCUMENTATION.md)，性能工具见 [测试指南](BE_smart_lock/smart_lock/tests/perf/README.md)。历史性能结果不代表修复后的版本，请重新测量。

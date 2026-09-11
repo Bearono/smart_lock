@@ -30,7 +30,7 @@
       <section class="panel">
         <h3>Lock</h3>
         <p>Device: {{ deviceId }}</p>
-        <p>Status: {{ lockStatus }}</p>
+        <p>Requested status: {{ lockStatus }}</p>
         <p>Battery: {{ battery }}%</p>
         <p>Online: {{ deviceOnline ? 'YES' : 'NO' }}</p>
         <button @click="toggleLock" :disabled="loading">{{ loading ? 'Working...' : lockButtonLabel }}</button>
@@ -197,17 +197,18 @@
           <button class="snapshot-clear" @click="clearSnapshot">Clear snapshot</button>
         </div>
         <div v-if="mfaStep === 1">
-          <button @click="requestMfaDoor">Start Request</button>
+          <button @click="requestMfaDoor" :disabled="mfaBusy">{{ mfaBusy ? 'Working...' : 'Start Request' }}</button>
         </div>
         <div v-else-if="mfaStep === 2">
           <p>Request: {{ mfaRequestId }}</p>
           <p>Face status: {{ faceStatus }}</p>
           <p v-if="requiresTotp">TOTP required</p>
           <input v-if="requiresTotp" v-model="mfaTotpCode" maxlength="6" placeholder="TOTP code" />
-          <button @click="confirmMfaDoor" :disabled="requiresTotp && mfaTotpCode.length !== 6">Confirm Door</button>
+          <button @click="confirmMfaDoor" :disabled="mfaBusy || (requiresTotp && mfaTotpCode.length !== 6)">{{ mfaBusy ? 'Working...' : 'Confirm Door' }}</button>
         </div>
         <div v-else-if="mfaStep === 3">
-          <p>{{ mfaDoorSuccess ? 'Door unlocked' : 'Failed' }}</p>
+          <p>{{ mfaDoorSuccess ? 'Unlock command accepted; hardware execution unconfirmed' : 'Command not confirmed' }}</p>
+          <button v-if="pendingCredential && !mfaDoorSuccess" @click="confirmMfaDoor" :disabled="mfaBusy">Retry command</button>
           <button @click="resetMfaDoor">Reset</button>
         </div>
       </div>
@@ -217,6 +218,7 @@
 
 <script>
 import { lock, alarm, mfa, device, face, admin } from '../api/index'
+import { consumeDoorToken } from '../api/doorFlow'
 
 export default {
   name: 'SmartDashboard',
@@ -228,7 +230,7 @@ export default {
       battery: 0,
       deviceOnline: false,
       loading: false,
-      videoUrl: 'http://localhost:8000/video_feed',
+      videoUrl: `${process.env.VUE_APP_API_BASE || 'http://localhost:8000'}/video_feed`,
       currentModal: null,
       modalTitle: '',
       allLogs: [],
@@ -252,6 +254,9 @@ export default {
       mfaTotpCode: '',
       mfaDoorMsg: '',
       mfaDoorSuccess: false,
+      mfaBusy: false,
+      pendingCredential: null,
+      clockTimer: null,
       role: localStorage.getItem('role') || 'user',
       adminUsers: [],
       adminMsg: '',
@@ -271,8 +276,11 @@ export default {
   },
   async mounted() {
     this.tick()
-    setInterval(this.tick, 1000)
+    this.clockTimer = setInterval(this.tick, 1000)
     await this.refreshAll()
+  },
+  beforeDestroy() {
+    clearInterval(this.clockTimer)
   },
   methods: {
     tick() {
@@ -310,12 +318,15 @@ export default {
         const res = await lock.getStatus(this.deviceId)
         this.isLocked = res.data.status === 'LOCKED'
         this.battery = res.data.battery || 0
-        this.deviceOnline = true
       } catch {
         this.deviceOnline = false
       }
     },
     async toggleLock() {
+      if (this.isLocked) {
+        this.openMfaDoor()
+        return
+      }
       this.loading = true
       try {
         await lock.control(this.isLocked ? 'UNLOCK' : 'LOCK', this.deviceId)
@@ -336,6 +347,7 @@ export default {
     async fetchDevices() {
       const res = await device.getStatus()
       this.deviceList = Array.isArray(res.data) ? res.data : [res.data]
+      this.deviceOnline = !!this.deviceList.find(d => d.device_id === this.deviceId)?.is_online
     },
     async fetchAlarms() {
       const res = await alarm.list(null, 20)
@@ -346,7 +358,7 @@ export default {
       this.guestList = res.data || []
     },
     async createGuest() {
-      const res = await mfa.createGuest(this.guestForm.guest_name, this.guestForm.valid_hours, this.guestForm.max_uses)
+      const res = await mfa.createGuest(this.guestForm.guest_name, this.guestForm.valid_hours, this.guestForm.max_uses, this.deviceId)
       this.guestCode = res.data.pass_code
       await this.fetchGuestList()
     },
@@ -391,6 +403,8 @@ export default {
       this.faceLogs = res.data.data || []
     },
     openMfaDoor() {
+      if (this.mfaBusy) return
+      this.pendingCredential = null
       const bound = (this.mfaStatus.devices || []).some(d => d.device_id === this.deviceId)
       if (!bound) {
         this.currentModal = 'mfa'
@@ -413,6 +427,8 @@ export default {
       return `${base.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`
     },
     async requestMfaDoor() {
+      if (this.mfaBusy) return
+      this.mfaBusy = true
       this.mfaStep = 1
       this.mfaDoorMsg = ''
       try {
@@ -426,30 +442,43 @@ export default {
         if (this.mfaSnapshotUrl) {
           this.videoUrl = `${this.videoUrl.split('?')[0]}?t=${Date.now()}`
         }
-        this.mfaDoorMsg = res.data.device_dispatch
-          ? `Device linked: ${res.data.device_dispatch.device_url}`
-          : 'Face challenge sent to device'
+        this.mfaDoorMsg = res.data.device_dispatch?.status === 'pending'
+          ? 'Waiting for an encrypted face result from the test device'
+          : 'Face challenge processed'
         this.mfaStep = 2
       } catch (error) {
         this.faceStatus = 'FAILED'
         this.mfaDoorMsg = error?.response?.data?.msg || 'Open door request failed'
-        this.mfaStep = 0
+        this.mfaStep = 1
+      } finally {
+        this.mfaBusy = false
       }
     },
     async confirmMfaDoor() {
+      if (this.mfaBusy) return
+      this.mfaBusy = true
       try {
+        if (!this.pendingCredential) {
+          const res = await mfa.openDoorConfirm(this.mfaRequestId, this.requiresTotp ? this.mfaTotpCode : undefined)
+          this.pendingCredential = res.data
+        }
+        await consumeDoorToken(this.pendingCredential, lock.consumeToken)
+        this.pendingCredential = null
+        this.mfaDoorSuccess = true
         this.mfaStep = 3
-        const res = await mfa.openDoorConfirm(this.mfaRequestId, this.requiresTotp ? this.mfaTotpCode : undefined)
-        this.mfaDoorSuccess = !!res.data.unlock_token
-        this.mfaDoorMsg = res.data.msg || 'OK'
+        this.mfaDoorMsg = 'Unlock command accepted. Hardware execution has not been confirmed.'
         await Promise.all([
           this.fetchHistory(),
           this.fetchLockStatus(),
           this.fetchDevices()
-        ])
+        ]).catch(() => { this.mfaDoorMsg += ' Status refresh failed.' })
       } catch (error) {
         this.mfaDoorSuccess = false
-        this.mfaDoorMsg = error?.response?.data?.msg || 'Confirm failed'
+        this.mfaDoorMsg = error?.response?.data?.msg || error.message || 'Confirm failed'
+        if (error?.response && error.response.status < 500) this.pendingCredential = null
+        this.mfaStep = this.pendingCredential ? 3 : 2
+      } finally {
+        this.mfaBusy = false
       }
     },
     async clearSnapshot() {
@@ -476,6 +505,8 @@ export default {
       }
     },
     resetMfaDoor() {
+      if (this.mfaBusy) return
+      this.pendingCredential = null
       this.showMfaDoorModal = false
       this.mfaStep = 0
       this.mfaRequestId = ''

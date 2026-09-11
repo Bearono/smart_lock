@@ -68,8 +68,9 @@ def trigger_recognition():
     frame_source = "camera"
 
     if frame is None:
-        frame = _get_test_frame()
-        frame_source = "test_image"
+        if os.getenv('SMART_LOCK_ALLOW_TEST_IMAGES', 'false').lower() == 'true':
+            frame = _get_test_frame()
+            frame_source = "test_image"
 
     if frame is None:
         return jsonify({"status": "error", "message": "Unable to capture image frame"}), 500
@@ -138,8 +139,9 @@ def handle_auth_challenge():
     frame_source = "camera"
 
     if frame is None:
-        frame = _get_test_frame()
-        frame_source = "test_image"
+        if os.getenv('SMART_LOCK_ALLOW_TEST_IMAGES', 'false').lower() == 'true':
+            frame = _get_test_frame()
+            frame_source = "test_image"
 
     if frame is None:
         return jsonify({"status": "error", "message": "Unable to capture image frame"}), 500
@@ -159,7 +161,7 @@ def handle_auth_challenge():
         request_id=request_id,
         face_user_id=user_id,
         similarity_score=confidence,
-        liveness_score=0.85,
+        liveness_score=None,
         frame=frame,
         session_nonce=nonce,
     )

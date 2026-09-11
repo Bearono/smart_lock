@@ -2,9 +2,9 @@
 Locust 性能测试脚本 —— 智能锁后端接口负载压测。
 
 覆盖接口:
-    - POST /api/login                  登录 (含 bcrypt, 通常最慢, 单独一档)
+    - POST /api/login/pre + /api/login/mfa/verify  完整登录
     - GET  /api/lock/status            查询门锁状态
-    - POST /api/lock/control           控制门锁 (LOCK/UNLOCK 循环)
+    - POST /api/lock/control           发送 LOCK (解锁只允许 MFA + 令牌)
     - GET  /api/lock/history           历史记录 (分页查询)
     - GET  /api/mfa/status             MFA 状态
     - GET  /api/device/status          设备状态
@@ -31,6 +31,7 @@ import time
 from typing import Optional
 
 from locust import HttpUser, between, task, events
+from client import login_mfa
 
 
 PERF_USER_PREFIX = os.environ.get("PERF_USER_PREFIX", "perf_user_")
@@ -59,22 +60,10 @@ class SmartLockUser(HttpUser):
         self._login()
 
     def _login(self):
-        payload = {"username": self.username, "password": PERF_USER_PASSWORD}
-        with self.client.post(
-            "/api/login",
-            json=payload,
-            name="POST /api/login",
-            catch_response=True,
-        ) as resp:
-            if resp.status_code != 200:
-                resp.failure(f"login failed: {resp.status_code} {resp.text[:120]}")
-                self.token = None
-                return
-            try:
-                self.token = resp.json().get("access_token")
-            except ValueError:
-                resp.failure("login response not json")
-                self.token = None
+        try:
+            self.token = login_mfa(self.client, '', self.username, PERF_USER_PASSWORD)
+        except Exception:
+            self.token = None
 
     def _auth_headers(self) -> dict:
         if not self.token:
@@ -136,7 +125,7 @@ class SmartLockUser(HttpUser):
 
     @task(2)
     def toggle_lock(self):
-        action = random.choice(["LOCK", "UNLOCK"])
+        action = 'LOCK'  # UNLOCK is permitted only through MFA + token consumption.
         self.client.post(
             "/api/lock/control",
             json={"device_id": PERF_DEVICE_ID, "action": action},
@@ -148,7 +137,7 @@ class SmartLockUser(HttpUser):
     def open_door_request(self):
         """
         发起开门请求。要求测试用户已经绑定了 PERF_DEVICE_ID 设备。
-        若返回 403 (Device not bound) 或 423 (DEVICE_LOCKED), 视为业务预期, 不算失败。
+        403、423 等业务拒绝同样计为失败，不能用其掩盖未成功认证。
         """
         with self.client.post(
             "/api/mfa/open-door/request",
@@ -157,7 +146,7 @@ class SmartLockUser(HttpUser):
             name="POST /api/mfa/open-door/request",
             catch_response=True,
         ) as resp:
-            if resp.status_code in (200, 403, 423):
+            if resp.status_code == 200:
                 resp.success()
             else:
                 resp.failure(f"unexpected status {resp.status_code}: {resp.text[:120]}")
@@ -165,7 +154,7 @@ class SmartLockUser(HttpUser):
 
 class LoginOnlyUser(HttpUser):
     """
-    专测 /api/login (bcrypt) 的独立压测场景。
+    专测密码预登录和 TOTP 验证的完整登录压测场景。
     Locust 支持多个 User 类共存, 但为了单独出报告, 一般单跑此类:
         locust -f locustfile.py LoginOnlyUser --headless -u 20 -r 5 -t 2m --host http://localhost:8000
     """
@@ -176,14 +165,7 @@ class LoginOnlyUser(HttpUser):
     def login(self):
         idx = _pick_user_index()
         username = f"{PERF_USER_PREFIX}{idx:03d}"
-        with self.client.post(
-            "/api/login",
-            json={"username": username, "password": PERF_USER_PASSWORD},
-            name="POST /api/login",
-            catch_response=True,
-        ) as resp:
-            if resp.status_code != 200:
-                resp.failure(f"login failed: {resp.status_code}")
+        login_mfa(self.client, '', username, PERF_USER_PASSWORD)
 
 
 # -------- 全局钩子: 打印开始/结束时间, 方便对照日志 --------
