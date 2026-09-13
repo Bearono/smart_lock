@@ -119,9 +119,22 @@
 }
 ```
 
-信封 request_id 与业务开门 request_id 用途不同；业务内容可携带原开门 request_id。后端先核对时间、会话、设备和 MAC，再解密；消息 ID 和 nonce 防重放。默认安全会话 300 秒、时钟容差 120 秒。当前安全会话与防重放缓存仅在单进程内有效，重启后设备应重新握手。
+信封 request_id 与业务开门 request_id 用途不同；业务内容可携带原开门 request_id。时间戳必须为整数，nonce/IV 为 16 字节，MAC 为 32 字节，Base64 必须使用标准规范编码，业务 JSON 不接受 NaN/Infinity。后端先核对时间、会话、设备和 MAC，再解密。所有检查通过后，原子保存防重放记录，再执行业务操作；业务失败也不能再次提交同一安全信封。
 
-`GET /api/security/session/<id>` 查询安全会话是否有效。通用 `/api/secure/upload` 仍保留历史 ECC 格式兼容；人脸、心跳、状态同步不接受该兼容格式。
+默认安全会话 300 秒、时钟容差 120 秒。安全会话和防重放记录由数据库共享，所有进程必须设置相同的固定 `SECRET_KEY`；会话密钥加密存储，旧会话可跨进程和进程重启使用。旧记录仅在过期后清理。修改 `SECRET_KEY` 会使原会话失效。
+
+设备安全接口统一错误响应 `{status:"error", msg, code}`：
+
+| 状态 / code | 处理方式 |
+| --- | --- |
+| 401 `SECURITY_SESSION_INVALID` | 会话不存在、过期或存储密钥变化；设备可重新握手一次，生成新安全信封后重发 |
+| 401 `SECURE_PROTOCOL_REQUIRED` | 未使用支持的安全协议；不降级、不自动重发 |
+| 400 `SECURE_MESSAGE_REPLAY` | 消息 ID 或 nonce 已使用；不自动重发 |
+| 400 `INVALID_SECURE_PAYLOAD` | 消息格式、MAC 或业务信封错误；不自动重发 |
+
+网络超时及 5xx 不能证明业务未执行，设备不会自动重发。恢复重试最多一次，以免密钥配置不一致导致循环握手。无效响应 JSON 也视为失败，不能作为上传成功。
+
+`GET /api/security/session/<id>` 查询安全会话是否有效。历史 ECC 上传默认关闭；仅在 `ALLOW_LEGACY_SECURE_UPLOAD=true` 时，通用 `/api/secure/upload` 才接受完全没有现代 header 的历史格式。此兼容模式不提供 v2 的认证与防重放保证，仅用于隔离迁移。人脸、心跳、状态同步始终不接受旧格式；带未知或损坏 header 的包也绝不降级。v2 后端默认启动无需加载旧 PEM 私钥。请求体上限为 8 MiB。
 
 ## 设备状态与日志
 

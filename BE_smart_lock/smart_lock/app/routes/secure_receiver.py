@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import jwt_required
 
 from app import utils
+from app.security_store import SecurePayloadError
 from .secure_payload import decrypt_secure_payload
 
 
@@ -68,7 +69,7 @@ def handle_rpi_data():
     data = request.get_json()
 
     try:
-        business_data = decrypt_secure_payload(data)
+        business_data = decrypt_secure_payload(data, allow_legacy=True)
 
         if 'image' in business_data:
             snapshot_path = save_snapshot_image(business_data['image'], prefix="upload")
@@ -81,6 +82,8 @@ def handle_rpi_data():
 
         return jsonify({"status": "success", "msg": "Data received securely"}), 200
 
-    except Exception as exc:
+    except SecurePayloadError:
+        raise
+    except (ValueError, TypeError) as exc:
         print(f"Secure payload decrypt failed: {exc}")
         return jsonify({"status": "error", "msg": "Secure payload decrypt failed"}), 400

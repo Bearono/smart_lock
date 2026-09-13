@@ -6,7 +6,6 @@ from flask_jwt_extended import jwt_required
 from app import db
 from app.models import Device
 from .secure_payload import decrypt_secure_payload
-from .security_protocol import PROTOCOL_VERSION
 
 
 device_bp = Blueprint('device', __name__)
@@ -22,12 +21,7 @@ def _mark_online_state(device):
 @device_bp.route('/heartbeat', methods=['POST'])
 def heartbeat():
     packet = request.get_json() or {}
-    if not isinstance(packet.get('header'), dict) or packet['header'].get('version') != PROTOCOL_VERSION:
-        return jsonify(msg='Encrypted v2 payload required'), 401
-    try:
-        data = decrypt_secure_payload(packet)
-    except (ValueError, TypeError, KeyError) as exc:
-        return jsonify(msg='Invalid encrypted payload', detail=str(exc)), 400
+    data = decrypt_secure_payload(packet)
     device_id = data.get('device_id')
     if not device_id:
         return jsonify({"msg": "device_id is required"}), 400

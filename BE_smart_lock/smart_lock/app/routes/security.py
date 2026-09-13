@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import time
 import uuid
-from typing import Dict
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from spake2 import SPAKE2_B
+from app.security_store import save_session, load_session, SecurePayloadError
 
 from .security_protocol import (
     PROTOCOL_VERSION,
@@ -23,22 +23,11 @@ security_bp = Blueprint("security", __name__)
 
 # 演示环境默认口令；生产环境必须通过环境变量或数据库为每台设备配置独立强口令。
 DEFAULT_DEVICE_PASSWORD = os.getenv("SMART_LOCK_DEVICE_PASSWORD", "ChangeMe-Spake2-Device-Password")
-SESSION_TTL_SECONDS = int(os.getenv("SMART_LOCK_SESSION_TTL", "300"))
-
-# 简易内存会话表，课程演示足够；生产环境建议迁移到 Redis/数据库。
-SECURITY_SESSIONS: Dict[str, SecuritySession] = {}
 
 
 def get_device_password(device_id: str) -> str:
     # 可在此对接 MFACredential / Device 表，实现 device_id -> 设备口令查询。
     return os.getenv(f"SMART_LOCK_PASSWORD_{device_id}", DEFAULT_DEVICE_PASSWORD)
-
-
-def prune_sessions() -> None:
-    now = time.time()
-    for sid in list(SECURITY_SESSIONS.keys()):
-        if SECURITY_SESSIONS[sid].expires_at < now:
-            SECURITY_SESSIONS.pop(sid, None)
 
 
 @security_bp.route("/api/security/spake2/start", methods=["POST"])
@@ -48,9 +37,13 @@ def spake2_start():
     device_id = data.get("device_id")
     client_msg_b64 = data.get("client_pub")
     client_nonce_b64 = data.get("client_nonce")
-    timestamp = int(data.get("timestamp", 0) or 0)
+    timestamp = data.get('timestamp')
+    request_id = data.get('request_id')
 
-    if data.get("version") != PROTOCOL_VERSION or not device_id or not client_msg_b64 or not client_nonce_b64:
+    if (data.get('version') != PROTOCOL_VERSION
+            or not isinstance(device_id, str) or not 1 <= len(device_id) <= 50
+            or not isinstance(request_id, str) or not 1 <= len(request_id) <= 64
+            or type(timestamp) is not int):
         return jsonify({"msg": "Invalid SPAKE2 start message"}), 400
     if abs(int(time.time()) - timestamp) > 120:
         return jsonify({"msg": "SPAKE2 start message expired"}), 400
@@ -58,6 +51,8 @@ def spake2_start():
     try:
         client_msg = b64d(client_msg_b64)
         client_nonce = b64d(client_nonce_b64)
+        if len(client_nonce) != 16 or len(client_msg) > 1024:
+            raise ValueError('Invalid SPAKE2 nonce/message length')
         password = get_device_password(device_id).encode("utf-8")
         spake2 = SPAKE2_B(password, idA=device_id.encode("utf-8"), idB=SPAKE2_BACKEND_ID)
         server_msg = spake2.start()
@@ -67,7 +62,7 @@ def spake2_start():
 
     server_nonce = os.urandom(16)
     session_id = uuid.uuid4().hex
-    expires_at = time.time() + SESSION_TTL_SECONDS
+    expires_at = time.time() + current_app.config['SECURITY_SESSION_TTL']
 
     session_key = hkdf(
         spake2_key,
@@ -85,8 +80,7 @@ def spake2_start():
         }),
     )
 
-    prune_sessions()
-    SECURITY_SESSIONS[session_id] = SecuritySession(session_id, device_id, session_key, expires_at)
+    save_session(SecuritySession(session_id, device_id, session_key, expires_at))
 
     return jsonify({
         "version": PROTOCOL_VERSION,
@@ -101,9 +95,9 @@ def spake2_start():
 
 @security_bp.route("/api/security/session/<session_id>", methods=["GET"])
 def session_status(session_id):
-    prune_sessions()
-    session = SECURITY_SESSIONS.get(session_id)
-    if not session:
+    try:
+        session = load_session(session_id)
+    except SecurePayloadError:
         return jsonify({"active": False}), 404
     return jsonify({
         "active": True,

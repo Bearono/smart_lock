@@ -36,6 +36,13 @@ def create_app(config_overrides=None):
     bcrypt.init_app(app)
     jwt.init_app(app)
 
+    from app.security_store import SecurePayloadError
+
+    @app.errorhandler(SecurePayloadError)
+    def invalid_secure_payload(error):
+        from flask import jsonify
+        return jsonify(status='error', msg=str(error), code=error.code), error.status
+
     @jwt.token_verification_loader
     def verify_login_assurance(_header, payload):
         from app.models import User, MFACredential

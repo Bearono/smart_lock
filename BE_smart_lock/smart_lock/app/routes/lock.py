@@ -7,7 +7,6 @@ from app import db
 from app.models import AccessLog, Device, UnlockToken, User, GuestPass
 from app.door_auth import device_binding
 from .secure_payload import decrypt_secure_payload
-from .security_protocol import PROTOCOL_VERSION
 
 lock_bp = Blueprint('lock', __name__)
 
@@ -127,12 +126,7 @@ def verify_unlock_token():
 @lock_bp.route('/sync', methods=['POST'])
 def hardware_sync():
     packet = request.get_json() or {}
-    if not isinstance(packet.get('header'), dict) or packet['header'].get('version') != PROTOCOL_VERSION:
-        return jsonify(msg='Encrypted v2 payload required'), 401
-    try:
-        data = decrypt_secure_payload(packet)
-    except (ValueError, TypeError, KeyError) as exc:
-        return jsonify(msg='Invalid encrypted payload', detail=str(exc)), 400
+    data = decrypt_secure_payload(packet)
     device_id = data.get('device_id')
     if not device_id:
         return jsonify({"msg": "device_id is required"}), 400

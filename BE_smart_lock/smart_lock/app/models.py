@@ -2,6 +2,27 @@ from app import db
 from datetime import datetime
 
 
+class DeviceSecuritySession(db.Model):
+    __tablename__ = 'device_security_sessions'
+    id = db.Column(db.String(32), primary_key=True)
+    device_id = db.Column(db.String(50), nullable=False, index=True)
+    encrypted_key = db.Column(db.LargeBinary, nullable=False)
+    expires_at = db.Column(db.Float, nullable=False, index=True)
+
+
+class SecureMessageReceipt(db.Model):
+    __tablename__ = 'secure_message_receipts'
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.String(32), nullable=False)
+    request_id = db.Column(db.String(64), nullable=False)
+    nonce = db.Column(db.String(64), nullable=False)
+    expires_at = db.Column(db.Float, nullable=False, index=True)
+    __table_args__ = (
+        db.UniqueConstraint('session_id', 'request_id', name='uq_secure_request'),
+        db.UniqueConstraint('session_id', 'nonce', name='uq_secure_nonce'),
+    )
+
+
 class LoginChallenge(db.Model):
     __tablename__ = 'login_challenges'
     id = db.Column(db.Integer, primary_key=True)

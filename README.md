@@ -24,6 +24,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 $env:JWT_SECRET_KEY = '<固定的随机密钥>'
+$env:SECRET_KEY = '<另一份固定的随机密钥，所有后端进程保持一致>'
 $env:ADMIN_PASSWORD = '<首次启动管理员密码>'
 python run.py
 ```
@@ -76,6 +77,9 @@ python enroll_face.py --user <后端用户名> --headless --samples 8
 | --- | --- |
 | `DATABASE_URL` | `sqlite:///smart_lock.db`；可指定 MySQL URL |
 | `JWT_SECRET_KEY` | 默认随机；稳定运行需固定 |
+| `SECRET_KEY` | 加密保存设备安全会话密钥；跨进程和重启共享会话时必须固定一致 |
+| `SMART_LOCK_SESSION_TTL` | 安全会话有效期秒数，默认 300 |
+| `ALLOW_LEGACY_SECURE_UPLOAD` | 默认 `false`；仅隔离迁移旧客户端时显式启用历史上传格式 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin123`；仅用于管理员初始化 |
 | `DEVICE_DISPATCH_REQUIRED` | `true`；设备无法连接则认证请求失败 |
 | `SMART_LOCK_DEVICE_URL` | 后端访问设备的固定 URL，优先于心跳 IP |
@@ -87,7 +91,11 @@ python enroll_face.py --user <后端用户名> --headless --samples 8
 
 无摄像头联调可设置 `DEVICE_DISPATCH_REQUIRED=false`。**只有连接失败或超时**会留下等待状态；仍必须通过测试客户端提交合法加密人脸结果，不会自动通过人脸认证。设备明确拒绝、识别失败或返回无效响应均失败。模拟测试口令和账号仅用于隔离环境。
 
-目前安全通信会话及防重放缓存为单进程内存结构，多进程部署需要进一步迁移共享会话存储。SQLite 并发写有局限；回归测试覆盖 SQLite 的并发争用，未覆盖 MySQL 部署。默认 `run.py` 是开发服务器。
+设备安全会话与防重放记录存储在数据库中，可供多个后端进程共享。会话密钥通过 Fernet 加密保存，存储加密密钥由 `SECRET_KEY` 派生；数据库与应用配置应分开保护。所有进程必须使用相同、固定的 `SECRET_KEY` 和 `JWT_SECRET_KEY`。轮换 `SECRET_KEY` 后旧设备会话失效，设备遇到明确的 `SECURITY_SESSION_INVALID` 响应时只重新握手一次。
+
+防重放通过数据库唯一约束原子检查请求 ID 与 nonce；只清理已过有效期的记录，不因容量满而清空有效记录。合法安全信封先被消费，再执行业务逻辑，所以业务拒绝后也不能原样重放。超时、MAC 失败、业务拒绝或服务器错误不会自动重试，也不会自动降级到历史 ECC 格式。普通设备服务使用 v2，不再依赖 `backend_pub.pem`，后端默认启动也不读取旧私钥。
+
+SQLite 并发写有局限；回归测试包含两个独立进程共享 SQLite 的防重放争用，未覆盖 MySQL 部署。默认 `run.py` 是开发服务器。单个 HTTP 请求限制为 8 MiB，避免无限大小上传。
 
 ## 验证
 

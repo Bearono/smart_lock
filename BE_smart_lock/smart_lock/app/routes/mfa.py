@@ -21,7 +21,6 @@ import secrets
 import hashlib
 from .secure_receiver import save_snapshot_image
 from .secure_payload import decrypt_secure_payload
-from .security_protocol import PROTOCOL_VERSION
 
 mfa_bp = Blueprint('mfa', __name__)
 
@@ -336,14 +335,7 @@ def receive_face_result():
     """接收树莓派上传的人脸识别结果。必须使用 v2 加密信封（PAKE + AES-CBC + HMAC）。"""
     raw = request.get_json() or {}
 
-    # 强制要求 v2 加密信封：拒绝明文与旧版 ECC 兼容包
-    if not isinstance(raw.get('header'), dict) or raw['header'].get('version') != PROTOCOL_VERSION:
-        return jsonify({"msg": "Encrypted v2 payload required"}), 401
-
-    try:
-        data = decrypt_secure_payload(raw)
-    except Exception as exc:
-        return jsonify({"msg": "Invalid encrypted payload", "detail": str(exc)}), 400
+    data = decrypt_secure_payload(raw)
 
     request_id = data.get('request_id')
     face_user_id = data.get('face_user_id')

@@ -1,129 +1,100 @@
-from __future__ import annotations
-
+"""Validate authenticated envelopes before claiming them or running business code."""
 import base64
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, Set
 
-from cryptography.hazmat.backends import default_backend
+from flask import current_app
 from cryptography.hazmat.primitives import padding, serialization
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from .AesCBCalgorithm import AesDecrypt
-from .ECCalgorithm import decrypt_aes_key_ecc
-from .security_protocol import (
-    MAX_CLOCK_SKEW_SECONDS,
-    PROTOCOL_VERSION,
-    SecureEnvelope,
-    b64d,
-    canonical_json,
-    constant_time_equal,
-    hmac_sha256,
-)
-from .security import SECURITY_SESSIONS, prune_sessions
+from app.security_store import load_session, claim_message, SecurePayloadError
+from .security_protocol import (MAX_CLOCK_SKEW_SECONDS, PROTOCOL_VERSION, SecureEnvelope,
+                                b64d, canonical_json, constant_time_equal, hmac_sha256)
 
-PRIVATE_KEY_PATH = Path(__file__).resolve().parents[2] / "backend_priv.pem"
-SEEN_REQUEST_IDS: Set[str] = set()
-SEEN_NONCES: Set[str] = set()
-MAX_REPLAY_CACHE = 10000
+PRIVATE_KEY_PATH = Path(__file__).resolve().parents[2] / 'backend_priv.pem'
 
 
-def load_private_key():
-    with PRIVATE_KEY_PATH.open("rb") as key_file:
-        return serialization.load_pem_private_key(
-            key_file.read(),
-            password=None,
-            backend=default_backend(),
-        )
+def _text(value, name, maximum):
+    if not isinstance(value, str) or not 1 <= len(value) <= maximum:
+        raise ValueError('Invalid ' + name)
+    return value
 
 
-PRIVATE_KEY = load_private_key()
+def _reject_constant(value):
+    raise ValueError('Non-finite JSON number: ' + value)
 
 
-def _remember(value_set: Set[str], value: str) -> None:
-    if len(value_set) > MAX_REPLAY_CACHE:
-        value_set.clear()
-    value_set.add(value)
+def _decrypt_v2(packet):
+    header = packet['header']
+    session_id = _text(header.get('session_id'), 'session_id', 32)
+    device_id = _text(header.get('device_id'), 'device_id', 50)
+    request_id = _text(header.get('request_id'), 'request_id', 64)
+    nonce = _text(header.get('nonce'), 'nonce', 64)
+    timestamp = header.get('timestamp')
+    if type(timestamp) is not int or abs(time.time() - timestamp) > MAX_CLOCK_SKEW_SECONDS:
+        raise ValueError('Invalid or expired message timestamp')
+    if len(b64d(nonce)) != 16:
+        raise ValueError('Nonce must contain 16 bytes')
+    iv = b64d(packet.get('iv'))
+    mac = b64d(packet.get('mac'))
+    ciphertext = b64d(packet.get('ciphertext'))
+    if len(iv) != 16 or len(mac) != 32 or not ciphertext or len(ciphertext) % 16:
+        raise ValueError('Invalid IV, MAC or ciphertext length')
 
-
-def _decrypt_v2(packet: Dict[str, Any]) -> Dict[str, Any]:
-    header = packet.get("header") or {}
-    if header.get("version") != PROTOCOL_VERSION:
-        raise ValueError("Unsupported secure protocol version")
-
-    session_id = header.get("session_id")
-    device_id = header.get("device_id")
-    timestamp = int(header.get("timestamp", 0) or 0)
-    request_id = header.get("request_id")
-    nonce = header.get("nonce")
-
-    if not session_id or not device_id or not request_id or not nonce:
-        raise ValueError("Missing header fields")
-    if abs(int(time.time()) - timestamp) > MAX_CLOCK_SKEW_SECONDS:
-        raise ValueError("Expired secure message")
-    if request_id in SEEN_REQUEST_IDS or nonce in SEEN_NONCES:
-        raise ValueError("Replay attack detected")
-
-    prune_sessions()
-    session = SECURITY_SESSIONS.get(session_id)
-    if not session:
-        raise ValueError("Unknown or expired security session")
+    session = load_session(session_id)
     if session.device_id != device_id:
-        raise ValueError("Device/session mismatch")
-
+        raise ValueError('Device/session mismatch')
     enc_key, mac_key = SecureEnvelope._derive_keys(session.session_key)
-    mac = b64d(packet.get("mac", ""))
-    mac_input = {
-        "header": header,
-        "iv": packet.get("iv"),
-        "ciphertext": packet.get("ciphertext"),
-    }
-    expected_mac = hmac_sha256(mac_key, canonical_json(mac_input))
-    if not constant_time_equal(mac, expected_mac):
-        raise ValueError("Invalid MAC; message may be tampered")
-
-    iv = b64d(packet["iv"])
-    ciphertext = b64d(packet["ciphertext"])
+    expected = hmac_sha256(mac_key, canonical_json({
+        'header': header, 'iv': packet['iv'], 'ciphertext': packet['ciphertext']}))
+    if not constant_time_equal(mac, expected):
+        raise ValueError('Invalid message MAC')
     decryptor = Cipher(algorithms.AES(enc_key), modes.CBC(iv)).decryptor()
     padded = decryptor.update(ciphertext) + decryptor.finalize()
     unpadder = padding.PKCS7(128).unpadder()
     plaintext = unpadder.update(padded) + unpadder.finalize()
-
-    _remember(SEEN_REQUEST_IDS, request_id)
-    _remember(SEEN_NONCES, nonce)
-    business = json.loads(plaintext.decode("utf-8"))
+    business = json.loads(plaintext.decode('utf-8'), parse_constant=_reject_constant)
     if not isinstance(business, dict):
         raise ValueError('Business payload must be an object')
     if business.get('device_id', device_id) != device_id:
         raise ValueError('Envelope/business device mismatch')
     business['device_id'] = device_id
-    business.setdefault("request_id", request_id)
-    business.setdefault("timestamp", timestamp)
-    if header.get("unlock_token"):
-        business["unlock_token"] = header.get("unlock_token")
+    business.setdefault('request_id', request_id)
+    business.setdefault('timestamp', timestamp)
+    if header.get('unlock_token'):
+        business['unlock_token'] = header['unlock_token']
+    claim_message(session, request_id, nonce, timestamp + MAX_CLOCK_SKEW_SECONDS)
     return business
 
 
-def _decrypt_legacy(packet: Dict[str, Any]) -> Dict[str, Any]:
-    enc_key = packet.get("enc_key")
-    payload = packet.get("payload")
-    if not enc_key or not payload:
-        raise ValueError("Missing encrypted payload fields")
-
-    enc_key_bytes = base64.b64decode(enc_key)
-    aes_key = decrypt_aes_key_ecc(enc_key_bytes, PRIVATE_KEY)
-    if not aes_key:
-        raise ValueError("Failed to decrypt AES key")
-    if isinstance(aes_key, bytes):
-        aes_key = aes_key.decode("utf-8")
-
-    decrypted_json_bytes = AesDecrypt(payload, aes_key)
-    return json.loads(decrypted_json_bytes.decode("utf-8"))
+def _decrypt_legacy(packet):
+    # Loaded only for an explicitly enabled historical upload. Modern startup needs no PEM file.
+    from .AesCBCalgorithm import AesDecrypt
+    from .ECCalgorithm import decrypt_aes_key_ecc
+    with PRIVATE_KEY_PATH.open('rb') as file:
+        private_key = serialization.load_pem_private_key(file.read(), password=None)
+    key = decrypt_aes_key_ecc(base64.b64decode(packet['enc_key'], validate=True), private_key)
+    if not key:
+        raise ValueError('Invalid legacy key')
+    business = json.loads(AesDecrypt(packet['payload'], key).decode('utf-8'), parse_constant=_reject_constant)
+    if not isinstance(business, dict):
+        raise ValueError('Business payload must be an object')
+    return business
 
 
-def decrypt_secure_payload(packet: Dict[str, Any]) -> Dict[str, Any]:
-    """兼容 v2 安全信封与原 ECC+AES 包格式。"""
-    if packet.get("header", {}).get("version") == PROTOCOL_VERSION:
-        return _decrypt_v2(packet)
-    return _decrypt_legacy(packet)
+def decrypt_secure_payload(packet, *, allow_legacy=False):
+    try:
+        if not isinstance(packet, dict):
+            raise ValueError('Secure packet must be an object')
+        header = packet.get('header')
+        if isinstance(header, dict) and header.get('version') == PROTOCOL_VERSION:
+            return _decrypt_v2(packet)
+        # A malformed or unsupported modern header must never be interpreted as a legacy packet.
+        if 'header' not in packet and allow_legacy and current_app.config['ALLOW_LEGACY_SECURE_UPLOAD']:
+            return _decrypt_legacy(packet)
+        raise SecurePayloadError('Encrypted v2 payload required', 'SECURE_PROTOCOL_REQUIRED', 401)
+    except SecurePayloadError:
+        raise
+    except (ValueError, TypeError, KeyError, UnicodeError) as exc:
+        raise SecurePayloadError('Invalid encrypted payload') from exc

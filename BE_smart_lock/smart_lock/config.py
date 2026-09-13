@@ -10,6 +10,9 @@ class Config:
     # Override these in production so tokens survive process restarts.
     SECRET_KEY = os.environ.get("SECRET_KEY") or os.urandom(32).hex()
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or os.urandom(32).hex()
+    SECURITY_SESSION_TTL = int(os.environ.get('SMART_LOCK_SESSION_TTL', '300'))
+    ALLOW_LEGACY_SECURE_UPLOAD = os.environ.get('ALLOW_LEGACY_SECURE_UPLOAD', 'false').lower() == 'true'
+    MAX_CONTENT_LENGTH = 8 * 1024 * 1024
 
     UPLOAD_FOLDER = os.environ.get(
         "UPLOAD_FOLDER",

@@ -38,11 +38,16 @@ def b64e(data: bytes) -> str:
 
 
 def b64d(data: str) -> bytes:
-    return base64.b64decode(data.encode("ascii"))
+    if not isinstance(data, str):
+        raise ValueError('Base64 field must be a string')
+    decoded = base64.b64decode(data.encode('ascii'), validate=True)
+    if b64e(decoded) != data:
+        raise ValueError('Non-canonical Base64 field')
+    return decoded
 
 
 def canonical_json(data: Dict[str, Any]) -> bytes:
-    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
 def password_fingerprint(password: str) -> bytes:
@@ -105,9 +110,16 @@ class Spake2Client:
         return state, msg
 
     def finish(self, state: Spake2ClientState, server_msg: Dict[str, str]) -> SecuritySession:
+        if not isinstance(server_msg, dict) or server_msg.get('version') != PROTOCOL_VERSION:
+            raise ValueError('Invalid server protocol response')
+        expires_at = server_msg.get('expires_at')
+        if type(expires_at) not in (int, float) or not time.time() < expires_at <= time.time() + 86400:
+            raise ValueError('Invalid server session expiry')
         # 字段名保留 server_pub 是为了兼容上一版接口；实际内容已改为 SPAKE2_B 消息。
         spake2_key = state.spake2.finish(b64d(server_msg["server_pub"]))
         server_nonce = b64d(server_msg["server_nonce"])
+        if len(server_nonce) != 16:
+            raise ValueError('Invalid server nonce')
         salt = state.client_nonce + server_nonce + state.device_id.encode("utf-8")
         session_key = hkdf(
             spake2_key,
@@ -130,7 +142,7 @@ class Spake2Client:
             session_id=server_msg["session_id"],
             device_id=state.device_id,
             session_key=session_key,
-            expires_at=float(server_msg.get("expires_at", time.time() + 300)),
+            expires_at=float(expires_at),
         )
 
 
@@ -151,6 +163,8 @@ class SecureEnvelope:
         unlock_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         now = int(time.time())
+        if session.expires_at <= time.time():
+            raise ValueError('Cannot seal using an expired session')
         header = {
             "version": PROTOCOL_VERSION,
             "session_id": session.session_id,
