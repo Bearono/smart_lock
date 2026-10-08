@@ -22,9 +22,11 @@
 
 浏览器截图位于 `FE_smart_lock/smartlock/test-artifacts`，使用隔离验收数据。截图、备份和依赖目录均不提交；源码发布包包含校验清单和离线报告。协议微基准独立声明 AMD64 环境，不能作为 Pi 性能证据。
 
+算法与完整协议对照的实测表、方法和限制见 [协议微基准记录](HOME_BENCHMARK.md)。
+
 ## 可复现入口
 
-从仓库根目录安装后端依赖与 `packages/smartlock_protocol`，在前端执行 `npm ci`，然后运行 `python deploy/verify.py`。浏览器与真实后端联调运行方式见 [交付说明](HOME_DELIVERY.md)。GitHub Actions 配置了相同软件门禁、浏览器验收、Docker HTTP/HTTPS 和设备 AMD64 离线检查；本记录不声称远端工作流已经运行通过。
+从仓库根目录安装后端依赖与 `packages/smartlock_protocol`，在前端执行 `npm ci`，然后运行 `python deploy/verify.py`。浏览器与真实后端联调运行方式见 [交付说明](HOME_DELIVERY.md)。GitHub Actions 配置了相同软件门禁、浏览器验收、Docker HTTP/HTTPS 和设备 AMD64/ARM64 原生构建、架构断言及离线检查。ARM runner 使用 GitHub 官方支持的 `ubuntu-24.04-arm`，依据见 [runner 文档](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。远端每次运行的状态以对应 Actions 记录为准。
 
 本机界面：http://localhost:8080。受本地 CA 保护的入口：https://localhost:8443。首次使用须创建管理员并绑定 TOTP，没有默认账户。没有登记设备时展示真实空状态。
 

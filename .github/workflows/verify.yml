@@ -61,9 +61,20 @@ jobs:
       - if: always()
         run: docker compose -f compose.yaml -f compose.tls.yaml down
   device-image:
-    runs-on: ubuntu-latest
+    name: device-image (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-latest, arch: amd64}
+          - {runner: ubuntu-24.04-arm, arch: arm64}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f deploy/device.Dockerfile -t smart-lock-device:ci .
+      - name: Verify native image architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: test "$(docker image inspect smart-lock-device:ci --format '{{.Architecture}}')" = "$EXPECTED_ARCH"
       - run: docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:ci python /app/device_smoke.py
