@@ -1,233 +1,285 @@
-<template>
-  <div class="page">
-    <div class="card" v-if="isRegisterMode">
-      <h2>Register</h2>
-      <p class="hint">New accounts require admin approval before login.</p>
-      <form @submit.prevent="handleRegister">
-        <input v-model="regForm.username" placeholder="Username" />
-        <input v-model="regForm.email" type="email" placeholder="Email" />
-        <input v-model="regForm.password" type="password" placeholder="Password" />
-        <input v-model="regForm.confirmPassword" type="password" placeholder="Confirm Password" />
-        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
-        <p v-if="successMsg" class="success">{{ successMsg }}</p>
-        <button :disabled="isLoading">{{ isLoading ? 'Submitting...' : 'Submit for approval' }}</button>
-      </form>
-      <p class="link" @click="backToLogin">Back to login</p>
-    </div>
-
-    <div class="card" v-else>
-      <h2>SmartLock</h2>
-      <p>{{ stepLabel }}</p>
-
-      <form v-if="step === 0" @submit.prevent="handlePreLogin">
-        <input v-model="form.username" placeholder="Username" />
-        <input v-model="form.email" type="email" placeholder="Email" />
-        <input v-model="form.password" type="password" placeholder="Password" />
-        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
-        <p v-if="successMsg" class="success">{{ successMsg }}</p>
-        <button :disabled="isLoading">{{ isLoading ? 'Sending...' : 'Get MFA Code' }}</button>
-        <p class="link" @click="goRegister">Create account</p>
-        <p class="link" @click="goGuest">Guest access</p>
-      </form>
-
-      <form v-else @submit.prevent="handleMfaVerify">
-        <div v-if="needsTotpBind" class="info">
-          <div>First login requires TOTP binding</div>
-          <div class="mono">{{ totpSecret }}</div>
-          <div class="mono small">{{ totpQrUri }}</div>
-        </div>
-
-        <input v-model="form.otpCode" maxlength="6" placeholder="6-digit code" />
-        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
-        <button :disabled="isLoading || form.otpCode.length !== 6">
-          {{ isLoading ? 'Verifying...' : (needsTotpBind ? 'Bind and Login' : 'Confirm Login') }}
-        </button>
-        <p class="link" @click="resetToLogin">Back</p>
-      </form>
-    </div>
-  </div>
-</template>
-
-<script>
-import { auth } from '../api/index'
-
-export default {
-  name: 'UserLogin',
-  data() {
-    return {
-      isRegisterMode: false,
-      isLoading: false,
-      errorMsg: '',
-      successMsg: '',
-      step: 0,
-      needsTotpBind: false,
-      totpSecret: '',
-      totpQrUri: '',
-      preToken: '',
-      role: 'user',
-      form: {
-        username: '',
-        email: '',
-        password: '',
-        otpCode: ''
-      },
-      regForm: {
-        username: '',
-        email: '',
-        password: '',
-        confirmPassword: ''
-      }
-    }
-  },
-  computed: {
-    stepLabel() {
-      if (this.step === 0) return 'Login'
-      return this.needsTotpBind ? 'TOTP Binding' : 'MFA Verification'
-    }
-  },
-  methods: {
-    resetToLogin() {
-      this.step = 0
-      this.errorMsg = ''
-      this.form.otpCode = ''
-    },
-    goRegister() {
-      this.isRegisterMode = true
-      this.errorMsg = ''
-      this.successMsg = ''
-    },
-    goGuest() {
-      this.$router.push('/guest')
-    },
-    backToLogin() {
-      this.isRegisterMode = false
-      this.errorMsg = ''
-    },
-    async handlePreLogin() {
-      this.errorMsg = ''
-      this.successMsg = ''
-      if (!this.form.username || !this.form.email || !this.form.password) {
-        this.errorMsg = 'Please fill username, email and password'
-        return
-      }
-      this.isLoading = true
-      try {
-        const res = await auth.prelogin(this.form.username, this.form.email, this.form.password)
-        this.preToken = res.data.pre_token
-        this.needsTotpBind = !res.data.totp_bound
-        this.totpSecret = res.data.secret || ''
-        this.totpQrUri = res.data.qr_uri || ''
-        this.role = res.data.role || 'user'
-        this.step = 1
-      } catch (error) {
-        const data = error?.response?.data
-        if (data?.status === 'pending') {
-          this.errorMsg = 'Your account is pending admin approval. Please wait.'
-        } else if (data?.status === 'rejected') {
-          this.errorMsg = 'Your registration was rejected by admin.'
-        } else {
-          this.errorMsg = data?.msg || 'Login failed'
-        }
-      } finally {
-        this.isLoading = false
-      }
-    },
-    async handleMfaVerify() {
-      if (this.form.otpCode.length !== 6) {
-        this.errorMsg = 'Enter a 6-digit code'
-        return
-      }
-      this.isLoading = true
-      this.errorMsg = ''
-      try {
-        const res = this.needsTotpBind
-          ? await auth.bindTotpWithPreToken(this.preToken, this.form.otpCode)
-          : await auth.verifyMfa(this.preToken, this.form.otpCode)
-        localStorage.setItem('token', res.data.access_token)
-        localStorage.setItem('username', this.form.username)
-        localStorage.setItem('role', res.data.role || this.role || 'user')
-        this.$router.push('/dashboard')
-      } catch (error) {
-        this.errorMsg = error?.response?.data?.msg || 'Code error'
-        this.form.otpCode = ''
-        if (error?.response?.data?.restart_login) this.step = 0
-      } finally {
-        this.isLoading = false
-      }
-    },
-    async handleRegister() {
-      this.errorMsg = ''
-      this.successMsg = ''
-      if (!this.regForm.username || !this.regForm.email || !this.regForm.password) {
-        this.errorMsg = 'Please fill registration fields'
-        return
-      }
-      if (this.regForm.password !== this.regForm.confirmPassword) {
-        this.errorMsg = 'Passwords do not match'
-        return
-      }
-      this.isLoading = true
-      try {
-        await auth.register(this.regForm.username, this.regForm.password, this.regForm.email)
-        this.successMsg = 'Submitted. Please wait for admin approval before logging in.'
-        this.form.username = this.regForm.username
-        this.form.email = this.regForm.email
-        this.regForm = { username: '', email: '', password: '', confirmPassword: '' }
-        setTimeout(() => { this.isRegisterMode = false }, 1500)
-      } catch (error) {
-        this.errorMsg = error?.response?.data?.msg || 'Register failed'
-      } finally {
-        this.isLoading = false
-      }
-    }
+<script setup>
+import { ref, reactive, onScopeDispose } from 'vue'
+import { useRouter } from 'vue-router'
+import { auth } from '../api'
+import { errorMessage } from '../domain/presentation'
+import AppIcon from '../components/ui/AppIcon.vue'
+import InlineNotice from '../components/ui/InlineNotice.vue'
+const router = useRouter()
+const mode = ref('login'),
+  step = ref(0),
+  busy = ref(false),
+  error = ref(''),
+  success = ref('')
+const preToken = ref(''),
+  needsBind = ref(false),
+  secret = ref(''),
+  qr = ref(''),
+  role = ref('user')
+const form = reactive({ username: '', password: '', code: '', confirm: '' })
+let disposed = false
+function clearEnrollment() {
+  preToken.value = ''
+  secret.value = ''
+  qr.value = ''
+  form.code = ''
+  form.password = ''
+  form.confirm = ''
+}
+function back() {
+  if (busy.value) return
+  clearEnrollment()
+  step.value = 0
+  mode.value = 'login'
+  error.value = ''
+}
+function registerMode() {
+  back()
+  mode.value = 'register'
+  success.value = ''
+}
+async function prelogin() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  success.value = ''
+  try {
+    const response = await auth.prelogin(form.username, form.password)
+    if (disposed) return
+    preToken.value = response.data.pre_token
+    needsBind.value = !response.data.totp_bound
+    secret.value = response.data.secret || ''
+    qr.value = response.data.qr_image || ''
+    role.value = response.data.role || 'user'
+    form.password = ''
+    step.value = 1
+  } catch (failure) {
+    if (!disposed)
+      error.value =
+        failure.response?.data?.status === 'pending'
+          ? '账户正在等待管理员审批，请稍后登录。'
+          : failure.response?.data?.status === 'rejected'
+            ? '账户申请未获批准，请联系管理员。'
+            : errorMessage(failure, '登录失败，请检查账户与密码')
+  } finally {
+    if (!disposed) busy.value = false
   }
 }
+async function verify() {
+  if (busy.value || !/^\d{6}$/.test(form.code)) return
+  busy.value = true
+  error.value = ''
+  try {
+    const response = needsBind.value
+      ? await auth.bindTotpWithPreToken(preToken.value, form.code)
+      : await auth.verifyMfa(preToken.value, form.code)
+    if (disposed) return
+    localStorage.setItem('token', response.data.access_token)
+    localStorage.setItem('username', form.username)
+    localStorage.setItem('role', response.data.role || role.value)
+    clearEnrollment()
+    router.replace('/dashboard')
+  } catch (failure) {
+    if (disposed) return
+    error.value = errorMessage(failure, '验证码校验失败')
+    form.code = ''
+    if (failure.response?.data?.restart_login) {
+      clearEnrollment()
+      step.value = 0
+    }
+  } finally {
+    if (!disposed) busy.value = false
+  }
+}
+async function register() {
+  if (busy.value) return
+  error.value = ''
+  success.value = ''
+  if (form.password !== form.confirm) {
+    error.value = '两次密码不一致'
+    return
+  }
+  if (form.password.length < 12 || new TextEncoder().encode(form.password).length > 72) {
+    error.value = '密码至少 12 个字符，最多 72 字节'
+    return
+  }
+  busy.value = true
+  try {
+    await auth.register(form.username, form.password)
+    if (disposed) return
+    clearEnrollment()
+    mode.value = 'login'
+    success.value = '注册申请已提交。管理员批准后即可登录。'
+  } catch (failure) {
+    if (!disposed) error.value = errorMessage(failure, '注册失败')
+  } finally {
+    if (!disposed) busy.value = false
+  }
+}
+onScopeDispose(() => {
+  disposed = true
+  clearEnrollment()
+})
 </script>
-
-<style scoped>
-.page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #0f172a;
-  color: #fff;
-}
-.card {
-  width: 100%;
-  max-width: 420px;
-  padding: 32px;
-  border-radius: 20px;
-  background: rgba(17, 24, 39, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-}
-input, button {
-  width: 100%;
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid #334155;
-  background: #111827;
-  color: #fff;
-  box-sizing: border-box;
-}
-button {
-  background: #4f46e5;
-  border: none;
-  cursor: pointer;
-}
-.error { color: #f87171; font-size: 12px; margin-top: 8px; }
-.success { color: #4ade80; font-size: 12px; margin-top: 8px; }
-.hint { color: #cbd5e1; font-size: 12px; margin-top: -4px; margin-bottom: 8px; }
-.link { margin-top: 12px; color: #93c5fd; cursor: pointer; }
-.info {
-  margin-top: 12px;
-  padding: 12px;
-  background: rgba(79, 70, 229, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  border-radius: 10px;
-  font-size: 12px;
-}
-.mono { word-break: break-all; font-family: monospace; margin-top: 8px; }
-.small { color: #cbd5e1; }
-</style>
+<template>
+  <div class="auth-page">
+    <aside class="auth-aside">
+      <div class="brand">
+        <div class="brand-symbol"><AppIcon name="lock" :size="22" /></div>
+        <div>
+          <div class="brand-name">SmartLock</div>
+          <div class="brand-caption">ACCESS MANAGEMENT</div>
+        </div>
+      </div>
+      <div class="auth-intro">
+        <p class="eyebrow" style="color: #90a9df">连接空间与身份</p>
+        <h1>
+          每一次访问，
+          <br />
+          都有清晰的确认。
+        </h1>
+        <p>
+          从身份验证到门控执行，
+          <br />
+          在一个工作空间里管理设备、权限与访客。
+        </p>
+        <div class="auth-feature">
+          <AppIcon name="shield" :size="18" />
+          多因素身份验证
+        </div>
+        <div class="auth-feature">
+          <AppIcon name="doors" :size="18" />
+          按设备分配访问权限
+        </div>
+        <div class="auth-feature">
+          <AppIcon name="records" :size="18" />
+          独立追踪命令执行结果
+        </div>
+      </div>
+      <p class="auth-footer">SMARTLOCK / 统一门禁管理控制台</p>
+    </aside>
+    <main class="auth-main">
+      <div class="auth-card">
+        <p class="eyebrow">
+          {{
+            mode === 'register'
+              ? 'CREATE ACCOUNT'
+              : step === 0
+                ? 'WELCOME BACK'
+                : 'VERIFY YOUR IDENTITY'
+          }}
+        </p>
+        <h1>
+          {{
+            mode === 'register'
+              ? '创建账户'
+              : step === 0
+                ? '登录工作空间'
+                : needsBind
+                  ? '绑定身份验证器'
+                  : '验证你的身份'
+          }}
+        </h1>
+        <p class="subtext">
+          {{
+            mode === 'register'
+              ? '填写账户信息，提交后等待管理员审批。'
+              : step === 0
+                ? '使用账户和身份验证器，继续访问控制台。'
+                : needsBind
+                  ? '首次登录需绑定 TOTP 身份验证器。'
+                  : '输入身份验证器当前生成的六位验证码。'
+          }}
+        </p>
+        <div class="steps" v-if="mode === 'login'">
+          <div class="step step--active">01 · 账户验证</div>
+          <div class="step" :class="{ 'step--active': step === 1 }">02 · 身份验证</div>
+        </div>
+        <form
+          v-if="step === 0"
+          class="form-section"
+          @submit.prevent="mode === 'register' ? register() : prelogin()"
+        >
+          <div class="field">
+            <label for="login-username">用户名</label>
+            <input
+              id="login-username"
+              v-model="form.username"
+              autocomplete="username"
+              maxlength="80"
+              placeholder="输入用户名"
+              required
+              :disabled="busy"
+            />
+          </div>
+          <div class="field">
+            <label for="login-password">{{ mode === 'register' ? '设置密码' : '密码' }}</label>
+            <input
+              id="login-password"
+              v-model="form.password"
+              type="password"
+              :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
+              :minlength="mode === 'register' ? 12 : undefined"
+              placeholder="输入密码"
+              required
+              :disabled="busy"
+            />
+            <p v-if="mode === 'register'" class="subtext">至少 12 个字符，最多 72 字节。</p>
+          </div>
+          <div v-if="mode === 'register'" class="field">
+            <label for="register-confirm">确认密码</label>
+            <input
+              id="register-confirm"
+              v-model="form.confirm"
+              type="password"
+              autocomplete="new-password"
+              required
+              :disabled="busy"
+            />
+          </div>
+          <InlineNotice v-if="error" tone="danger">{{ error }}</InlineNotice>
+          <InlineNotice v-if="success" tone="success">{{ success }}</InlineNotice>
+          <button class="button button--primary button--block" :disabled="busy">
+            {{ busy ? '正在提交…' : mode === 'register' ? '提交注册申请' : '继续验证' }}
+            <AppIcon name="arrow" :size="17" />
+          </button>
+        </form>
+        <form v-else class="form-section" @submit.prevent="verify">
+          <div v-if="needsBind" class="auth-qr">
+            <img v-if="qr" :src="qr" alt="使用身份验证器扫描此二维码" width="180" height="180" />
+            <p class="subtext">扫描二维码，或手动输入下面的密钥。</p>
+            <details style="width: 100%">
+              <summary>查看手动登记密钥</summary>
+              <p class="mono" style="margin-top: 12px">{{ secret }}</p>
+            </details>
+          </div>
+          <div class="field">
+            <label for="login-totp">身份验证器验证码</label>
+            <input
+              id="login-totp"
+              v-model="form.code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              placeholder="六位数字验证码"
+              required
+              :disabled="busy"
+            />
+          </div>
+          <InlineNotice v-if="error" tone="danger">{{ error }}</InlineNotice>
+          <button class="button button--primary" :disabled="busy || !/^\d{6}$/.test(form.code)">
+            {{ busy ? '正在验证…' : needsBind ? '完成绑定并登录' : '确认登录' }}
+          </button>
+        </form>
+        <div class="auth-links">
+          <button v-if="mode === 'register' || step !== 0" :disabled="busy" @click="back">
+            返回登录
+          </button>
+          <button v-else :disabled="busy" @click="registerMode">创建账户</button>
+          <RouterLink v-if="!busy" to="/guest">访客通行 →</RouterLink>
+        </div>
+      </div>
+    </main>
+  </div>
+</template>

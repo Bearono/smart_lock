@@ -1,0 +1,64 @@
+name: Verify delivery candidate
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: BE_smart_lock/smart_lock/requirements.txt
+      - run: pip install -r BE_smart_lock/smart_lock/requirements.txt
+      - run: python -B -m unittest discover -s BE_smart_lock/smart_lock/tests -p 'test_*.py' -v
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: FE_smart_lock/smartlock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: FE_smart_lock/smartlock/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Browser acceptance
+        run: |
+          npm run serve -- --port 5173 > /tmp/smartlock-vite.log 2>&1 &
+          node --input-type=module -e "for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:5173')).ok)process.exit(0)}catch{}await new Promise(r=>setTimeout(r,250))}process.exit(1)"
+          npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-browser-screenshots
+          path: FE_smart_lock/smartlock/test-artifacts/*.png
+          if-no-files-found: ignore
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 deploy/init_secrets.py
+      - run: docker compose build
+      - run: docker compose up -d --wait
+      - run: curl --fail http://127.0.0.1:8080/health/ready
+      - if: always()
+        run: docker compose logs --tail=100
+      - if: always()
+        run: docker compose down
+  device-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/device.Dockerfile -t smart-lock-device:ci .
+      - run: docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:ci python /app/device_smoke.py

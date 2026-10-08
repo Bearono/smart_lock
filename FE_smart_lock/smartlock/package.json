@@ -1,46 +1,33 @@
 {
   "name": "smartlock",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint src tests/*.cjs *.js"
+    "serve": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "lint": "eslint src tests *.mjs",
+    "format": "prettier --write src tests *.mjs *.html *.json README.md",
+    "format:check": "prettier --check src tests *.mjs *.html *.json README.md",
+    "test:browser": "node tests/browser/acceptance.cjs",
+    "test:integration": "node tests/browser/integration.cjs"
   },
   "dependencies": {
     "axios": "^1.13.2",
-    "core-js": "^3.8.3",
-    "vue": "^2.6.14",
-    "vue-router": "^3.6.5"
+    "vue": "3.5.42",
+    "vue-router": "4.6.4"
   },
   "devDependencies": {
-    "@babel/core": "^7.12.16",
-    "@babel/eslint-parser": "^7.12.16",
-    "@vue/cli-plugin-babel": "~5.0.0",
-    "@vue/cli-plugin-eslint": "~5.0.0",
-    "@vue/cli-service": "~5.0.0",
-    "eslint": "^7.32.0",
-    "eslint-plugin-vue": "^8.0.3",
-    "vue-template-compiler": "^2.6.14"
+    "@vitejs/plugin-vue": "6.0.8",
+    "eslint": "10.10.0",
+    "eslint-plugin-vue": "10.11.0",
+    "playwright": "1.62.1",
+    "prettier": "3.6.2",
+    "vite": "8.3.0",
+    "vue-eslint-parser": "10.4.1"
   },
-  "eslintConfig": {
-    "root": true,
-    "env": {
-      "node": true
-    },
-    "extends": [
-      "plugin:vue/essential",
-      "eslint:recommended"
-    ],
-    "parserOptions": {
-      "parser": "@babel/eslint-parser"
-    },
-    "rules": {}
-  },
-  "browserslist": [
-    "> 1%",
-    "last 2 versions",
-    "not dead"
-  ]
+  "engines": {
+    "node": ">=22.12.0"
+  }
 }
