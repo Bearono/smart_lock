@@ -8,7 +8,8 @@ import cv2
 import requests
 from requests import HTTPError
 
-from security_protocol import SecureEnvelope, Spake2Client, SecureResponse
+from smartlock_protocol.v2 import SecureResponse
+from smartlock_protocol.v3 import Envelope as SecureEnvelope, Client as Spake2Client
 
 
 class NetworkTransmitter:
@@ -22,11 +23,14 @@ class NetworkTransmitter:
         if not device_password and os.getenv('SMART_LOCK_DEVICE_PASSWORD_FILE'):
             self.device_password = Path(os.environ['SMART_LOCK_DEVICE_PASSWORD_FILE']).read_text().strip()
         if os.getenv('SMART_LOCK_ENV') == 'production':
+            if not self.remote_url.startswith('https://'):
+                raise ValueError('Production device requires a verified HTTPS backend')
             if len(self.device_password.encode()) < 32 or self.device_password == 'ChangeMe-Spake2-Device-Password':
                 raise ValueError('Production requires an independent device secret of at least 32 bytes')
             if os.getenv('SMART_LOCK_ALLOW_TEST_IMAGES', 'false').lower() == 'true':
                 raise ValueError('Production forbids test-image fallback')
         self.security_session = None
+        self.ca_bundle = os.getenv('SMART_LOCK_CA_BUNDLE') or True
         self._session_lock = RLock()
 
     def _ensure_secure_session(self):
@@ -39,17 +43,23 @@ class NetworkTransmitter:
             f"{self.remote_url}/api/security/spake2/start",
             json=start_msg,
             timeout=10,
+            verify=self.ca_bundle,
         )
         response.raise_for_status()
-        self.security_session = client.finish(state, response.json())
+        session = client.finish(state, response.json())
+        confirmation = requests.post(f'{self.remote_url}/api/security/spake2/confirm',
+                                     json=client.confirmation(session), timeout=10, verify=self.ca_bundle)
+        confirmation.raise_for_status()
+        client.confirm(session, confirmation.json())
+        self.security_session = session
         return self.security_session
 
-    def _send_encrypted_v2(self, endpoint, data_dict, unlock_token=None):
+    def _send_secure(self, endpoint, data_dict, unlock_token=None):
         for attempt in range(2):
             with self._session_lock:
                 session = self._ensure_secure_session()
-            packet = SecureEnvelope.seal(session, data_dict, unlock_token=unlock_token)
-            response = requests.post(f'{self.remote_url}{endpoint}', json=packet, timeout=10)
+            packet = SecureEnvelope.seal(session, data_dict, endpoint=endpoint, unlock_token=unlock_token)
+            response = requests.post(f'{self.remote_url}{endpoint}', json=packet, timeout=10, verify=self.ca_bundle)
             try:
                 payload = response.json()
             except ValueError:
@@ -72,7 +82,7 @@ class NetworkTransmitter:
 
     def _send_encrypted(self, endpoint, data_dict, unlock_token=None):
         try:
-            return self._send_encrypted_v2(endpoint, data_dict, unlock_token=unlock_token)
+            return self._send_secure(endpoint, data_dict, unlock_token=unlock_token)
         except HTTPError as exc:
             response = exc.response
             if response is not None:
@@ -132,17 +142,17 @@ class NetworkTransmitter:
         """Consume a browser-issued bearer capability; this is not GPIO acknowledgement."""
         response = requests.post(
             f'{self.remote_url}/api/lock/unlock-token/verify',
-            json={'device_id': self.device_id, 'unlock_token': unlock_token}, timeout=10)
+            json={'device_id': self.device_id, 'unlock_token': unlock_token}, timeout=10, verify=self.ca_bundle)
         response.raise_for_status()
         return response.json()
 
     def heartbeat(self, lock_status, **status):
-        return self._send_encrypted_v2('/api/device/heartbeat',
+        return self._send_secure('/api/device/heartbeat',
                                        dict(status, device_id=self.device_id, lock_status=lock_status))
 
     def sync_lock(self):
-        return self._send_encrypted_v2('/api/lock/sync', {'device_id': self.device_id})
+        return self._send_secure('/api/lock/sync', {'device_id': self.device_id})
 
     def acknowledge_command(self, command_id, status, reported_status=None):
-        return self._send_encrypted_v2('/api/lock/ack', dict(device_id=self.device_id,
+        return self._send_secure('/api/lock/ack', dict(device_id=self.device_id,
             command_id=command_id, status=status, reported_status=reported_status))

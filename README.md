@@ -1,8 +1,10 @@
 # Smart Lock
 
-智能门锁软件，包含 Flask 后端、Vue 3 管理界面、树莓派摄像头网关和人脸识别工具。目标设备为 Raspberry Pi 4B / 2 GB，交付方式为 Docker。当前版本是待硬件验收的交付候选版，不能直接等同于已经完成工业现场验证的门锁产品。
+智能门锁软件，包含 Flask 后端、Vue 3 家居界面、树莓派摄像头网关和人脸识别工具。目标设备为 Raspberry Pi 4B / 2 GB，交付方式为 Docker。当前版本是待硬件验收的交付候选版，不能直接等同于已经完成工业现场验证的门锁产品。
 
 ## Docker 快速启动
+
+新版采用温暖的家居界面与独立管理入口，设备默认使用 v3 AES-GCM 通信。具体实现、HTTPS 配置、工程结构、验收与实机边界见 [家门体验交付说明](docs/HOME_DELIVERY.md)。课程架构和威胁模型见 [设计说明](docs/COURSE_ARCHITECTURE.md)。
 
 交付工作范围与验收证据见 [完善方案](docs/DELIVERY_PLAN.md) 和 [验收记录](docs/DELIVERY_REPORT.md)。
 
@@ -22,7 +24,7 @@ docker compose exec backend flask --app run create-admin --username operator
 ## 设备与用户权限
 
 ```sh
-docker compose exec backend flask --app run provision-device --device-id door_01 --service-url http://192.168.1.50:5000
+docker compose exec backend flask --app run provision-device --device-id door_01 --service-url https://192.168.1.50:8443
 docker compose exec backend flask --app run grant-device --username alice --device-id door_01
 ```
 
@@ -34,7 +36,7 @@ docker compose exec backend flask --app run grant-device --username alice --devi
 
 1. 密码验证只签发临时挑战，TOTP 成功后才签发登录 JWT。
 2. 用户请求开锁，后端记录设备、nonce、有效期和认证策略，向登记设备发送签名挑战。
-3. 树莓派采集并识别人脸，使用 SPAKE2 + AES-CBC + HMAC 加密上报；生产环境每次开门还要求 TOTP。
+3. 树莓派采集并识别人脸，使用 SPAKE2 双向密钥确认 + v3 AES-256-GCM 加密上报；生产环境每次开门还要求 TOTP。
 4. 确认认证后签发设备绑定的一次性令牌，消费令牌与创建开锁命令在同一事务内完成。
 5. 命令只有 30 秒有效期；新命令取代旧待执行命令。设备同步响应有签名，并绑定原请求。过期或已撤权的命令不会继续下发。
 6. 设备执行器应回传命令编号、结果及实际传感器状态，后端独立记录执行确认。消费令牌成功仅表示受理，绝不证明物理开锁完成。
@@ -47,13 +49,14 @@ docker compose exec backend flask --app run grant-device --username alice --devi
 
 ## 开发与测试
 
-后端使用 Python 3.12（设备 Debian 容器使用 Python 3.11）：
+后端和设备镜像均使用 Python 3.12：
 
 ```sh
 cd BE_smart_lock/smart_lock
 python -m venv .venv
 # 激活环境后
 pip install -r requirements.txt
+pip install --no-deps ../../packages/smartlock_protocol
 flask --app run init-db
 flask --app run create-admin
 python run.py

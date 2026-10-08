@@ -6,6 +6,8 @@ releases
 **/.venv*
 **/__pycache__
 **/node_modules
+**/test-artifacts
+**/*.egg-info
 **/dist
 **/*.db
 **/*.sqlite*
@@ -18,6 +20,7 @@ releases
 **/*.pptx
 outputs
 deploy/secrets
+deploy/tls
 deploy/backups
 .env
 **/.env*

@@ -6,13 +6,13 @@ const path = require('node:path')
 function tracker(getCommand) {
   const root = path.join(__dirname, '../src')
   const helpers = fs
-    .readFileSync(path.join(root, 'api/commandStatus.js'), 'utf8')
+    .readFileSync(path.join(root, 'features/door/commandStatus.js'), 'utf8')
     .replaceAll('export ', '')
   const { commandLabels, normalizeCommandStatus } = new Function(
     helpers + '; return { commandLabels, normalizeCommandStatus }'
   )()
   const script = fs
-    .readFileSync(path.join(root, 'components/CommandStatus.vue'), 'utf8')
+    .readFileSync(path.join(root, 'features/door/CommandStatus.vue'), 'utf8')
     .match(/<script>([\s\S]*?)<\/script>/)[1]
     .replace(/^import .*$/gm, '')
     .replace('export default', 'return')

@@ -1,0 +1,22 @@
+:root {
+  --canvas: #f7f3ec;
+  --surface: #fffcf7;
+  --ink: #302d28;
+  --muted: #716a61;
+  --line: #e5ddd1;
+  --primary: #985638;
+  --primary-hover: #7d432a;
+  --nav: #efe5d6;
+  --success: #356b54;
+  --danger: #b33e3b;
+  --warning: #886014;
+  --radius: 22px;
+  --shadow: 0 8px 32px #6d4c3010;
+  font-family: Inter, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--ink);
+  background: var(--canvas);
+  font-size: 16px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}

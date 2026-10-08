@@ -6,9 +6,9 @@ const accepted = {
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve))
 async function modules() {
-  const flow = await import('../src/api/doorFlow.js')
-  const guest = await import('../src/domain/guestFlow.js')
-  const status = await import('../src/api/commandStatus.js')
+  const flow = await import('../src/features/door/doorFlow.js')
+  const guest = await import('../src/features/guests/guestFlow.js')
+  const status = await import('../src/features/door/commandStatus.js')
   return { ...flow, ...guest, ...status }
 }
 function state() {

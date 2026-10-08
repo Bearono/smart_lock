@@ -30,7 +30,7 @@ docker compose exec backend flask --app run create-admin --username operator
 3. 为每台设备登记独立随机口令和固定服务地址：
 
 ```sh
-docker compose exec backend flask --app run provision-device --device-id door_01 --service-url http://192.168.1.50:5000
+docker compose exec backend flask --app run provision-device --device-id door_01 --service-url https://192.168.1.50:8443
 docker compose exec backend flask --app run grant-device --username alice --device-id door_01
 ```
 
@@ -45,15 +45,16 @@ docker compose exec backend flask --app run grant-device --username alice --devi
 1. 把登记口令保存为 `deploy/secrets/device_key`，只允许运维账号读取其父目录。
 2. 将已验证模型放入 `deploy/device/models`，包含 `deploy.prototxt` 和 `res10_300x300_ssd_iter_140000.caffemodel`。生产模式禁止运行时下载模型，应记录批准模型的 SHA-256 和来源。
 3. 将已录入的 `template_*.npy` 放入 `deploy/device/templates`。模板用户名与后端账号一致，目录以只读方式挂载。
-4. 设置变量并部署：
+4. 按 [家门交付说明](../docs/HOME_DELIVERY.md) 配置后端与设备 HTTPS：只传输设备服务证书、设备服务私钥和 CA 公钥，CA 私钥留在维护主机。设备服务证书 SAN 必须匹配后端登记地址。
+5. 设置变量并部署：
 
 ```sh
 export SMART_LOCK_DEVICE_ID=door_01
 export BACKEND_URL=https://your-backend.example
-export DEVICE_BIND_IP=192.168.1.50
+export DEVICE_TLS_BIND_IP=192.168.1.50
 export VIDEO_GID=$(getent group video | cut -d: -f3)
 docker compose -f compose.device.yaml build
-docker compose -f compose.device.yaml up -d --wait
+docker compose -f compose.device.yaml -f compose.device.tls.yaml up -d --wait
 ```
 
 服务地址应限于受控局域网/VPN，防火墙仅允许后端访问。每次 POST 必须有后端签名；修改模板建议在维护窗口更新只读挂载后重启。设备只用一个工作进程、两个请求线程，并在工作进程启动后运行独立的心跳和命令轮询线程；摄像头采集串行进行，避免重复装载人脸模型。内存上限 1200 MB 是保护配置，不是已经验证的峰值。
@@ -92,6 +93,8 @@ cd FE_smart_lock/smartlock
 npm ci
 npm test
 npm run lint
+npm run typecheck
+npm run format:check
 npm run build
 ```
 
@@ -109,7 +112,7 @@ npm run build
 
 ## 软件验收与打包
 
-安装后端锁定依赖和前端 `npm ci` 后，从仓库根目录执行：
+安装后端锁定依赖、共享协议包（`pip install --no-deps ./packages/smartlock_protocol`）和前端 `npm ci` 后，从仓库根目录执行：
 
 ```sh
 python -B deploy/verify.py

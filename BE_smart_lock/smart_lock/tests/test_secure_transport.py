@@ -189,7 +189,8 @@ with app.app_context():
         module = load_device_transport()
         transmitter = module.NetworkTransmitter('http://backend', device_id='test_device')
         calls = []
-        def send(url, json, timeout):
+        def send(url, json, timeout, verify):
+            self.assertTrue(verify)
             endpoint = url.removeprefix('http://backend')
             calls.append(endpoint)
             with self.app.test_client() as client:
@@ -224,8 +225,8 @@ class DeviceRecoveryTests(unittest.TestCase):
 
     def setUp(self):
         self.transmitter = self.module.NetworkTransmitter('http://test-backend', device_id='device')
-        from app.routes.security_protocol import SecuritySession
-        self.session = SecuritySession('a' * 32, 'device', b'k' * 32, time.time() + 300)
+        from smartlock_protocol.v3 import Session
+        self.session = Session('a' * 32, 'device', b'k' * 32, time.time() + 300, confirmed=True)
 
     def response(self, status, payload):
         response = requests.Response()

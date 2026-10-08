@@ -1,3 +1,4 @@
+from app.time_contract import timestamp as serialize_time
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request
@@ -37,7 +38,7 @@ def get_status():
         "status": device.status,
         "reported_status": device.reported_status,
         "battery": device.battery,
-        "last_update": device.last_update.strftime("%Y-%m-%d %H:%M:%S") if device.last_update else None,
+        "last_update": serialize_time(device.last_update) if device.last_update else None,
     }), 200
 
 
@@ -65,6 +66,7 @@ def control_lock():
     db.session.add(AccessLog(
         action='REMOTE_UNLOCK' if action == 'UNLOCK' else 'REMOTE_LOCK',
         username=current_user,
+        device_id=device_id, command_id=command.id,
     ))
     db.session.commit()
 
@@ -127,6 +129,7 @@ def verify_unlock_token():
     db.session.add(AccessLog(
         action='TOKEN_UNLOCK',
         username=user.username if user else 'Unknown',
+        device_id=device_id, command_id=command.id,
     ))
     db.session.commit()
 
@@ -227,7 +230,9 @@ def get_history():
         "id": log.id,
         "username": log.username,
         "action": log.action,
-        "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        "device_id": log.device_id,
+        "command_id": log.command_id,
+        "timestamp": serialize_time(log.timestamp),
     } for log in logs_pagination.items]
 
     return jsonify({

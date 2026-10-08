@@ -7,6 +7,7 @@
     "test": "node --test tests/*.test.cjs",
     "serve": "vite --host 127.0.0.1",
     "build": "vite build",
+    "typecheck": "vue-tsc --noEmit",
     "lint": "eslint src tests *.mjs",
     "format": "prettier --write src tests *.mjs *.html *.json README.md",
     "format:check": "prettier --check src tests *.mjs *.html *.json README.md",
@@ -19,13 +20,17 @@
     "vue-router": "4.6.4"
   },
   "devDependencies": {
+    "@types/node": "^26.6.4",
     "@vitejs/plugin-vue": "6.0.8",
     "eslint": "10.10.0",
     "eslint-plugin-vue": "10.11.0",
     "playwright": "1.62.1",
     "prettier": "3.6.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.1",
     "vite": "8.3.0",
-    "vue-eslint-parser": "10.4.1"
+    "vue-eslint-parser": "10.4.1",
+    "vue-tsc": "^3.3.12"
   },
   "engines": {
     "node": ">=22.12.0"

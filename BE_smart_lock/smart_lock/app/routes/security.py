@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request, current_app
 from spake2 import SPAKE2_B
 from app.security_store import save_session, load_session, SecurePayloadError
 from app.provisioning import device_password, validate_device_id
+from smartlock_protocol.v3 import VERSION, transcript, derive_session_key, proof, verify_proof
 
 from .security_protocol import (
     PROTOCOL_VERSION,
@@ -30,13 +31,18 @@ def get_device_password(device_id: str) -> str:
 def spake2_start():
     """设备发起标准 SPAKE2 握手，后端返回 SPAKE2_B 消息与 challenge。"""
     data = request.get_json() or {}
+    if not isinstance(data, dict):
+        return jsonify(msg='Invalid SPAKE2 start message'), 400
     device_id = data.get("device_id")
     client_msg_b64 = data.get("client_pub")
     client_nonce_b64 = data.get("client_nonce")
     timestamp = data.get('timestamp')
     request_id = data.get('request_id')
 
-    if (data.get('version') != PROTOCOL_VERSION
+    version = data.get('version')
+    if (set(data) != {'version', 'device_id', 'client_pub', 'client_nonce', 'timestamp', 'request_id'}
+            or version not in (PROTOCOL_VERSION, VERSION)
+            or (version == PROTOCOL_VERSION and not current_app.config['ALLOW_PROTOCOL_V2'])
             or not validate_device_id(device_id)
             or not isinstance(request_id, str) or not 1 <= len(request_id) <= 64
             or type(timestamp) is not int):
@@ -76,17 +82,50 @@ def spake2_start():
         }),
     )
 
-    save_session(SecuritySession(session_id, device_id, session_key, expires_at))
-
-    return jsonify({
-        "version": PROTOCOL_VERSION,
+    reply = {
+        "version": version,
         "session_id": session_id,
         # 字段名保留 server_pub 是为了兼容上一版接口；实际内容已改为 SPAKE2_B 消息。
         "server_pub": b64e(server_msg),
         "server_nonce": b64e(server_nonce),
         "challenge": b64e(challenge),
         "expires_at": expires_at,
-    }), 200
+    }
+    if version == VERSION:
+        context = transcript(data, reply)
+        session_key = derive_session_key(session_key, context)
+        reply['baseline_challenge'] = reply['challenge']
+        reply['challenge'] = proof(session_key, context, 'server')
+        save_session(SecuritySession(session_id, device_id, session_key, expires_at),
+                     protocol_version=VERSION, confirmed=False, transcript=context)
+    else:
+        save_session(SecuritySession(session_id, device_id, session_key, expires_at))
+    return jsonify(reply), 200
+
+
+@security_bp.route('/api/security/spake2/confirm', methods=['POST'])
+def spake2_confirm():
+    from app import db
+    from app.models import DeviceSecuritySession
+    data = request.get_json() or {}
+    if not isinstance(data, dict):
+        return jsonify(msg='Invalid session confirmation'), 400
+    session_id, candidate = data.get('session_id'), data.get('proof')
+    if (not isinstance(session_id, str) or len(session_id) != 32
+            or any(char not in '0123456789abcdef' for char in session_id)
+            or not isinstance(candidate, str) or len(candidate) != 44):
+        return jsonify(msg='Invalid session confirmation'), 400
+    session = load_session(session_id, allow_pending=True)
+    try:
+        valid = (data.get('version') == VERSION and session.protocol_version == VERSION
+                 and verify_proof(session.session_key, session.transcript_bytes, 'client', data.get('proof')))
+    except (ValueError, TypeError):
+        valid = False
+    if not valid:
+        return jsonify(msg='Invalid session confirmation'), 400
+    DeviceSecuritySession.query.filter_by(id=session.session_id).update({'confirmed': True})
+    db.session.commit()
+    return jsonify(version=VERSION, proof=proof(session.session_key, session.transcript_bytes, 'confirmed')), 200
 
 
 @security_bp.route("/api/security/session/<session_id>", methods=["GET"])

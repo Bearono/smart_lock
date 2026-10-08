@@ -9,12 +9,14 @@ services:
       SMART_LOCK_ENV: production
       SMART_LOCK_DEVICE_ID: ${SMART_LOCK_DEVICE_ID:?Set device ID}
       BACKEND_URL: ${BACKEND_URL:?Set HTTPS backend URL}
+      SMART_LOCK_CA_BUNDLE: /run/tls/ca.crt
       SMART_LOCK_DEVICE_PASSWORD_FILE: /run/secrets/device_key
       DEVICE_STATE_DIR: /data
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
     secrets: [device_key]
     volumes:
+      - ./deploy/tls/ca.crt:/run/tls/ca.crt:ro
       - device_state:/data
       - ./deploy/device/models:/app/cv/models:ro
       - ./deploy/device/templates:/app/cv/code/data/templates/templates:ro

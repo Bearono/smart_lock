@@ -6,6 +6,8 @@ x-backend: &backend
     dockerfile: deploy/backend.Dockerfile
   environment:
     SMART_LOCK_ENV: production
+    SMART_LOCK_SERVER_TIMEZONE: UTC
+    SMART_LOCK_ALLOW_PROTOCOL_V2: 'false'
     DATABASE_URL: sqlite:////data/smart_lock.db
     UPLOAD_FOLDER: /data/captures
     SECRET_KEY_FILE: /run/secrets/app_key

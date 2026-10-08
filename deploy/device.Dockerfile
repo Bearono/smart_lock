@@ -17,6 +17,8 @@ RUN pip install --no-cache-dir --no-build-isolation numpy==1.26.4 opencv-python-
     && pip install --no-cache-dir --no-deps face-recognition==1.3.0
 RUN groupadd -g 10001 smartlock && useradd -u 10001 -g smartlock smartlock && mkdir /data && chown smartlock:smartlock /data
 WORKDIR /app
+COPY packages/smartlock_protocol /opt/smartlock_protocol
+RUN pip install --no-cache-dir --no-deps /opt/smartlock_protocol
 COPY paspberry_pi/*.py /app/
 COPY paspberry_pi/cv/code/*.py /app/cv/code/
 COPY deploy/device_smoke.py /app/device_smoke.py

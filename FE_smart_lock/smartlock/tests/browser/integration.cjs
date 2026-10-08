@@ -48,7 +48,7 @@ async function run() {
   assert.equal(receipt.command_accepted, true)
   assert.equal(receipt.hardware_confirmed, false)
   await page.getByText('命令已提交，正在等待设备执行确认', { exact: true }).waitFor()
-  await page.getByRole('link', { name: '记录', exact: true }).click()
+  await page.getByRole('link', { name: '动态', exact: true }).click()
   await page.getByText('上锁命令已提交', { exact: true }).waitFor()
   assert.equal(await page.getByText('设备已确认本次命令执行', { exact: true }).count(), 0)
   await page.getByRole('link', { name: '访客', exact: true }).click()

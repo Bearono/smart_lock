@@ -1,4 +1,5 @@
 """Start background work after fork, exactly once per device worker."""
+backlog = 8
 
 
 def post_worker_init(worker):

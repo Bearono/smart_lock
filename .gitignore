@@ -19,3 +19,7 @@ deploy/device/models/
 deploy/device/templates/
 **/instance/
 releases/
+# Local protocol package build metadata
+*.egg-info/
+# Local TLS keys and certificates
+deploy/tls/

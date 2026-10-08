@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 from app.models import MediaAsset
 from app.permissions import require_device
+from app.time_contract import timestamp
 
 video_bp = Blueprint('video', __name__)
 
@@ -22,7 +23,9 @@ def latest():
     device_id = request.args.get('device_id', '')
     require_device(device_id)
     asset = MediaAsset.query.filter_by(device_id=device_id).order_by(MediaAsset.created_at.desc(), MediaAsset.filename.desc()).first()
-    return jsonify(snapshot='/api/media/' + asset.filename if asset else None), 200
+    return jsonify(snapshot='/api/media/' + asset.filename if asset else None,
+                   received_at=timestamp(asset.created_at) if asset else None,
+                   captured_at=None), 200
 
 
 @video_bp.route('/')

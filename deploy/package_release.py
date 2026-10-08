@@ -9,17 +9,22 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = (
-    'README.md', 'API_DOCUMENTATION.md', 'compose.yaml', 'compose.device.yaml', '.dockerignore',
+    'README.md', 'API_DOCUMENTATION.md', 'compose.yaml', 'compose.device.yaml', 'compose.tls.yaml', '.dockerignore',
     'BE_smart_lock/smart_lock/config.py', 'BE_smart_lock/smart_lock/run.py',
     'BE_smart_lock/smart_lock/requirements.txt', 'BE_smart_lock/smart_lock/requirements.lock',
     'FE_smart_lock/smartlock/package.json', 'FE_smart_lock/smartlock/package-lock.json',
     'FE_smart_lock/smartlock/index.html', 'FE_smart_lock/smartlock/vite.config.mjs',
     'FE_smart_lock/smartlock/eslint.config.mjs', 'FE_smart_lock/smartlock/README.md',
+    'FE_smart_lock/smartlock/tsconfig.json',
+    'FE_smart_lock/smartlock/.prettierrc.json',
+    'compose.device.tls.yaml',
+    'packages/smartlock_protocol/pyproject.toml',
 )
 TREES = {
     'BE_smart_lock/smart_lock/app': {'.py'},
     'BE_smart_lock/smart_lock/tests': {'.py'},
-    'FE_smart_lock/smartlock/src': {'.js', '.vue'},
+    'FE_smart_lock/smartlock/src': {'.js', '.ts', '.vue', '.css'},
+    'packages/smartlock_protocol/smartlock_protocol': {'.py'},
     'FE_smart_lock/smartlock/tests': {'.cjs'},
     'docs': {'.md'},
     '.github/workflows': {'.yml', '.yaml'},

@@ -34,25 +34,32 @@ def _prune(store, now):
     store.execute(delete(DeviceSecuritySession).where(DeviceSecuritySession.expires_at < now))
 
 
-def save_session(session):
+def save_session(session, *, protocol_version='SL-SEC-v2', confirmed=True, transcript=None):
     with Session(db.engine) as store, store.begin():
         _prune(store, time.time())
         store.add(DeviceSecuritySession(id=session.session_id, device_id=session.device_id,
                                         encrypted_key=_cipher().encrypt(session.session_key),
+                                        protocol_version=protocol_version, confirmed=confirmed, transcript=transcript,
                                         expires_at=session.expires_at))
 
 
-def load_session(session_id):
+def load_session(session_id, *, allow_pending=False):
     from app.routes.security_protocol import SecuritySession
     with Session(db.engine) as store:
         record = store.get(DeviceSecuritySession, session_id)
         if not record or record.expires_at <= time.time():
             raise SecurePayloadError('Unknown or expired security session', 'SECURITY_SESSION_INVALID', 401)
+        if not record.confirmed and not allow_pending:
+            raise SecurePayloadError('Security session requires confirmation', 'SECURITY_SESSION_UNCONFIRMED', 401)
         try:
             key = _cipher().decrypt(record.encrypted_key)
         except InvalidToken as exc:
             raise SecurePayloadError('Security session key changed', 'SECURITY_SESSION_INVALID', 401) from exc
-        return SecuritySession(record.id, record.device_id, key, record.expires_at)
+        session = SecuritySession(record.id, record.device_id, key, record.expires_at)
+        session.protocol_version = record.protocol_version
+        session.confirmed = record.confirmed
+        session.transcript_bytes = record.transcript
+        return session
 
 
 def claim_message(session, request_id, nonce, valid_until):
@@ -67,6 +74,7 @@ def claim_message(session, request_id, nonce, valid_until):
             if not store.get(DeviceSecuritySession, session.session_id):
                 raise SecurePayloadError('Security session revoked', 'SECURITY_SESSION_INVALID', 401)
             store.add(SecureMessageReceipt(session_id=session.session_id, request_id=request_id,
-                                           nonce=nonce, expires_at=min(session.expires_at, valid_until)))
+                                           nonce=nonce, expires_at=session.expires_at))
+            # Keep nonce claims for the whole key lifetime, not only the timestamp window.
     except IntegrityError as exc:
         raise SecurePayloadError('Replay attack detected', 'SECURE_MESSAGE_REPLAY') from exc

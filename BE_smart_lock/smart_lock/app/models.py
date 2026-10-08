@@ -1,3 +1,4 @@
+from app.time_contract import timestamp as serialize_time
 from app import db
 from datetime import datetime, timedelta
 
@@ -36,6 +37,9 @@ class DeviceSecuritySession(db.Model):
     device_id = db.Column(db.String(50), nullable=False, index=True)
     encrypted_key = db.Column(db.LargeBinary, nullable=False)
     expires_at = db.Column(db.Float, nullable=False, index=True)
+    protocol_version = db.Column(db.String(20), nullable=False, default='SL-SEC-v2')
+    confirmed = db.Column(db.Boolean, nullable=False, default=True)
+    transcript = db.Column(db.LargeBinary)
 
 
 class SecureMessageReceipt(db.Model):
@@ -106,8 +110,8 @@ class User(db.Model):
             'username': self.username,
             'role': self.role,
             'status': self.status,
-            'created_at': self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
-            'approved_at': self.approved_at.strftime("%Y-%m-%d %H:%M:%S") if self.approved_at else None,
+            'created_at': serialize_time(self.created_at) if self.created_at else None,
+            'approved_at': serialize_time(self.approved_at) if self.approved_at else None,
             'approved_by': self.approved_by,
         }
 
@@ -117,6 +121,7 @@ class Device(db.Model):
     __tablename__ = 'devices'
     id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.String(50), unique=True, nullable=False)
+    display_name = db.Column(db.String(60))
     status = db.Column(db.String(20), default="LOCKED")
     reported_status = db.Column(db.String(20), default='UNKNOWN')
     battery = db.Column(db.Integer)
@@ -128,13 +133,14 @@ class Device(db.Model):
     def to_dict(self):
         return {
             'device_id': self.device_id,
+            'display_name': self.display_name,
             'status': self.status,
             'reported_status': self.reported_status,
             'battery': self.battery,
             'camera_status': self.camera_status,
             'ip_address': self.ip_address,
             'is_online': bool(self.last_update and timedelta(0) <= datetime.now() - self.last_update <= timedelta(minutes=2)),
-            'last_update': self.last_update.strftime("%Y-%m-%d %H:%M:%S") if self.last_update else None
+            'last_update': serialize_time(self.last_update) if self.last_update else None
         }
 
 
@@ -145,6 +151,8 @@ class AccessLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.now)
     action = db.Column(db.String(100))
     username = db.Column(db.String(80))
+    device_id = db.Column(db.String(50))
+    command_id = db.Column(db.String(32))
 
 
 # 4. 报警日志表
@@ -162,7 +170,7 @@ class AlarmLog(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'time': self.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            'time': serialize_time(self.timestamp),
             'type': self.alarm_type,
             'alarm_type': self.alarm_type,
             'message': self.message,
@@ -170,7 +178,7 @@ class AlarmLog(db.Model):
             'snapshot_path': self.snapshot_path,
             'status': self.status,
             'handled_by': self.handled_by,
-            'handled_at': self.handled_at.strftime("%Y-%m-%d %H:%M:%S") if self.handled_at else None
+            'handled_at': serialize_time(self.handled_at) if self.handled_at else None
         }
 
 
@@ -245,12 +253,12 @@ class GuestPass(db.Model):
             'id': self.id,
             'guest_name': self.guest_name,
             'device_id': self.device_id,
-            'valid_from': self.valid_from.isoformat() if self.valid_from else None,
-            'valid_until': self.valid_until.isoformat() if self.valid_until else None,
+            'valid_from': serialize_time(self.valid_from) if self.valid_from else None,
+            'valid_until': serialize_time(self.valid_until) if self.valid_until else None,
             'max_uses': self.max_uses,
             'used_count': self.used_count,
             'is_active': self.is_active,
-            'created_at': self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None
+            'created_at': serialize_time(self.created_at) if self.created_at else None
         }
 
 
@@ -279,5 +287,5 @@ class FaceRecognitionLog(db.Model):
             'passed': self.passed,
             'snapshot': self.snapshot_path,
             'failure_reason': self.failure_reason,
-            'timestamp': self.timestamp.strftime("%Y-%m-%d %H:%M:%S") if self.timestamp else None
+            'timestamp': serialize_time(self.timestamp) if self.timestamp else None
         }

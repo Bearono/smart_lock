@@ -6,6 +6,7 @@ import os
 import secrets
 
 os.environ['SMART_LOCK_ENV'] = 'production'
+os.environ['BACKEND_URL'] = 'https://backend.invalid'
 os.environ['SMART_LOCK_DEVICE_PASSWORD'] = secrets.token_hex(32)
 os.environ.pop('SMART_LOCK_DEVICE_PASSWORD_FILE', None)
 

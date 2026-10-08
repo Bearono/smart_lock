@@ -6,7 +6,8 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db
-from app.models import AccessLog, DeviceGrant, User
+from app.models import AccessLog, Device, DeviceGrant, User
+from app.validation import text_field
 from app.authorization import revoke_access
 from app.access_management import set_device_grant
 
@@ -25,6 +26,23 @@ def admin_required(fn):
             return jsonify({"msg": "Admin privilege required"}), 403
         return fn(*args, **kwargs)
     return wrapper
+
+
+@admin_bp.route('/devices/<device_id>/name', methods=['PUT'])
+@admin_required
+def rename_device(device_id):
+    device = Device.query.filter_by(device_id=device_id).first_or_404()
+    device.display_name = text_field(request.get_json() or {}, 'display_name', maximum=60)
+    db.session.add(AccessLog(action='DEVICE_RENAMED', username=get_jwt_identity(), device_id=device_id))
+    db.session.commit()
+    return jsonify(device.to_dict()), 200
+
+
+@admin_bp.route('/security/evidence', methods=['GET'])
+@admin_required
+def security_evidence():
+    from app.security_evidence import evidence
+    return jsonify(evidence()), 200
 
 
 @admin_bp.route('/users/<int:user_id>/devices', methods=['GET'])

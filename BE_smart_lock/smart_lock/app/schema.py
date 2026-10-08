@@ -9,6 +9,10 @@ def upgrade_schema():
     existing_tables = set(inspector.get_table_names())
 
     column_specs = {
+        'device_security_sessions': {
+            'protocol_version': "VARCHAR(20) NOT NULL DEFAULT 'SL-SEC-v2'",
+            'confirmed': 'BOOLEAN NOT NULL DEFAULT 1', 'transcript': 'BLOB',
+        },
         'door_commands': {'user_id': 'INTEGER', 'guest_pass_id': 'INTEGER'},
         # Existing unbound sessions/tokens/passes remain unusable after migration.
         'auth_sessions': {
@@ -18,11 +22,13 @@ def upgrade_schema():
         'unlock_tokens': {'device_id': 'VARCHAR(50)', 'command_id': 'VARCHAR(32)'},
         'guest_passes': {'device_id': 'VARCHAR(50)'},
         'devices': {
+            'display_name': 'VARCHAR(60)',
             'reported_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
             'camera_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
             'ip_address': "VARCHAR(45)",
             'is_online': "BOOLEAN DEFAULT 0",
         },
+        'access_logs': {'device_id': 'VARCHAR(50)', 'command_id': 'VARCHAR(32)'},
         'alarm_logs': {
             'status': "VARCHAR(20) DEFAULT 'pending'",
             'handled_by': "VARCHAR(80)",

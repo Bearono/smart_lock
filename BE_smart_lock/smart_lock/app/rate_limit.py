@@ -33,6 +33,7 @@ def register(app):
         '/api/login': 30, '/api/login/pre': 30, '/api/register': 10,
         '/api/login/mfa/verify': 30, '/api/login/mfa/bind': 30,
         '/api/security/spake2/start': 30, '/api/mfa/guest/verify': 30,
+        '/api/security/spake2/confirm': 30,
         '/api/lock/unlock-token/verify': 60,
         '/api/lock/command-status': 120,
         '/api/mfa/verify/totp': 10,

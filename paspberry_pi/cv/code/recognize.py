@@ -8,6 +8,10 @@ import sys
 import glob
 import numpy as np
 import cv2
+try:
+    from .resource_guard import serialized_inference
+except ImportError:
+    from resource_guard import serialized_inference
 from typing import Tuple, Optional, Dict
 
 # Ensure package root is importable when executed as a script
@@ -111,6 +115,7 @@ def _get_detector(conf_threshold: float = 0.5) -> DnnFaceDetector:
     return _detector_cache
 
 
+@serialized_inference
 def recognize(
     image: np.ndarray,
     templates_dir: str = None,
@@ -235,6 +240,7 @@ def recognize_from_path(
     )
 
 
+@serialized_inference
 def reload_templates(templates_dir: str = None):
     """重新加载模板库（当模板文件更新后调用）"""
     global _templates_cache

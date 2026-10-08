@@ -8,6 +8,9 @@ def secret(name):
 
 
 class Config:
+    # Declare the timezone of existing naive database values; never guess it during upgrades.
+    SERVER_TIMEZONE = os.environ.get('SMART_LOCK_SERVER_TIMEZONE') or None
+    SECURITY_REPORT_PATH = os.environ.get('SMART_LOCK_SECURITY_REPORT_PATH', '/data/security-report.json')
     DEPLOYMENT_ENV = os.environ.get('SMART_LOCK_ENV', 'development')
     TRUST_PROXY = os.environ.get('TRUST_PROXY', 'false').lower() == 'true'
     AUTO_INIT_DB = os.environ.get('SMART_LOCK_AUTO_INIT_DB', 'false').lower() == 'true'
@@ -22,6 +25,7 @@ class Config:
     SECRET_KEY = secret('SECRET_KEY')
     JWT_SECRET_KEY = secret('JWT_SECRET_KEY')
     SECURITY_SESSION_TTL = int(os.environ.get('SMART_LOCK_SESSION_TTL', '300'))
+    ALLOW_PROTOCOL_V2 = os.environ.get('SMART_LOCK_ALLOW_PROTOCOL_V2', 'true').lower() == 'true'
     ALLOW_LEGACY_SECURE_UPLOAD = os.environ.get('ALLOW_LEGACY_SECURE_UPLOAD', 'false').lower() == 'true'
     MAX_CONTENT_LENGTH = 8 * 1024 * 1024
 

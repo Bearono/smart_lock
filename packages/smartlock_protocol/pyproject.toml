@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smartlock-protocol"
+version = "3.0.0"
+requires-python = ">=3.10"
+dependencies = ["cryptography>=46", "spake2==0.9"]
+
+[tool.setuptools.packages.find]
+where = ["."]

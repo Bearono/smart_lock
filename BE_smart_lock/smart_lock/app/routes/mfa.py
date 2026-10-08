@@ -1,3 +1,4 @@
+from app.time_contract import timestamp as serialize_time
 import os
 import math
 import requests
@@ -142,7 +143,7 @@ def mfa_status():
                 "credential_id": device.id,
                 "device_id": device.device_id,
                 "is_active": device.is_active,
-                "created_at": device.created_at.strftime("%Y-%m-%d %H:%M:%S") if device.created_at else None,
+                "created_at": serialize_time(device.created_at) if device.created_at else None,
             }
             for device in devices
         ],
@@ -620,7 +621,7 @@ def create_guest_pass():
     return jsonify({
         "msg": "Guest pass created",
         "pass_code": pass_code,  # 明文返回给用户（仅此一次）
-        "valid_until": guest_pass.valid_until.isoformat(),
+        "valid_until": serialize_time(guest_pass.valid_until),
         "max_uses": max_uses
     }), 200
 

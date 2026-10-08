@@ -190,3 +190,14 @@
 设备 `status` 是目标状态，`reported_status` 是设备最近一次上报的实际状态；心跳不会覆盖目标状态。两分钟内心跳视为在线。发送指令不会伪造新的心跳或上线状态。
 
 `is_online` 在序列化时由心跳时间计算，查询状态不会写库。新设备未上报电量时 `battery` 为 null；前端显示未知，不使用默认满电。旧库已有电量保留。关锁与 MFA 开锁为独立操作，不根据 UNKNOWN 状态推断应执行的动作。
+# 新版家居交付接口补充
+
+- `PUT /api/admin/devices/<device_id>/name`：管理员提交 `display_name`（1–60 字符），持久化名称并审计。
+- `GET /api/admin/security/evidence`：管理员只读配置、数量与脱敏离线报告；不会执行测试命令。
+- `GET /api/video/latest?device_id=...`：返回 `snapshot`、`received_at`、`captured_at: null`；接收时间不能作为拍摄时间。
+- `/api/device/status` 增加可空的 `display_name`；新控制历史增加可空的 `device_id` 和 `command_id`。
+- v3 使用 `/api/security/spake2/start`（`version=SL-SEC-v3`）和 `/api/security/spake2/confirm` 双向密钥确认；确认前不得执行业务。信封采用 AES-256-GCM，绑定端点、方法和方向等上下文。
+- 当前 Compose 关闭 v2 业务和握手；本文后续旧 v2 说明仅作为基线对照，不代表新版设备默认协议。开发时先安装 `packages/smartlock_protocol`。
+- 时区由 `SMART_LOCK_SERVER_TIMEZONE` 显式声明；旧数据库没有确定来源时，不附加虚构的 UTC 偏移。
+
+完整部署、迁移与限制参见 `docs/HOME_DELIVERY.md`。

@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 import time
+import hashlib
+import platform
 from package_release import source_hashes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,12 +24,18 @@ def verify(output):
                      'BE_smart_lock/smart_lock/tests', '-p', 'test_*.py', '-v'], ROOT),
         ('frontend-tests', [npm, 'test'], frontend),
         ('frontend-lint', [npm, 'run', 'lint'], frontend),
+        ('frontend-types', [npm, 'run', 'typecheck'], frontend),
+        ('frontend-format', [npm, 'run', 'format:check'], frontend),
         ('frontend-build', [npm, 'run', 'build'], frontend),
     ]
     output.mkdir(parents=True, exist_ok=True)
     report = {'created_at': datetime.now(timezone.utc).isoformat(),
               'scope': 'software automated acceptance; excludes browser, container runtime and hardware',
               'passed': False, 'checks': [], 'source_hashes': source_hashes()}
+    git = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True)
+    report['git_sha'] = git.stdout.strip() if git.returncode == 0 else None
+    report['source_digest'] = hashlib.sha256(json.dumps(report['source_hashes'], sort_keys=True).encode()).hexdigest()
+    report['environment'] = f'{platform.system()} / Python {platform.python_version()}'
     for name, command, directory in checks:
         start = time.monotonic()
         print(f'Running {name}', flush=True)
@@ -50,6 +58,8 @@ def verify(output):
         return 1
     report['passed'] = True
     (output / 'verification.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+    summary = {key: report[key] for key in ('created_at', 'scope', 'passed', 'checks', 'git_sha', 'source_digest', 'environment')}
+    (output / 'security-report.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     print(f'All automated software checks passed. Evidence: {output}')
     return 0
 

@@ -36,6 +36,8 @@ class CameraManager:
         try:
             if not cap.isOpened():
                 return None
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             ret, frame = cap.read()
             return frame if ret else None
         finally:

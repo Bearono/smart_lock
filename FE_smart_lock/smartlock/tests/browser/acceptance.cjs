@@ -65,7 +65,8 @@ let guestPasses = [],
   activeGrants = ['qa_front', 'registered_but_not_reported']
 let browser
 let snapshotFixtures = false,
-  receiptUnauthorized = false
+  receiptUnauthorized = false,
+  emptyDevices = false
 
 async function fixture(page) {
   await page.route('**/api/**', async (route) => {
@@ -81,7 +82,28 @@ async function fixture(page) {
     if (endpoint === '/api/login/mfa/verify')
       return respond({ access_token: 'qa-fixture', role: 'admin' })
     if (endpoint === '/api/device/status')
-      return deviceFailure ? respond({ msg: '设备状态获取失败' }, 503) : respond(devices)
+      return deviceFailure
+        ? respond({ msg: '设备状态获取失败' }, 503)
+        : respond(emptyDevices ? [] : devices)
+    if (endpoint === '/api/admin/security/evidence')
+      return respond({
+        observed_at: '2026-10-08T00:00:00Z',
+        verification: null,
+        protocol: {
+          version: 'SL-SEC-v3',
+          handshake: 'SPAKE2',
+          envelope: 'AES-256-GCM',
+          legacy_upload_enabled: false
+        },
+        controls: [{ name: '设备权限', detail: '管理员授权与认证绑定' }],
+        storage: { sessions: 1, receipts: 2, commands: 3 },
+        limitations: ['隔离测试数据，未验证实机。']
+      })
+    if (/\/api\/admin\/devices\/[^/]+\/name$/.test(endpoint)) {
+      const target = devices.find((item) => item.device_id === endpoint.split('/')[4])
+      target.display_name = body.display_name
+      return respond(target)
+    }
     if (endpoint === '/api/video/latest')
       return respond({
         snapshot: snapshotFixtures
@@ -207,6 +229,17 @@ async function fixture(page) {
   })
 }
 async function noOverflow(page, label) {
+  const overflow = await page.evaluate(() =>
+    [...document.querySelectorAll('body *')]
+      .filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
+      .slice(0, 8)
+      .map((element) => ({
+        tag: element.tagName,
+        class: element.className,
+        text: element.textContent.slice(0, 40)
+      }))
+  )
+  if (overflow.length) console.log(label, overflow)
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
     true,
@@ -269,14 +302,14 @@ async function run() {
   await page.getByText('命令已提交，正在等待设备执行确认', { exact: true }).waitFor()
   assert.equal(calls.consume, 1)
   assert.equal(await page.locator('#device-select').isDisabled(), true)
-  await page.getByRole('link', { name: '记录', exact: true }).click()
+  await page.getByRole('link', { name: '动态', exact: true }).click()
   commandConfirmed = true
   await page.getByText('设备已确认本次命令执行', { exact: true }).waitFor()
   await page.getByRole('tab', { name: '人脸验证', exact: true }).click()
   await page.getByRole('button', { name: '查看详情' }).click()
   await page.getByRole('dialog').getByText('0.96', { exact: true }).waitFor()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
-  await page.getByRole('link', { name: '门控', exact: true }).click()
+  await page.getByRole('link', { name: '我的家', exact: true }).click()
   assert.equal(
     await page.locator('.lock-hero strong').textContent(),
     '已锁',
@@ -293,7 +326,7 @@ async function run() {
   await page.getByLabel('身份验证器验证码', { exact: true }).fill('000000')
   await page.getByRole('button', { name: '确认并提交开门' }).click()
   await page.getByText('验证码不正确，请重新开始验证', { exact: true }).waitFor()
-  await page.getByRole('button', { name: '返回设备控制' }).click()
+  await page.getByRole('button', { name: '返回家门守护' }).click()
   deviceFailure = true
   await page.getByRole('button', { name: '刷新状态', exact: true }).click()
   await page.getByText('连接信息待更新', { exact: true }).waitFor()
@@ -311,7 +344,7 @@ async function run() {
   await page.getByRole('button', { name: '确认撤销', exact: true }).click()
   await page.getByText('已撤销', { exact: true }).waitFor()
 
-  await page.getByRole('link', { name: '用户与权限', exact: true }).click()
+  await page.getByRole('link', { name: '成员与权限', exact: true }).click()
   await page.getByLabel('账户状态').selectOption('approved')
   await page.getByRole('button', { name: '管理权限', exact: true }).click()
   await page.getByText('registered_but_not_reported', { exact: true }).waitFor()
@@ -320,7 +353,7 @@ async function run() {
   await page.getByText('Device disabled', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: '撤销权限', exact: true }).count(), 2)
   await page.screenshot({ path: path.join(artifacts, 'users-desktop.png'), fullPage: true })
-  await page.getByRole('link', { name: '报警', exact: true }).click()
+  await page.getByRole('link', { name: '异常提醒', exact: true }).click()
   await page.getByRole('button', { name: '查看与处理', exact: true }).click()
   await page.getByRole('dialog').getByText('未启用', { exact: true }).waitFor()
   await page.keyboard.press('Escape')
@@ -334,10 +367,11 @@ async function run() {
       '/dashboard/guests',
       '/dashboard/alarms',
       '/dashboard/users',
-      '/dashboard/security'
+      '/dashboard/security',
+      '/dashboard/evidence'
     ]) {
       await page.goto(base + route)
-      await page.locator('.page-heading').waitFor()
+      await page.locator('.page-heading, .home-welcome').waitFor()
       await noOverflow(page, `${route} at ${width}px`)
     }
   }
@@ -345,10 +379,46 @@ async function run() {
   await page.goto(base + '/dashboard')
   await page.getByRole('button', { name: '验证并开门' }).waitFor()
   await page.screenshot({ path: path.join(artifacts, 'doors-mobile.png'), fullPage: true })
-  await page.getByRole('button', { name: '打开导航' }).click()
-  await page.getByRole('dialog').getByRole('link', { name: '账户与安全', exact: true }).click()
+  await page.getByRole('link', { name: '设置', exact: true }).click()
   await page.getByRole('heading', { name: '账户与安全', exact: true }).waitFor()
   assert.equal(await page.getByRole('dialog').count(), 0)
+  await page.getByLabel('家门', { exact: true }).selectOption('qa_front')
+  await page.getByLabel('名称', { exact: true }).fill('入户门')
+  await page.getByRole('button', { name: '保存家门名称', exact: true }).click()
+  await page.getByText('家门名称已保存', { exact: true }).waitFor()
+  await page.goto(base + '/dashboard/evidence')
+  await page.getByText('SL-SEC-v3', { exact: true }).waitFor()
+  await noOverflow(page, 'security evidence mobile')
+  await page.goto(base + '/dashboard')
+  await page.locator('#device-select').waitFor()
+  assert.ok((await page.locator('#device-select').textContent()).includes('入户门'))
+  emptyDevices = true
+  await page.getByRole('button', { name: '刷新状态', exact: true }).click()
+  await page.getByText('把你的家门连接进来', { exact: true }).waitFor()
+  await noOverflow(page, 'empty home mobile')
+  emptyDevices = false
+  await page.getByRole('button', { name: '刷新状态', exact: true }).click()
+  await page.getByRole('button', { name: '验证并开门' }).waitFor()
+  for (const route of [
+    '/dashboard',
+    '/dashboard/records',
+    '/dashboard/guests',
+    '/dashboard/security',
+    '/dashboard/evidence'
+  ]) {
+    await page.goto(base + route)
+    await page.locator('.page-heading, .home-welcome').waitFor()
+    await page.evaluate(() => {
+      const sizes = [...document.querySelectorAll('body *')].map((element) => [
+        element,
+        parseFloat(getComputedStyle(element).fontSize)
+      ])
+      for (const [element, size] of sizes) element.style.fontSize = `${size * 2}px`
+    })
+    await noOverflow(page, `${route} mobile text 200%`)
+  }
+  await page.goto(base + '/dashboard/security')
+  await page.getByRole('button', { name: '修改密码', exact: true }).waitFor()
 
   const guest = await context.newPage()
   await page.getByRole('button', { name: '修改密码', exact: true }).click()
@@ -394,11 +464,11 @@ async function run() {
   const unauthorized = await browser.newContext()
   const publicPage = await unauthorized.newPage()
   await publicPage.goto(base + '/dashboard/users')
-  await publicPage.getByRole('heading', { name: '登录工作空间' }).waitFor()
+  await publicPage.getByRole('heading', { name: '欢迎回家' }).waitFor()
   await publicPage.screenshot({ path: path.join(artifacts, 'login-desktop.png'), fullPage: true })
   assert.deepEqual(errors, [], 'runtime errors or Vue warnings')
   console.log(
-    'Browser acceptance passed: login, receipt recovery, route persistence, state semantics, invalid TOTP, permissions, visitors, alarms, mobile navigation, 30 responsive checks.'
+    'Browser acceptance passed: login, receipt recovery, state semantics, permissions, visitors, alarms, naming, security evidence, empty state, 35 responsive and 5 text enlargement checks.'
   )
   await browser.close()
 }

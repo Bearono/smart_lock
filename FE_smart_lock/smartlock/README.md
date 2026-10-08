@@ -1,6 +1,6 @@
 # SmartLock Web
 
-Vue 3 + Vite 门禁控制台，使用同源 `/api`。开发代理目标为 `127.0.0.1:8000`，生产镜像通过 Nginx 转发。Node 至少 22.12，部署镜像使用 Node 24。
+Vue 3 + TypeScript + Vite 智能家居门锁界面，使用同源 `/api`。开发代理目标为 `127.0.0.1:8000`，生产镜像通过 Nginx 转发。Node 至少 22.12，部署镜像使用 Node 24。
 
 ## 开发与检查
 
@@ -9,21 +9,22 @@ npm ci
 npm run serve
 npm test
 npm run lint
+npm run typecheck
 npm run format:check
 npm run build
 ```
 
 ## 结构与职责
 
-- `layouts/AppLayout.vue`：导航、账户入口，以及跨业务页面保留的命令回执。
-- `views/`：门控、记录、访客、报警、用户权限、账户安全及公开登录/访客页面。路由按页面懒加载。
-- `composables/useDoorSession.js`：由登录布局持有的门控会话，负责认证、命令提交及设备刷新；敏感凭证只在内存存在。
-- `domain/guestFlow.js`：可独立测试的访客验证与原命令恢复流程，隔离视图和传输实现。
-- `composables/useResource.js`：列表请求的代次控制，旧响应和卸载后的响应不覆盖界面。
-- `composables/usePrivateImage.js`：私有图片获取、代次控制及对象 URL 回收。
-- `components/ui/`：语义化状态、通知、空状态、标题、原生模态对话框与分页。
-- `styles/tokens.css`：统一色彩和字体；`styles/app.css`：布局、组件、响应式和减少动态效果规则。
-- `api/index.js`：传输接口；`api/doorFlow.js`：令牌消费及响应丢失恢复；`api/commandStatus.js`：回执状态解释。
+- `app/`：应用装配、导航、路由、账户入口，以及跨页面保留的命令回执。
+- `features/`：按认证、我的家、开门、摄像头、动态、访客、设置、管理与安全证据组织。
+- `features/door/useDoorSession.ts`：登录布局持有的开门会话；敏感凭证只在内存存在。
+- `features/guests/guestFlow.js`：可独立测试的访客验证与原命令恢复流程。
+- `shared/lib/useResource.ts`：带类型的请求代次控制，旧响应与卸载后响应不会覆盖界面。
+- `features/camera/usePrivateImage.js`：私有图片获取、代次控制及对象 URL 回收。
+- `shared/ui/`：语义化状态、通知、空状态、标题、原生模态对话框、分页与原创家门插画。
+- `shared/styles/`：燕麦白/陶土色设计变量、布局、响应式和减少动态效果规则。
+- `shared/api/`：TypeScript 传输接口、领域数据类型和设备/快照运行时校验。
 
 所有权限由后端执行。客户端的导航与路由角色控制只改善体验，不能作为授权依据。生产页面不连接测试数据。
 
@@ -82,4 +83,4 @@ npm run test:integration
 
 ## 当前接口边界
 
-网页未提供人脸登记接口；账户页明确说明现有维护方式。设备显示名称、完整登记目录、快照拍摄时间、带时区时间、历史命令关联及完整报警分页需要后端扩展后再增加对应界面能力。
+网页未提供人脸登记接口；账户页明确说明现有维护方式。设备名称已持久化，新控制日志关联命令，快照显示服务器接收时间，后端在明确时区后输出偏移。没有可信设备拍摄时间，历史未关联记录不猜测设备；报警仍是最多 100 条筛选结果。
