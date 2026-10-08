@@ -36,6 +36,8 @@ class SecureTransportTests(unittest.TestCase):
         self.tmp = TemporaryDirectory()
         self.config = {
             'TESTING': True, 'BCRYPT_LOG_ROUNDS': 4,
+            'ALLOW_DEMO_DEVICES': True,
+            'RATE_LIMIT_ENABLED': False,
             'SECRET_KEY': 'shared-test-storage-key',
             'SQLALCHEMY_DATABASE_URI': 'sqlite:///' + (Path(self.tmp.name) / 'transport.db').as_posix(),
             'UPLOAD_FOLDER': str(Path(self.tmp.name) / 'captures'),

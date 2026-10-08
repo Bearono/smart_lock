@@ -1,13 +1,14 @@
 import base64
 import os
 import time
+from pathlib import Path
 from threading import RLock
 
 import cv2
 import requests
 from requests import HTTPError
 
-from security_protocol import SecureEnvelope, Spake2Client
+from security_protocol import SecureEnvelope, Spake2Client, SecureResponse
 
 
 class NetworkTransmitter:
@@ -18,6 +19,13 @@ class NetworkTransmitter:
             "SMART_LOCK_DEVICE_PASSWORD",
             "ChangeMe-Spake2-Device-Password",
         )
+        if not device_password and os.getenv('SMART_LOCK_DEVICE_PASSWORD_FILE'):
+            self.device_password = Path(os.environ['SMART_LOCK_DEVICE_PASSWORD_FILE']).read_text().strip()
+        if os.getenv('SMART_LOCK_ENV') == 'production':
+            if len(self.device_password.encode()) < 32 or self.device_password == 'ChangeMe-Spake2-Device-Password':
+                raise ValueError('Production requires an independent device secret of at least 32 bytes')
+            if os.getenv('SMART_LOCK_ALLOW_TEST_IMAGES', 'false').lower() == 'true':
+                raise ValueError('Production forbids test-image fallback')
         self.security_session = None
         self._session_lock = RLock()
 
@@ -58,6 +66,8 @@ class NetworkTransmitter:
             response.raise_for_status()
             if payload.get('status') == 'error':
                 raise ValueError(payload.get('msg') or 'Backend rejected secure request')
+            if endpoint == '/api/lock/sync':
+                payload = SecureResponse.verify(session, packet['header'], endpoint, payload)
             return payload
 
     def _send_encrypted(self, endpoint, data_dict, unlock_token=None):
@@ -132,3 +142,7 @@ class NetworkTransmitter:
 
     def sync_lock(self):
         return self._send_encrypted_v2('/api/lock/sync', {'device_id': self.device_id})
+
+    def acknowledge_command(self, command_id, status, reported_status=None):
+        return self._send_encrypted_v2('/api/lock/ack', dict(device_id=self.device_id,
+            command_id=command_id, status=status, reported_status=reported_status))

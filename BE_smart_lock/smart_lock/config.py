@@ -1,28 +1,39 @@
 import os
+from pathlib import Path
+
+
+def secret(name):
+    filename = os.environ.get(name + '_FILE')
+    return Path(filename).read_text(encoding='utf-8').strip() if filename else os.environ.get(name)
 
 
 class Config:
+    DEPLOYMENT_ENV = os.environ.get('SMART_LOCK_ENV', 'development')
+    TRUST_PROXY = os.environ.get('TRUST_PROXY', 'false').lower() == 'true'
+    AUTO_INIT_DB = os.environ.get('SMART_LOCK_AUTO_INIT_DB', 'false').lower() == 'true'
+    ALLOW_DEMO_DEVICES = os.environ.get('SMART_LOCK_ALLOW_DEMO_DEVICES', 'false').lower() == 'true'
+    CORS_ORIGINS = [s.strip() for s in os.environ.get('CORS_ORIGINS', '').split(',') if s.strip()]
     # Set DATABASE_URL for MySQL, for example:
     # mysql+pymysql://user:password@localhost/smart_lock_db
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or "sqlite:///smart_lock.db"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Override these in production so tokens survive process restarts.
-    SECRET_KEY = os.environ.get("SECRET_KEY") or os.urandom(32).hex()
-    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or os.urandom(32).hex()
+    SECRET_KEY = secret('SECRET_KEY')
+    JWT_SECRET_KEY = secret('JWT_SECRET_KEY')
     SECURITY_SESSION_TTL = int(os.environ.get('SMART_LOCK_SESSION_TTL', '300'))
     ALLOW_LEGACY_SECURE_UPLOAD = os.environ.get('ALLOW_LEGACY_SECURE_UPLOAD', 'false').lower() == 'true'
     MAX_CONTENT_LENGTH = 8 * 1024 * 1024
 
     UPLOAD_FOLDER = os.environ.get(
         "UPLOAD_FOLDER",
-        os.path.join(os.getcwd(), "app/static/captures"),
+        os.path.join(os.path.dirname(__file__), "instance", "captures"),
     )
 
     SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.qq.com")
     SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
     SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "")
-    SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD", "")
+    SENDER_PASSWORD = secret('SENDER_PASSWORD') or ''
     RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL", "")
 
     DEVICE_SERVICE_SCHEME = os.environ.get("DEVICE_SERVICE_SCHEME", "http")

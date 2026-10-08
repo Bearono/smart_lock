@@ -1,0 +1,42 @@
+name: smart-lock-device
+services:
+  device:
+    image: smart-lock-device:local
+    build:
+      context: .
+      dockerfile: deploy/device.Dockerfile
+    environment:
+      SMART_LOCK_ENV: production
+      SMART_LOCK_DEVICE_ID: ${SMART_LOCK_DEVICE_ID:?Set device ID}
+      BACKEND_URL: ${BACKEND_URL:?Set HTTPS backend URL}
+      SMART_LOCK_DEVICE_PASSWORD_FILE: /run/secrets/device_key
+      DEVICE_STATE_DIR: /data
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+    secrets: [device_key]
+    volumes:
+      - device_state:/data
+      - ./deploy/device/models:/app/cv/models:ro
+      - ./deploy/device/templates:/app/cv/code/data/templates/templates:ro
+    devices: ['/dev/video0:/dev/video0']
+    group_add: ['${VIDEO_GID:-44}']
+    ports: ['${DEVICE_BIND_IP:-127.0.0.1}:5000:5000']
+    mem_limit: 1200m
+    pids_limit: 128
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:5000/', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+volumes:
+  device_state:
+secrets:
+  device_key: {file: ./deploy/secrets/device_key}

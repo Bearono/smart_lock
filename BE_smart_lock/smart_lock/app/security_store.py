@@ -64,6 +64,8 @@ def claim_message(session, request_id, nonce, valid_until):
             _prune(store, now)
             if session.expires_at <= now or valid_until < now:
                 raise SecurePayloadError('Secure message expired')
+            if not store.get(DeviceSecuritySession, session.session_id):
+                raise SecurePayloadError('Security session revoked', 'SECURITY_SESSION_INVALID', 401)
             store.add(SecureMessageReceipt(session_id=session.session_id, request_id=request_id,
                                            nonce=nonce, expires_at=min(session.expires_at, valid_until)))
     except IntegrityError as exc:

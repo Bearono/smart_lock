@@ -88,6 +88,8 @@ def _ensure_models(model_dir: str) -> Tuple[str, str]:
     _ensure_dir(model_dir)
     proto_path = os.path.join(model_dir, "deploy.prototxt")
     model_path = os.path.join(model_dir, "res10_300x300_ssd_iter_140000.caffemodel")
+    if os.getenv('SMART_LOCK_ENV') == 'production' and not all(os.path.isfile(p) for p in (proto_path, model_path)):
+        raise RuntimeError('Production requires preinstalled, verified face models; runtime download is disabled')
 
     if not os.path.isfile(proto_path):
         _download_file(CAFFE_PROTO_URL, proto_path)

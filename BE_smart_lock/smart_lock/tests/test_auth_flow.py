@@ -17,7 +17,7 @@ from flask_jwt_extended import create_access_token
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app, db, bcrypt
-from app.models import AuthSession, Device, GuestPass, MFACredential, UnlockToken, User
+from app.models import AuthSession, Device, DeviceGrant, GuestPass, MFACredential, UnlockToken, User
 from app.routes.mfa import DeviceUnavailable
 from app.routes.security_protocol import SecureEnvelope, Spake2Client
 
@@ -27,6 +27,8 @@ class AuthFlowTests(unittest.TestCase):
         self.tmp = TemporaryDirectory()
         self.app = create_app({
             'TESTING': True, 'BCRYPT_LOG_ROUNDS': 4,
+            'ALLOW_DEMO_DEVICES': True,
+            'RATE_LIMIT_ENABLED': False,
             'JWT_SECRET_KEY': 'isolated-regression-test-key-32-bytes',
             'SQLALCHEMY_DATABASE_URI': 'sqlite:///' + (Path(self.tmp.name) / 'test.db').as_posix(),
             'UPLOAD_FOLDER': str(Path(self.tmp.name) / 'captures'),
@@ -43,6 +45,7 @@ class AuthFlowTests(unittest.TestCase):
             db.session.add(MFACredential(user_id=user.id, credential_type='totp',
                                         credential_data=self.secret, is_active=True))
             for device_id in ('door_a', 'door_b'):
+                db.session.add(DeviceGrant(user_id=user.id, device_id=device_id))
                 db.session.add(MFACredential(user_id=user.id, credential_type='device',
                                             device_id=device_id, credential_data='', is_active=True))
                 db.session.add(Device(device_id=device_id))
@@ -103,12 +106,111 @@ class AuthFlowTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as pool:
             return list(pool.map(lambda _: submit(), range(2)))
 
+    def test_unbind_rebind_does_not_revive_accepted_command(self):
+        credential = self.issued()
+        accepted = self.post('/api/lock/unlock-token/verify', credential, False)
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(self.post('/api/mfa/unbind/device', {'device_id': 'door_a'}).status_code, 200)
+        self.assertEqual(self.post('/api/mfa/bind/device', {'device_id': 'door_a'}).status_code, 200)
+        result = self.post('/api/lock/command-status', credential, False)
+        self.assertEqual(result.json['status'], 'revoked')
+        self.assertFalse(result.json['hardware_confirmed'])
+
+    def test_guest_revocation_reaches_already_accepted_command(self):
+        created = self.post('/api/mfa/guest/create', {'device_id': 'door_a', 'guest_name': 'visitor'})
+        credential = self.post('/api/mfa/guest/verify', {'pass_code': created.json['pass_code']}, False).json
+        accepted = self.post('/api/lock/unlock-token/verify', credential, False)
+        self.assertEqual(accepted.status_code, 200)
+        with self.app.app_context():
+            guest_id = GuestPass.query.one().id
+        self.assertEqual(self.post(f'/api/mfa/guest/revoke/{guest_id}', {}).status_code, 200)
+        self.assertEqual(self.post('/api/lock/command-status', credential, False).json['status'], 'revoked')
+
+    def test_command_capability_is_read_only_and_device_scoped(self):
+        credential = self.issued()
+        self.assertEqual(self.post('/api/lock/command-status', credential, False).status_code, 404)
+        accepted = self.post('/api/lock/unlock-token/verify', credential, False)
+        for _ in range(2):
+            result = self.post('/api/lock/command-status', credential, False)
+            self.assertEqual(result.json['id'], accepted.json['command_id'])
+            self.assertEqual(result.json['status'], 'pending')
+        self.assertEqual(self.post('/api/lock/command-status', dict(credential, device_id='door_b'), False).status_code, 404)
+        self.assertEqual(self.post('/api/lock/unlock-token/verify', credential, False).status_code, 401)
+
+    def test_account_reapproval_does_not_restore_old_login(self):
+        with self.app.app_context():
+            operator = User(username='operator', role='admin', status='approved', password_hash='unused')
+            db.session.add(operator)
+            db.session.flush()
+            db.session.add(MFACredential(user_id=operator.id, credential_type='totp', credential_data=pyotp.random_base32(), is_active=True))
+            db.session.commit()
+            headers = {'Authorization': 'Bearer ' + create_access_token(identity='operator', additional_claims={'mfa': True})}
+        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False).json
+        for operation in ('reject', 'approve'):
+            self.assertEqual(self.client.post(f'/api/admin/users/{self.uid}/{operation}', headers=headers).status_code, 200)
+        self.assertEqual(self.client.get('/api/mfa/status', headers=self.headers).status_code, 401)
+        result = self.post('/api/login/mfa/verify', {'pre_token': pre['pre_token'], 'code': pyotp.TOTP(self.secret).now()}, False)
+        self.assertEqual(result.status_code, 401)
+        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False).json
+        login = self.post('/api/login/mfa/verify', {'pre_token': pre['pre_token'], 'code': pyotp.TOTP(self.secret).now()}, False)
+        self.assertEqual(login.status_code, 200)
+        self.assertEqual(self.client.get('/api/mfa/status', headers={'Authorization': 'Bearer ' + login.json['access_token']}).status_code, 200)
+
+    def test_malformed_fields_and_device_credential_cannot_enter_totp_verification(self):
+        for path, body in (
+            ('/api/mfa/unbind/device', {'device_id': []}),
+            ('/api/mfa/open-door/confirm', {'request_id': {}}),
+            ('/api/mfa/guest/create', {'device_id': 'door_a', 'guest_name': []}),
+            ('/api/mfa/bind/device', {'device_id': 'door_a', 'device_pubkey': {}}),
+            ('/api/mfa/verify/totp', {'code': [], 'credential_id': {}}),
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.post(path, body).status_code, 400)
+        with self.app.app_context():
+            credential_id = MFACredential.query.filter_by(credential_type='device').first().id
+        result = self.post('/api/mfa/verify/totp', {'credential_id': credential_id, 'code': pyotp.TOTP(self.secret).now()})
+        self.assertEqual(result.status_code, 400)
+
     def test_password_login_cannot_issue_token_and_totp_is_single_use(self):
         response = self.post('/api/login', {'username': 'alice', 'password': 'password'}, False)
         self.assertNotIn('access_token', response.json)
         body = {'pre_token': response.json['pre_token'], 'code': pyotp.TOTP(self.secret).now()}
         results = self.concurrent('/api/login/mfa/verify', body, False)
         self.assertEqual(sum(status == 200 for status, _ in results), 1, results)
+
+    def test_password_change_requires_both_factors_and_invalidates_old_login(self):
+        path = '/api/account/password'
+        body = {'current_password': 'wrong', 'new_password': 'changed-password-123',
+                'code': pyotp.TOTP(self.secret).now()}
+        self.assertEqual(self.post(path, body).status_code, 401)
+        self.assertEqual(self.client.get('/api/mfa/status', headers=self.headers).status_code, 200)
+        body['current_password'] = 'password'
+        body['new_password'] = 'short'
+        self.assertEqual(self.post(path, body).status_code, 400)
+        body['new_password'] = 'changed-password-123'
+        self.assertEqual(self.post(path, body).status_code, 200)
+        self.assertEqual(self.client.get('/api/mfa/status', headers=self.headers).status_code, 401)
+        self.assertEqual(self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False).status_code, 401)
+        self.assertEqual(self.post('/api/login/pre', {'username': 'alice', 'password': body['new_password']}, False).status_code, 200)
+
+    def test_operator_recovery_rotates_totp_and_preserves_approval_and_role(self):
+        result = self.app.test_cli_runner().invoke(args=[
+            'recover-account', '--username', 'alice', '--password', 'recovered-password-123', '--reset-totp'])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(self.client.get('/api/mfa/status', headers=self.headers).status_code, 401)
+        with self.app.app_context():
+            user = db.session.get(User, self.uid)
+            self.assertEqual((user.status, user.role), ('approved', 'user'))
+            credential = MFACredential.query.filter_by(user_id=self.uid, credential_type='totp').one()
+            self.assertFalse(credential.is_active)
+            self.assertNotEqual(credential.credential_data, self.secret)
+        response = self.post('/api/login/pre', {'username': 'alice', 'password': 'recovered-password-123'}, False)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json['totp_bound'])
+        secret = response.json['secret']
+        response = self.post('/api/login/mfa/bind', {
+            'pre_token': response.json['pre_token'], 'code': pyotp.TOTP(secret).now()}, False)
+        self.assertEqual(response.status_code, 200)
 
     def test_wrong_totp_can_retry_but_is_bounded(self):
         pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False).json
@@ -301,7 +403,7 @@ class AuthFlowTests(unittest.TestCase):
             self.assertEqual(guest.used_count, 1)
             guest_id = guest.id
         self.post('/api/mfa/guest/revoke/' + str(guest_id), {})
-        self.assertEqual(self.post('/api/lock/unlock-token/verify', credential, False).status_code, 403)
+        self.assertEqual(self.post('/api/lock/unlock-token/verify', credential, False).status_code, 401)
 
 
 if __name__ == '__main__':

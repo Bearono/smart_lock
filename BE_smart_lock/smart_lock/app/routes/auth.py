@@ -2,16 +2,41 @@
 from datetime import datetime, timedelta
 import hashlib
 import secrets
+import base64
+from io import BytesIO
 
 import pyotp
+import qrcode
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, jwt_required
 from sqlalchemy.exc import IntegrityError
 
 from app import db, bcrypt
 from app.models import LoginChallenge, MFACredential, User
+from app.accounts import change_password
+from app.permissions import current_user
+from app.validation import text_field, totp_code, validate_password
 
 auth_bp = Blueprint('auth', __name__)
+
+
+@auth_bp.route('/account/password', methods=['POST'])
+@jwt_required()
+def update_password():
+    data = request.get_json() or {}
+    password = text_field(data, 'current_password', maximum=72)
+    new_password = validate_password(data.get('new_password'))
+    code = totp_code(data)
+    user = current_user()
+    if len(password.encode()) > 72 or not bcrypt.check_password_hash(user.password_hash, password):
+        return jsonify(msg='Current password is incorrect'), 401
+    credential = MFACredential.query.filter_by(
+        user_id=user.id, credential_type='totp', is_active=True).first()
+    if not credential or not pyotp.TOTP(credential.credential_data).verify(code, valid_window=1):
+        return jsonify(msg='Invalid authenticator code'), 401
+    change_password(user, new_password, actor=user.username)
+    db.session.commit()
+    return jsonify(msg='Password changed; sign in again', login_required=True), 200
 
 
 @auth_bp.route('/register', methods=['POST'])
@@ -19,7 +44,7 @@ def register():
     data = request.get_json() or {}
     username, password = data.get('username'), data.get('password')
     if (not isinstance(username, str) or not username.strip() or len(username) > 80
-            or not isinstance(password, str) or not password or len(password.encode()) > 72):
+            or not isinstance(password, str) or len(password) < 12 or len(password.encode()) > 72):
         return jsonify(msg='Valid username and password are required'), 400
     user = User(username=username, password_hash=bcrypt.generate_password_hash(password).decode(),
                 role='user', status='pending')
@@ -69,6 +94,9 @@ def prelogin():
         result.update(secret=credential.credential_data, credential_id=credential.id,
                       qr_uri=pyotp.TOTP(credential.credential_data).provisioning_uri(
                           name=user.username, issuer_name='SmartLock'))
+        output = BytesIO()
+        qrcode.make(result['qr_uri']).save(output, format='PNG')
+        result['qr_image'] = 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode('ascii')
     return jsonify(result), 200
 
 
@@ -105,7 +133,8 @@ def _complete_login(binding):
     if binding:
         credential.is_active = True
     db.session.commit()
-    return jsonify(access_token=create_access_token(identity=user.username, additional_claims={'mfa': True}),
+    return jsonify(access_token=create_access_token(identity=user.username, additional_claims={
+                       'mfa': True, 'auth_version': user.auth_version}),
                    role=user.role), 200
 
 

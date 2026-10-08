@@ -4,6 +4,8 @@ import requests
 from flask import Blueprint, request, jsonify, current_app
 from app import db
 from app.door_auth import device_binding, record_failure, reset_failures
+from app.authorization import revoke_access, revoke_guest
+from app.validation import text_field, totp_code as validate_totp_code
 from app.models import (
     AccessLog,
     AuthSession,
@@ -77,16 +79,18 @@ def bind_totp():
 def verify_totp():
     """验证TOTP码（用于绑定确认或开门认证）"""
     data = request.get_json() or {}
-    code = data.get('code')
+    code = validate_totp_code(data)
     credential_id = data.get('credential_id')  # 绑定时需要
+    if credential_id is not None and (type(credential_id) is not int or credential_id <= 0):
+        return jsonify(msg='credential_id must be a positive integer'), 400
 
     username = get_jwt_identity()
     user = User.query.filter_by(username=username).first()
 
     if credential_id:
         # 绑定确认场景
-        credential = MFACredential.query.get(credential_id)
-        if not credential or credential.user_id != user.id:
+        credential = db.session.get(MFACredential, credential_id)
+        if not credential or credential.user_id != user.id or credential.credential_type != 'totp':
             return jsonify({"msg": "Invalid credential"}), 400
     else:
         # 开门认证场景
@@ -160,6 +164,8 @@ def unbind_totp():
     ).all()
     for credential in credentials:
         credential.is_active = False
+        credential.credential_data = pyotp.random_base32()
+    revoke_access(user.id)
     db.session.commit()
 
     return jsonify({"msg": "TOTP unbound successfully"}), 200
@@ -175,12 +181,17 @@ def bind_device():
     device_id = data.get('device_id')
     if not isinstance(device_id, str) or not device_id or len(device_id) > 50:
         return jsonify(msg='Valid device_id is required'), 400
-    device_pubkey = data.get('device_pubkey')  # 设备公钥（可选）
+    device_pubkey = data.get('device_pubkey', '')
+    if not isinstance(device_pubkey, str) or len(device_pubkey) > 500:
+        return jsonify(msg='device_pubkey must be a string of at most 500 characters'), 400
 
     username = get_jwt_identity()
     user = User.query.filter_by(username=username).first()
 
     # 检查设备是否已绑定
+    from app.models import DeviceGrant
+    if not DeviceGrant.query.filter_by(user_id=user.id, device_id=device_id).first():
+        return jsonify(msg='Administrator must grant device access before binding'), 403
     existing = MFACredential.query.filter_by(
         user_id=user.id,
         credential_type='device',
@@ -209,9 +220,7 @@ def bind_device():
 @jwt_required()
 def unbind_device():
     data = request.get_json() or {}
-    device_id = data.get('device_id')
-    if not device_id:
-        return jsonify({"msg": "device_id is required"}), 400
+    device_id = text_field(data, 'device_id', maximum=50)
 
     username = get_jwt_identity()
     user = User.query.filter_by(username=username).first()
@@ -228,12 +237,7 @@ def unbind_device():
         return jsonify({"msg": "Device binding not found"}), 404
 
     credentials.update({MFACredential.is_active: False}, synchronize_session=False)
-    AuthSession.query.filter_by(user_id=user.id, device_id=device_id).update(
-        {AuthSession.status: 'failed'}, synchronize_session=False)
-    UnlockToken.query.filter_by(user_id=user.id, device_id=device_id).update(
-        {UnlockToken.is_used: True}, synchronize_session=False)
-    GuestPass.query.filter_by(created_by=user.id, device_id=device_id).update(
-        {GuestPass.is_active: False}, synchronize_session=False)
+    revoke_access(user.id, device_id)
     db.session.commit()
 
     return jsonify({"msg": "Device unbound successfully"}), 200
@@ -337,14 +341,15 @@ def receive_face_result():
 
     data = decrypt_secure_payload(raw)
 
-    request_id = data.get('request_id')
+    request_id = text_field(data, 'request_id', maximum=64)
     face_user_id = data.get('face_user_id')
     if face_user_id is not None and not isinstance(face_user_id, str):
         return jsonify(msg='face_user_id must be a string or null'), 400
     similarity_score = data.get('similarity_score')
     device_id = data.get('device_id')
     session_nonce = data.get('session_nonce')
-    snapshot_path = data.get('snapshot')
+    # Never accept device-supplied URLs or another device's asset as evidence.
+    snapshot_path = None
 
     # 查找认证会话
     session = AuthSession.query.filter_by(request_id=request_id).first()
@@ -398,7 +403,10 @@ def receive_face_result():
         and similarity_score >= FACE_MATCH_THRESHOLD
     )
     if not snapshot_path and data.get('snapshot_image'):
-        snapshot_path = save_snapshot_image(data.get('snapshot_image'), prefix='face')
+        try:
+            snapshot_path = save_snapshot_image(data.get('snapshot_image'), prefix='face', device_id=device_id)
+        except (ValueError, TypeError):
+            return jsonify(msg='Invalid snapshot image'), 400
     db.session.add(FaceRecognitionLog(
         request_id=request_id,
         device_id=device_id,
@@ -441,7 +449,7 @@ def receive_face_result():
 def open_door_confirm():
     """确认开门（汇总所有因子，签发开门令牌）"""
     data = request.get_json() or {}
-    request_id = data.get('request_id')
+    request_id = text_field(data, 'request_id', maximum=64)
     totp_code = data.get('totp_code')  # 如果需要TOTP
 
     username = get_jwt_identity()
@@ -479,7 +487,8 @@ def open_door_confirm():
     # 3. 检查是否需要TOTP
     if 'totp' in required_factors:
         if not totp_code:
-            return jsonify({"msg": "Night mode: TOTP code required"}), 400
+            return jsonify({"msg": "TOTP code required"}), 400
+        totp_code = validate_totp_code(data, 'totp_code')
 
         # 验证TOTP
         credential = MFACredential.query.filter_by(
@@ -548,8 +557,8 @@ def admin_unlock_device():
     if not admin_user or admin_user.role != 'admin':
         return jsonify({"msg": "Admin privilege required"}), 403
 
-    data = request.get_json()
-    target_username = data.get('target_username')
+    data = request.get_json() or {}
+    target_username = text_field(data, 'target_username', maximum=80)
 
     target_user = User.query.filter_by(username=target_username).first()
     if not target_user:
@@ -566,8 +575,6 @@ def admin_unlock_device():
     for device_cred in device_creds:
         device_cred.failed_attempts = 0
         device_cred.is_locked = False
-    db.session.commit()
-
     log = AccessLog(action=f'ADMIN_UNLOCK_DEVICE_FOR_{target_username}', username=admin_name)
     db.session.add(log)
     db.session.commit()
@@ -580,8 +587,8 @@ def admin_unlock_device():
 def create_guest_pass():
     """创建访客临时授权"""
     data = request.get_json() or {}
-    device_id = data.get('device_id')
-    guest_name = data.get('guest_name')
+    device_id = text_field(data, 'device_id', maximum=50)
+    guest_name = text_field(data, 'guest_name', maximum=80, required=False)
     valid_hours = data.get('valid_hours', 24)
     max_uses = data.get('max_uses', 1)
 
@@ -701,7 +708,7 @@ def revoke_guest_pass(pass_id):
     if not guest_pass or guest_pass.created_by != user.id:
         return jsonify({"msg": "Pass not found"}), 404
 
-    guest_pass.is_active = False
+    revoke_guest(guest_pass)
     db.session.commit()
 
     return jsonify({"msg": "Guest pass revoked"}), 200
@@ -718,13 +725,19 @@ def evaluate_mfa_policy(user_id):
     current_hour = datetime.now().hour
     is_deep_night = current_hour >= 22 or current_hour < 6
 
-    if is_deep_night:
+    if is_deep_night or current_app.config['DEPLOYMENT_ENV'] == 'production':
         required_factors.append('totp')
 
     return required_factors
 
 
 def _resolve_device_service_base(device_id):
+    from app.models import DeviceProvisioning
+    provision = db.session.get(DeviceProvisioning, device_id)
+    if provision and provision.enabled:
+        return provision.service_url
+    if not current_app.config['ALLOW_DEMO_DEVICES']:
+        raise DeviceUnavailable('Device has no approved service endpoint')
     env_key = f"SMART_LOCK_DEVICE_URL_{device_id.upper()}"
     override = os.environ.get(env_key)
     if override:
@@ -753,10 +766,21 @@ def _resolve_device_service_base(device_id):
 
 def _dispatch_face_challenge(device_id, request_id, nonce):
     base_url = _resolve_device_service_base(device_id)
+    import hashlib
+    import hmac
+    import json
+    import time
+    from app.provisioning import device_password
+    body = json.dumps({'request_id': request_id, 'nonce': nonce}, separators=(',', ':')).encode()
+    stamp, command_nonce = str(int(time.time())), secrets.token_hex(16)
+    message = json.dumps(['POST', '/auth_challenge', stamp, command_nonce, hashlib.sha256(body).hexdigest()], separators=(',', ':')).encode()
+    key = hashlib.sha256(b'smart-lock-backend-command\0' + device_password(device_id).encode()).digest()
+    headers = {'Content-Type': 'application/json', 'X-Command-Time': stamp,
+               'X-Command-Nonce': command_nonce, 'X-Command-Signature': hmac.new(key, message, hashlib.sha256).hexdigest()}
     try:
         response = requests.post(
             f"{base_url}/auth_challenge",
-            json={"request_id": request_id, "nonce": nonce},
+            data=body, headers=headers, allow_redirects=False,
             timeout=current_app.config['DEVICE_SERVICE_TIMEOUT'],
         )
     except (requests.ConnectionError, requests.Timeout) as exc:
@@ -766,13 +790,14 @@ def _dispatch_face_challenge(device_id, request_id, nonce):
 
     # 网关（树莓派）返回非 2xx 时，把它 JSON 里的 message/detail 抽出来一起抛，
     # 前端拿到的 502 才有根因，而不是只有一个 "500 Server Error"。
-    if response.status_code >= 400:
+    if response.status_code >= 300:
         detail = None
         try:
             body = response.json()
+            body = body if isinstance(body, dict) else {}
             detail = body.get('detail') or body.get('message') or body.get('msg')
             backend_reply = body.get('backend_reply') or {}
-            if not detail:
+            if not detail and isinstance(backend_reply, dict):
                 detail = backend_reply.get('msg') or backend_reply.get('detail')
         except ValueError:
             detail = (response.text or '').strip()[:300]
@@ -784,8 +809,11 @@ def _dispatch_face_challenge(device_id, request_id, nonce):
         payload = response.json()
     except ValueError as exc:
         raise RuntimeError(f"Device {device_id} returned invalid JSON") from exc
-
+    if not isinstance(payload, dict):
+        raise RuntimeError(f'Device {device_id} returned a non-object response')
     backend_reply = payload.get('backend_reply') or {}
+    if not isinstance(backend_reply, dict):
+        raise RuntimeError(f'Device {device_id} returned an invalid backend reply')
     if payload.get('status') == 'error':
         raise RuntimeError(payload.get('message') or f"Device {device_id} reported an error")
     if backend_reply.get('msg') == 'Face verification failed':

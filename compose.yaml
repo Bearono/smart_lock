@@ -1,0 +1,72 @@
+name: smart-lock
+x-backend: &backend
+  image: smart-lock-backend:local
+  build:
+    context: .
+    dockerfile: deploy/backend.Dockerfile
+  environment:
+    SMART_LOCK_ENV: production
+    DATABASE_URL: sqlite:////data/smart_lock.db
+    UPLOAD_FOLDER: /data/captures
+    SECRET_KEY_FILE: /run/secrets/app_key
+    JWT_SECRET_KEY_FILE: /run/secrets/jwt_key
+    TRUST_PROXY: 'true'
+  secrets: [app_key, jwt_key]
+  volumes: [data:/data]
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+services:
+  notifications:
+    <<: *backend
+    command: [flask, --app, run, deliver-alarms, --watch]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    restart: unless-stopped
+    mem_limit: 128m
+  init:
+    <<: *backend
+    command: [flask, --app, run, init-db]
+    restart: 'no'
+  backend:
+    <<: *backend
+    depends_on:
+      init: {condition: service_completed_successfully}
+    restart: unless-stopped
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  web:
+    image: smart-lock-web:local
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+    ports: ['127.0.0.1:${SMART_LOCK_WEB_PORT:-8080}:8080']
+    depends_on:
+      backend: {condition: service_healthy}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8080/health/ready']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+volumes:
+  data:
+secrets:
+  app_key: {file: ./deploy/secrets/app_key}
+  jwt_key: {file: ./deploy/secrets/jwt_key}

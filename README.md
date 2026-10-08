@@ -1,117 +1,91 @@
 # Smart Lock
 
-智能门锁演示项目，包含 Flask 后端、Vue 2 前端、树莓派摄像头网关与人脸识别工具。
+智能门锁软件，包含 Flask 后端、Vue 3 管理界面、树莓派摄像头网关和人脸识别工具。目标设备为 Raspberry Pi 4B / 2 GB，交付方式为 Docker。当前版本是待硬件验收的交付候选版，不能直接等同于已经完成工业现场验证的门锁产品。
 
-## 项目结构
+## Docker 快速启动
 
-| 目录 | 用途 |
-| --- | --- |
-| `BE_smart_lock/smart_lock/app` | 数据模型、登录 MFA、设备授权、访客授权、安全通信与日志 |
-| `FE_smart_lock/smartlock/src` | 登录、控制台、访客页面与 Axios 接口 |
-| `paspberry_pi/app.py` | 设备主入口；监听 5000，处理摄像头与人脸挑战 |
-| `paspberry_pi/cv/code` | 人脸录入、128 维特征提取、模板比对及基准测试 |
-| `paspberry_pi/cv/code/gateway` | 旧入口兼容包装，调用上面的同一套设备实现 |
-| `wanganCV` | 独立人脸实验工具与 FastAPI 检测服务 |
-| `BE_smart_lock/smart_lock/tests` | 隔离回归测试与性能工具 |
+交付工作范围与验收证据见 [完善方案](docs/DELIVERY_PLAN.md) 和 [验收记录](docs/DELIVERY_REPORT.md)。
 
-## 启动后端与前端
+在仓库根目录执行：
 
-建议使用 Python 3.11。不要依赖仓库内历史提交的 `venv`，它包含其他机器的绝对路径。
-
-```powershell
-cd BE_smart_lock/smart_lock
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:JWT_SECRET_KEY = '<固定的随机密钥>'
-$env:SECRET_KEY = '<另一份固定的随机密钥，所有后端进程保持一致>'
-$env:ADMIN_PASSWORD = '<首次启动管理员密码>'
-python run.py
+```sh
+python deploy/init_secrets.py
+docker compose build
+docker compose up -d --wait
+docker compose exec backend flask --app run create-admin --username operator
 ```
 
-后端默认 `http://localhost:8000`。启动会创建表、补齐兼容字段及初始化管理员。旧的无设备绑定认证会话、开门令牌、访客码不可继续使用；需重新发起认证或创建访客码。旧 JWT 不含 MFA 登录标记，也必须重新登录。数据库升级前请备份。
+管理员密码通过交互输入，至少 12 字符，随后首次网页登录绑定 TOTP。没有默认账号和默认密码。打开 `http://localhost:8080`；入口默认仅监听回环地址，远程访问应经过 HTTPS 网关或受控隧道，不能把 HTTP 登录入口直接暴露公网。完整部署、设备登记、升级、备份和验收流程见 [部署手册](deploy/README.md)。
 
-```powershell
+初始化服务显式创建/升级数据库，再启动非 root 后端工作进程。应用服务不在每次启动时执行数据库升级，也不会自动创建或提升管理员。数据库与图像保存在独立数据卷，密钥文件在 `deploy/secrets`，不进入镜像或版本库。不要运行 `docker compose down -v`，否则会删除数据卷。
+
+## 设备与用户权限
+
+```sh
+docker compose exec backend flask --app run provision-device --device-id door_01 --service-url http://192.168.1.50:5000
+docker compose exec backend flask --app run grant-device --username alice --device-id door_01
+```
+
+登记设备时交互输入至少 32 字节的独立随机口令，将同一口令配置到对应树莓派。用户先注册并由管理员批准，再由运维人员授予设备权限，最后在界面绑定设备。仅知道设备编号无法取得访问权。撤销权限使用 `grant-device ... --revoke`；更换设备口令重新执行登记命令，旧安全会话立即失效。
+
+设备地址来自管理员登记，生产环境不采用设备自行上报的地址来派发请求。图像、设备状态和人脸日志按设备授权隔离；报警管理仅限管理员。旧的公开图像目录、明文帧上传和公开视频流已经关闭。前端携带认证头获取私有图像，不在图片 URL 中附带登录令牌。
+
+## 开锁与确认
+
+1. 密码验证只签发临时挑战，TOTP 成功后才签发登录 JWT。
+2. 用户请求开锁，后端记录设备、nonce、有效期和认证策略，向登记设备发送签名挑战。
+3. 树莓派采集并识别人脸，使用 SPAKE2 + AES-CBC + HMAC 加密上报；生产环境每次开门还要求 TOTP。
+4. 确认认证后签发设备绑定的一次性令牌，消费令牌与创建开锁命令在同一事务内完成。
+5. 命令只有 30 秒有效期；新命令取代旧待执行命令。设备同步响应有签名，并绑定原请求。过期或已撤权的命令不会继续下发。
+6. 设备执行器应回传命令编号、结果及实际传感器状态，后端独立记录执行确认。消费令牌成功仅表示受理，绝不证明物理开锁完成。
+
+用户与访客页面会查询命令结果；响应丢失时使用原凭证恢复原命令，避免重复消耗访客额度。撤权、解绑、账号驳回、认证锁定与口令轮换会永久撤销相关待执行命令。重新授权不会恢复这些旧命令。
+
+设备安全会话加密持久化，防重放依靠数据库唯一约束，跨进程生效。设备仅在服务器明确返回会话失效时重新握手一次，不会因超时重发业务或降级旧协议。服务端对密码、注册、验证码和安全握手等敏感入口实施共享数据库限流。
+
+**硬件边界：当前没有依据具体接线实现 GPIO 执行器，也没有活体检测算法。** 命令同步和回执协议已提供，但必须结合继电器、锁舌反馈及门磁型号实现并实测驱动后才能交付真实门禁。不会用模拟执行器或心跳冒充物理确认。图像相似度阈值不代表已测得的误识率。
+
+## 开发与测试
+
+后端使用 Python 3.12（设备 Debian 容器使用 Python 3.11）：
+
+```sh
+cd BE_smart_lock/smart_lock
+python -m venv .venv
+# 激活环境后
+pip install -r requirements.txt
+flask --app run init-db
+flask --app run create-admin
+python run.py
+python -B -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+开发模式临时随机密钥会使进程重启后会话失效；稳定联调也应设置固定的 `SECRET_KEY` 和 `JWT_SECRET_KEY`。显式启用 `SMART_LOCK_ALLOW_DEMO_DEVICES=true` 才允许隔离测试设备使用演示口令；生产模式禁止此选项。
+
+前端使用 Node 24：
+
+```sh
 cd FE_smart_lock/smartlock
 npm ci
 npm run serve
-```
-
-前端通过 `.env.local` 中的 `VUE_APP_API_BASE=http://<后端IP>:8000` 指定后端，视频与 API 使用相同地址。
-
-## 登录和开门
-
-1. 新注册用户为 `pending`，由管理员在 Admin 页面批准。初始管理员用户名默认为 `admin`。
-2. `/api/login` 和 `/api/login/pre` 都只返回短期登录挑战。首次登录绑定 TOTP，之后使用 TOTP 完成登录。没有密码直通 JWT 的入口。
-3. 登录后绑定目标设备；设备服务的 `SMART_LOCK_DEVICE_ID` 必须与绑定 ID 一致。
-4. 发起开门请求，后端保存设备 ID、有效期、nonce 和本次所需因子，再派发人脸挑战。
-5. 设备完成识别，通过 SPAKE2 + AES-CBC + HMAC 上报人脸结果。后端核对设备、nonce、身份、分数与有效期。
-6. 前端确认认证，获得一次性、绑定设备、60 秒有效的令牌，再调用消费接口。
-
-**令牌签发不等于开门。** 消费成功只表示后端接受开门指令并更新目标状态。当前仓库没有 GPIO 执行器及命令级硬件回执，页面会明确显示硬件执行尚未确认。心跳中的实际状态与后端目标状态分开保存。
-
-夜间 22:00–06:00 创建的认证会话要求额外输入 TOTP；该策略在本次会话有效期内保持不变。连续五次失败锁定对应用户与设备的绑定，解绑重绑不会清除锁定；管理员可解除。解绑会使已有会话、令牌和访客授权失效。
-
-## 设备与人脸录入
-
-```bash
-cd paspberry_pi
-pip install -r cv/code/gateway/requirements.txt
-# 设置 BACKEND_URL、SMART_LOCK_DEVICE_ID、SMART_LOCK_DEVICE_PASSWORD
-python app.py
-```
-
-```bash
-cd paspberry_pi/cv/code
-python enroll_face.py --user <后端用户名>
-python enroll_face.py --user <后端用户名> --headless --samples 8
-```
-
-模板保存到 `paspberry_pi/cv/code/data/templates/templates/`。录入后重启设备服务，或向设备的 `/reload_templates` 发送 POST。用户名必须与后端账号一致，可用 `SMART_LOCK_FACE_ID_MAP=源ID=目标用户名` 配置映射。
-
-摄像头失败默认报错。仅显式设置 `SMART_LOCK_ALLOW_TEST_IMAGES=true` 时才允许设备读取测试图片；这不是活体检测。当前没有实现活体算法。
-
-## 主要配置
-
-| 变量 | 默认 / 用途 |
-| --- | --- |
-| `DATABASE_URL` | `sqlite:///smart_lock.db`；可指定 MySQL URL |
-| `JWT_SECRET_KEY` | 默认随机；稳定运行需固定 |
-| `SECRET_KEY` | 加密保存设备安全会话密钥；跨进程和重启共享会话时必须固定一致 |
-| `SMART_LOCK_SESSION_TTL` | 安全会话有效期秒数，默认 300 |
-| `ALLOW_LEGACY_SECURE_UPLOAD` | 默认 `false`；仅隔离迁移旧客户端时显式启用历史上传格式 |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin123`；仅用于管理员初始化 |
-| `DEVICE_DISPATCH_REQUIRED` | `true`；设备无法连接则认证请求失败 |
-| `SMART_LOCK_DEVICE_URL` | 后端访问设备的固定 URL，优先于心跳 IP |
-| `SMART_LOCK_DEVICE_URL_<大写设备ID>` | 单设备 URL 覆盖 |
-| `SMART_LOCK_DEVICE_PASSWORD` | 两端共享设备口令；请替换演示默认值 |
-| `SMART_LOCK_PASSWORD_<设备ID>` | 后端单设备口令覆盖 |
-| `BACKEND_URL` | 设备端访问后端的 URL |
-| `SMART_LOCK_DEVICE_ID` | 设备端 ID，默认 `door_01` |
-
-无摄像头联调可设置 `DEVICE_DISPATCH_REQUIRED=false`。**只有连接失败或超时**会留下等待状态；仍必须通过测试客户端提交合法加密人脸结果，不会自动通过人脸认证。设备明确拒绝、识别失败或返回无效响应均失败。模拟测试口令和账号仅用于隔离环境。
-
-设备安全会话与防重放记录存储在数据库中，可供多个后端进程共享。会话密钥通过 Fernet 加密保存，存储加密密钥由 `SECRET_KEY` 派生；数据库与应用配置应分开保护。所有进程必须使用相同、固定的 `SECRET_KEY` 和 `JWT_SECRET_KEY`。轮换 `SECRET_KEY` 后旧设备会话失效，设备遇到明确的 `SECURITY_SESSION_INVALID` 响应时只重新握手一次。
-
-防重放通过数据库唯一约束原子检查请求 ID 与 nonce；只清理已过有效期的记录，不因容量满而清空有效记录。合法安全信封先被消费，再执行业务逻辑，所以业务拒绝后也不能原样重放。超时、MAC 失败、业务拒绝或服务器错误不会自动重试，也不会自动降级到历史 ECC 格式。普通设备服务使用 v2，不再依赖 `backend_pub.pem`，后端默认启动也不读取旧私钥。
-
-SQLite 并发写有局限；回归测试包含两个独立进程共享 SQLite 的防重放争用，未覆盖 MySQL 部署。默认 `run.py` 是开发服务器。单个 HTTP 请求限制为 8 MiB，避免无限大小上传。
-
-## 验证
-
-```powershell
-cd BE_smart_lock/smart_lock
-python -B -m unittest discover -s tests -p 'test_*.py' -v
-# 兼容入口：python test_mfa.py
-```
-
-测试使用临时 SQLite 数据库和真实 SPAKE2 信封，不连接摄像头、不发送邮件、不修改演示数据库。
-
-```powershell
-cd FE_smart_lock/smartlock
 npm test
-npm run lint -- --no-fix
+npm run lint
 npm run build
 ```
 
-接口见 [API_DOCUMENTATION.md](API_DOCUMENTATION.md)，性能工具见 [测试指南](BE_smart_lock/smart_lock/tests/perf/README.md)。历史性能结果不代表修复后的版本，请重新测量。
+开发服务器将 `/api` 转发到本机 8000，Docker 使用同源代理。分离部署可设置 `VITE_API_BASE` 并在后端配置精确的 `CORS_ORIGINS`。
+
+## 项目结构
+
+| 目录 | 职责 |
+| --- | --- |
+| `BE_smart_lock/smart_lock/app` | 身份认证、授权、命令、设备通信和私有媒体 |
+| `FE_smart_lock/smartlock/src` | 登录、控制台与访客界面 |
+| `paspberry_pi` | 设备挑战签名校验、摄像头、人脸识别和通信客户端 |
+| `deploy` | Docker 镜像、反向代理、备份恢复和验收手册 |
+| `BE_smart_lock/smart_lock/tests` | 隔离回归测试与性能工具 |
+| `wanganCV` | 历史独立实验工具，不属于生产部署 |
+
+接口详见 [API 文档](API_DOCUMENTATION.md)。历史性能报表不是当前版本验收结果，不可作为容量或安全承诺。
+
+设备软件的轮询、去重、恢复和驱动边界见 [设备执行说明](docs/DEVICE_EXECUTION.md)，当前验收证据见 [交付记录](docs/DELIVERY_REPORT.md)。

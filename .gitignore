@@ -12,3 +12,10 @@ outputs/
 
 .DS_Store
 Thumbs.db
+deploy/secrets/
+deploy/backups/
+.env
+deploy/device/models/
+deploy/device/templates/
+**/instance/
+releases/

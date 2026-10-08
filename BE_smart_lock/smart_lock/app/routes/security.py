@@ -7,6 +7,7 @@ import uuid
 from flask import Blueprint, jsonify, request, current_app
 from spake2 import SPAKE2_B
 from app.security_store import save_session, load_session, SecurePayloadError
+from app.provisioning import device_password, validate_device_id
 
 from .security_protocol import (
     PROTOCOL_VERSION,
@@ -21,13 +22,8 @@ from .security_protocol import (
 
 security_bp = Blueprint("security", __name__)
 
-# 演示环境默认口令；生产环境必须通过环境变量或数据库为每台设备配置独立强口令。
-DEFAULT_DEVICE_PASSWORD = os.getenv("SMART_LOCK_DEVICE_PASSWORD", "ChangeMe-Spake2-Device-Password")
-
-
 def get_device_password(device_id: str) -> str:
-    # 可在此对接 MFACredential / Device 表，实现 device_id -> 设备口令查询。
-    return os.getenv(f"SMART_LOCK_PASSWORD_{device_id}", DEFAULT_DEVICE_PASSWORD)
+    return device_password(device_id)
 
 
 @security_bp.route("/api/security/spake2/start", methods=["POST"])
@@ -41,19 +37,19 @@ def spake2_start():
     request_id = data.get('request_id')
 
     if (data.get('version') != PROTOCOL_VERSION
-            or not isinstance(device_id, str) or not 1 <= len(device_id) <= 50
+            or not validate_device_id(device_id)
             or not isinstance(request_id, str) or not 1 <= len(request_id) <= 64
             or type(timestamp) is not int):
         return jsonify({"msg": "Invalid SPAKE2 start message"}), 400
     if abs(int(time.time()) - timestamp) > 120:
         return jsonify({"msg": "SPAKE2 start message expired"}), 400
 
+    password = get_device_password(device_id).encode('utf-8')
     try:
         client_msg = b64d(client_msg_b64)
         client_nonce = b64d(client_nonce_b64)
         if len(client_nonce) != 16 or len(client_msg) > 1024:
             raise ValueError('Invalid SPAKE2 nonce/message length')
-        password = get_device_password(device_id).encode("utf-8")
         spake2 = SPAKE2_B(password, idA=device_id.encode("utf-8"), idB=SPAKE2_BACKEND_ID)
         server_msg = spake2.start()
         spake2_key = spake2.finish(client_msg)

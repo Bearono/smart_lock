@@ -2,9 +2,6 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager
-from sqlalchemy import inspect, text
-from datetime import datetime
-import os
 from config import Config
 
 # 初始化扩展对象
@@ -13,10 +10,15 @@ bcrypt = Bcrypt()
 jwt = JWTManager()
 
 def create_app(config_overrides=None):
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=None)
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)
+    from app.deployment import configure
+    configure(app)
+    if app.config.get('TRUST_PROXY'):
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 
     @app.before_request
     def validate_json_object():
@@ -26,15 +28,50 @@ def create_app(config_overrides=None):
 
     @app.after_request
     def add_cors_headers(response):
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        from flask import request
+        origin = request.headers.get('Origin')
+        if origin and origin in app.config['CORS_ORIGINS']:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.vary.add('Origin')
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Referrer-Policy'] = 'no-referrer'
         return response
 
     # 绑定 app 到扩展
     db.init_app(app)
     bcrypt.init_app(app)
     jwt.init_app(app)
+    from app.rate_limit import register as register_rate_limits
+    register_rate_limits(app)
+
+    from werkzeug.exceptions import HTTPException
+
+    @app.errorhandler(HTTPException)
+    def http_error(error):
+        from flask import jsonify
+        response = error.get_response()
+        response.data = app.json.dumps(dict(status='error', msg=error.description,
+                                           code=error.name.upper().replace(' ', '_')))
+        response.content_type = 'application/json'
+        return response
+
+    @app.route('/health/live')
+    def live():
+        return {'status': 'ok'}
+
+    @app.route('/health/ready')
+    def ready():
+        from sqlalchemy.exc import SQLAlchemyError
+        try:
+            from app.schema import verify_schema
+            verify_schema()
+            return {'status': 'ok'}
+        except SQLAlchemyError:
+            db.session.rollback()
+            return {'status': 'unavailable'}, 503
 
     from app.security_store import SecurePayloadError
 
@@ -48,12 +85,23 @@ def create_app(config_overrides=None):
         from app.models import User, MFACredential
         user = User.query.filter_by(username=payload.get('sub')).first()
         return bool(user and user.status == 'approved' and payload.get('mfa') is True
+                    and payload.get('auth_version', 0) == user.auth_version
                     and MFACredential.query.filter_by(user_id=user.id, credential_type='totp', is_active=True).first())
 
     @jwt.token_verification_failed_loader
     def invalid_login_assurance(_header, _payload):
         from flask import jsonify
         return jsonify(msg='MFA login required or account authorization revoked', code='LOGIN_REQUIRED'), 401
+
+    @jwt.expired_token_loader
+    def expired_login(_header, _payload):
+        from flask import jsonify
+        return jsonify(msg='Login expired; sign in again', code='LOGIN_REQUIRED'), 401
+
+    @jwt.invalid_token_loader
+    def invalid_login(_reason):
+        from flask import jsonify
+        return jsonify(msg='Invalid login token', code='LOGIN_REQUIRED'), 401
 
     # 【关键修复】在此处显式导入模型，确保 db.create_all() 能发现它们
     from app import models
@@ -82,90 +130,16 @@ def create_app(config_overrides=None):
     app.register_blueprint(face_bp, url_prefix='/api/face')
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
 
-    with app.app_context():
-        # 现在 db.create_all() 会正确扫描到 models 中的所有表
-        db.create_all()
-        _ensure_schema_columns()
-        _bootstrap_admin()
+    from app.commands import register_commands
+    register_commands(app)
+    if app.config['AUTO_INIT_DB']:
+        with app.app_context():
+            db.create_all()
+            _ensure_schema_columns()
 
     return app
 
 
-def _ensure_schema_columns():
-    """升级数据库 Schema 以支持防爆破功能"""
-    inspector = inspect(db.engine)
-    existing_tables = set(inspector.get_table_names())
 
-    column_specs = {
-        # Existing unbound sessions/tokens/passes remain unusable after migration.
-        'auth_sessions': {
-            'device_id': 'VARCHAR(50)',
-            'requires_totp': 'BOOLEAN DEFAULT 0',
-        },
-        'unlock_tokens': {'device_id': 'VARCHAR(50)'},
-        'guest_passes': {'device_id': 'VARCHAR(50)'},
-        'devices': {
-            'reported_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
-            'camera_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
-            'ip_address': "VARCHAR(45)",
-            'is_online': "BOOLEAN DEFAULT 0",
-        },
-        'alarm_logs': {
-            'status': "VARCHAR(20) DEFAULT 'pending'",
-            'handled_by': "VARCHAR(80)",
-            'handled_at': "DATETIME",
-        },
-        'mfa_credentials': {
-            'failed_attempts': "INTEGER DEFAULT 0",
-            'is_locked': "BOOLEAN DEFAULT 0",
-        },
-        # 旧库升级时，已存在的用户默认放行为 approved，避免演示被卡住。
-        'users': {
-            'role': "VARCHAR(20) DEFAULT 'user'",
-            'status': "VARCHAR(20) DEFAULT 'approved'",
-            'created_at': "DATETIME",
-            'approved_at': "DATETIME",
-            'approved_by': "VARCHAR(80)",
-        },
-    }
-
-    for table_name, columns in column_specs.items():
-        if table_name not in existing_tables:
-            continue
-        existing_columns = {column['name'] for column in inspector.get_columns(table_name)}
-        for column_name, ddl in columns.items():
-            if column_name not in existing_columns:
-                db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {ddl}"))
-    db.session.commit()
-
-
-def _bootstrap_admin():
-    """启动时确保至少存在一个管理员账号。"""
-    from app.models import User
-
-    admin_username = os.environ.get("ADMIN_USERNAME", "admin")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-
-    admin = User.query.filter_by(role='admin').first()
-    if admin:
-        return
-
-    existing = User.query.filter_by(username=admin_username).first()
-    if existing:
-        existing.role = 'admin'
-        existing.status = 'approved'
-        if not existing.approved_at:
-            existing.approved_at = datetime.now()
-        db.session.commit()
-        return
-
-    admin = User(
-        username=admin_username,
-        password_hash=bcrypt.generate_password_hash(admin_password).decode('utf-8'),
-        role='admin',
-        status='approved',
-        approved_at=datetime.now(),
-        approved_by='system',
-    )
-    db.session.add(admin)
-    db.session.commit()
+# Compatibility import for existing operator scripts.
+from app.schema import upgrade_schema as _ensure_schema_columns

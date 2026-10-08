@@ -1,4 +1,4 @@
-"""
+r"""
 Locust 结果聚合脚本。
 
 读取 tests/perf/results/ 下各档位的 *_stats.csv, 汇总为一张表, 并画性能曲线图。

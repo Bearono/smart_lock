@@ -1,89 +1,84 @@
+"""Private, validated, device-scoped media stored outside the web static root."""
 import base64
-import os
-import time
+from io import BytesIO
+from pathlib import Path
+import uuid
+import warnings
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, send_file, abort
 from flask_jwt_extended import jwt_required
+from PIL import Image, UnidentifiedImageError
 
-from app import utils
-from app.security_store import SecurePayloadError
+from app import db
+from app.models import MediaAsset
+from app.permissions import require_device
 from .secure_payload import decrypt_secure_payload
-
 
 secure_bp = Blueprint('secure', __name__)
 
 
-def save_snapshot_image(image_b64, prefix="snapshot"):
+def save_snapshot_image(image_b64, prefix='snapshot', device_id=None):
     if not image_b64:
         return None
+    if not isinstance(image_b64, str) or not device_id:
+        raise ValueError('Image and device identity are required')
+    raw = base64.b64decode(image_b64, validate=True)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(BytesIO(raw)) as image:
+                if image.format not in ('JPEG', 'PNG') or image.width * image.height > 4_000_000:
+                    raise ValueError('Image must be JPEG/PNG with at most four million pixels')
+                image.load()
+                output = BytesIO()
+                image.convert('RGB').save(output, format='JPEG', quality=85)
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise ValueError('Invalid image') from exc
+    filename = uuid.uuid4().hex + '.jpg'
+    directory = Path(current_app.config['UPLOAD_FOLDER'])
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / filename).write_bytes(output.getvalue())
+    db.session.add(MediaAsset(filename=filename, device_id=device_id))
+    return '/api/media/' + filename
 
-    image_bytes = base64.b64decode(image_b64)
-    utils.global_frame_bytes = image_bytes
 
-    save_dir = current_app.config['UPLOAD_FOLDER']
-    os.makedirs(save_dir, exist_ok=True)
-    filename = f"{prefix}_{int(time.time() * 1000)}.jpg"
-    filepath = os.path.join(save_dir, filename)
-    with open(filepath, "wb") as image_file:
-        image_file.write(image_bytes)
-
-    return f"/static/captures/{filename}"
+@secure_bp.route('/api/media/<filename>')
+@jwt_required()
+def media(filename):
+    asset = db.session.get(MediaAsset, filename)
+    if not asset:
+        abort(404)
+    require_device(asset.device_id)
+    path = Path(current_app.config['UPLOAD_FOLDER']) / asset.filename
+    if not path.is_file():
+        abort(404)
+    return send_file(path, mimetype='image/jpeg', conditional=False)
 
 
 @secure_bp.route('/api/snapshot/clear', methods=['POST'])
 @jwt_required()
 def clear_snapshot():
-    """删除指定的快照文件；不带 filename 则清空当前实时帧。"""
     data = request.get_json() or {}
-    snapshot_path = data.get('snapshot') or data.get('snapshot_url') or ''
-
-    utils.global_frame_bytes = None
-
-    if not snapshot_path:
-        return jsonify({"msg": "Live frame cleared"}), 200
-
-    prefix = '/static/captures/'
-    if not snapshot_path.startswith(prefix):
-        return jsonify({"msg": "Invalid snapshot path"}), 400
-
-    filename = os.path.basename(snapshot_path[len(prefix):])
-    if not filename or filename in ('.', '..'):
-        return jsonify({"msg": "Invalid snapshot path"}), 400
-
-    save_dir = current_app.config['UPLOAD_FOLDER']
-    filepath = os.path.abspath(os.path.join(save_dir, filename))
-    if not filepath.startswith(os.path.abspath(save_dir) + os.sep):
-        return jsonify({"msg": "Invalid snapshot path"}), 400
-
-    if os.path.isfile(filepath):
-        try:
-            os.remove(filepath)
-        except OSError as exc:
-            return jsonify({"msg": "Failed to remove file", "detail": str(exc)}), 500
-
-    return jsonify({"msg": "Snapshot cleared"}), 200
+    snapshot = data.get('snapshot') or data.get('snapshot_url')
+    if not isinstance(snapshot, str) or not snapshot.startswith('/api/media/'):
+        return jsonify(msg='A private snapshot path is required'), 400
+    filename = snapshot.removeprefix('/api/media/')
+    asset = db.session.get(MediaAsset, filename)
+    if not asset:
+        abort(404)
+    require_device(asset.device_id)
+    (Path(current_app.config['UPLOAD_FOLDER']) / asset.filename).unlink(missing_ok=True)
+    db.session.delete(asset)
+    db.session.commit()
+    return jsonify(msg='Snapshot cleared'), 200
 
 
 @secure_bp.route('/api/secure/upload', methods=['POST'])
 def handle_rpi_data():
-    data = request.get_json()
-
+    business = decrypt_secure_payload(request.get_json(), allow_legacy=True)
     try:
-        business_data = decrypt_secure_payload(data, allow_legacy=True)
-
-        if 'image' in business_data:
-            snapshot_path = save_snapshot_image(business_data['image'], prefix="upload")
-            return jsonify({
-                "status": "success",
-                "msg": "Data received securely",
-                "snapshot": snapshot_path,
-                "snapshot_url": snapshot_path,
-            }), 200
-
-        return jsonify({"status": "success", "msg": "Data received securely"}), 200
-
-    except SecurePayloadError:
-        raise
-    except (ValueError, TypeError) as exc:
-        print(f"Secure payload decrypt failed: {exc}")
-        return jsonify({"status": "error", "msg": "Secure payload decrypt failed"}), 400
+        snapshot = save_snapshot_image(business.get('image'), device_id=business.get('device_id'))
+    except (ValueError, TypeError):
+        return jsonify(status='error', msg='Invalid image'), 400
+    db.session.commit()
+    return jsonify(status='success', msg='Data received securely', snapshot=snapshot, snapshot_url=snapshot), 200

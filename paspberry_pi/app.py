@@ -48,6 +48,8 @@ app = Flask(__name__)
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 transmitter = NetworkTransmitter(remote_url=BACKEND_URL)
 camera = CameraManager()
+from command_guard import register_command_guard
+register_command_guard(app, transmitter)
 
 
 @app.route("/")
@@ -185,4 +187,4 @@ def handle_auth_challenge():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=False)

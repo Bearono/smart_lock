@@ -146,6 +146,24 @@ class Spake2Client:
         )
 
 
+class SecureResponse:
+    """Authenticate command responses against the exact request and endpoint."""
+
+    @staticmethod
+    def sign(session, header, endpoint, body):
+        message = {'session_id': session.session_id, 'request_id': header['request_id'],
+                   'nonce': header['nonce'], 'endpoint': endpoint, 'body': body}
+        key = hkdf(session.session_key, salt=b'smart-lock-response', info=b'hmac', length=32)
+        return {'body': body, 'mac': b64e(hmac_sha256(key, canonical_json(message)))}
+
+    @classmethod
+    def verify(cls, session, header, endpoint, response):
+        expected = cls.sign(session, header, endpoint, response['body'])
+        if not constant_time_equal(b64d(expected['mac']), b64d(response['mac'])):
+            raise ValueError('Invalid backend command response signature')
+        return response['body']
+
+
 class SecureEnvelope:
     """AES-CBC + HMAC-SHA256 的消息封装。"""
 

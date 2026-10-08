@@ -1,4 +1,5 @@
 import time
+from threading import Lock
 
 import cv2
 
@@ -8,6 +9,7 @@ class CameraManager:
         self.device_index = device_index
         self.backend = backend
         self._picamera2 = None
+        self._capture_lock = Lock()
 
     def _capture_with_picamera2(self):
         try:
@@ -31,16 +33,19 @@ class CameraManager:
 
     def _capture_with_opencv(self):
         cap = cv2.VideoCapture(self.device_index)
-        if not cap.isOpened():
-            return None
-
-        ret, frame = cap.read()
-        cap.release()
-        if ret:
-            return frame
-        return None
+        try:
+            if not cap.isOpened():
+                return None
+            ret, frame = cap.read()
+            return frame if ret else None
+        finally:
+            cap.release()
 
     def capture_frame(self):
+        with self._capture_lock:
+            return self._capture_frame()
+
+    def _capture_frame(self):
         if self.backend == "picamera2":
             return self._capture_with_picamera2()
         if self.backend == "opencv":

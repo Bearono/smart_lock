@@ -1,5 +1,33 @@
 from app import db
-from datetime import datetime
+from datetime import datetime, timedelta
+
+
+class DeviceProvisioning(db.Model):
+    __tablename__ = 'device_provisioning'
+    device_id = db.Column(db.String(50), primary_key=True)
+    encrypted_password = db.Column(db.LargeBinary, nullable=False)
+    service_url = db.Column(db.String(255), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+
+
+class DeviceGrant(db.Model):
+    __tablename__ = 'device_grants'
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), primary_key=True)
+    device_id = db.Column(db.String(50), primary_key=True)
+
+
+class MediaAsset(db.Model):
+    __tablename__ = 'media_assets'
+    filename = db.Column(db.String(80), primary_key=True)
+    device_id = db.Column(db.String(50), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now, index=True)
+
+
+class RateLimitBucket(db.Model):
+    __tablename__ = 'rate_limit_buckets'
+    key = db.Column(db.String(64), primary_key=True)
+    count = db.Column(db.Integer, nullable=False)
+    expires_at = db.Column(db.Float, nullable=False, index=True)
 
 
 class DeviceSecuritySession(db.Model):
@@ -21,6 +49,28 @@ class SecureMessageReceipt(db.Model):
         db.UniqueConstraint('session_id', 'request_id', name='uq_secure_request'),
         db.UniqueConstraint('session_id', 'nonce', name='uq_secure_nonce'),
     )
+
+
+class DoorCommand(db.Model):
+    __tablename__ = 'door_commands'
+    id = db.Column(db.String(32), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    device_id = db.Column(db.String(50), nullable=False, index=True)
+    target_status = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='pending')
+    created_at = db.Column(db.Float, nullable=False)
+    expires_at = db.Column(db.Float, nullable=False, index=True)
+    acknowledged_at = db.Column(db.Float)
+    guest_pass_id = db.Column(db.Integer, db.ForeignKey('guest_passes.id'))
+
+
+class AlarmDelivery(db.Model):
+    __tablename__ = 'alarm_deliveries'
+    alarm_id = db.Column(db.Integer, db.ForeignKey('alarm_logs.id'), primary_key=True)
+    status = db.Column(db.String(20), nullable=False, default='pending')
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    next_attempt_at = db.Column(db.Float, nullable=False, default=0, index=True)
+    lease_id = db.Column(db.String(32))
 
 
 class LoginChallenge(db.Model):
@@ -48,6 +98,7 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     approved_at = db.Column(db.DateTime)
     approved_by = db.Column(db.String(80))
+    auth_version = db.Column(db.Integer, nullable=False, default=0)
 
     def to_dict(self):
         return {
@@ -68,7 +119,7 @@ class Device(db.Model):
     device_id = db.Column(db.String(50), unique=True, nullable=False)
     status = db.Column(db.String(20), default="LOCKED")
     reported_status = db.Column(db.String(20), default='UNKNOWN')
-    battery = db.Column(db.Integer, default=100)
+    battery = db.Column(db.Integer)
     camera_status = db.Column(db.String(20), default="UNKNOWN")
     ip_address = db.Column(db.String(45))
     is_online = db.Column(db.Boolean, default=False)
@@ -82,7 +133,7 @@ class Device(db.Model):
             'battery': self.battery,
             'camera_status': self.camera_status,
             'ip_address': self.ip_address,
-            'is_online': self.is_online,
+            'is_online': bool(self.last_update and timedelta(0) <= datetime.now() - self.last_update <= timedelta(minutes=2)),
             'last_update': self.last_update.strftime("%Y-%m-%d %H:%M:%S") if self.last_update else None
         }
 
@@ -169,6 +220,7 @@ class UnlockToken(db.Model):
     request_id = db.Column(db.String(64), nullable=False)
     device_id = db.Column(db.String(50))
     is_used = db.Column(db.Boolean, default=False)
+    command_id = db.Column(db.String(32), db.ForeignKey('door_commands.id'))
     created_at = db.Column(db.DateTime, default=datetime.now)
     expires_at = db.Column(db.DateTime, nullable=False)
 
