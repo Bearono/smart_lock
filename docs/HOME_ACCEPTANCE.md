@@ -16,9 +16,11 @@
 | Docker 服务 | 新源码镜像部署与重启通过；后端、Web、TLS 健康检查通过，通知进程运行 |
 | HTTPS | Python requests 完整 CA/localhost 主机名校验通过；未提供本地 CA 的客户端拒绝证书；未关闭证书验证 |
 | 设备 AMD64 镜像 | 构建与离线、无网络、只读运行检查通过；加载 OpenCV/dlib/face-recognition，空帧无人脸、未知执行器及未经签名的设备请求拒绝符合预期 |
-| 设备 ARM64 镜像 | 构建验证进行中；完成前不计为通过 |
+| 设备 ARM64 镜像 | GitHub 原生 ARM64 runner 构建、镜像架构断言及无网络/只读离线检查通过；本机跨架构构建随中断停止，没有计为本机通过 |
 
 自动化日志位于本地 `releases/verification`；源码摘要和范围保存在 `verification.json`。管理员页面读取脱敏 `security-report.json`。报告生成时的 Git 基线与实际源码摘要一起标识被检查版本；不会把工作区改动算作旧提交本身。
+
+提交 `2701532` 的 [GitHub Actions 验收](https://github.com/Bearono/smart_lock/actions/runs/37808146394) 已全部成功：backend、frontend、docker、device-image (amd64)、device-image (arm64)。这是远端原生架构软件验收，仍不是 Pi 摄像头与锁具实测。发布包收录脱敏 `verification/ci-report.json`。
 
 浏览器截图位于 `FE_smart_lock/smartlock/test-artifacts`，使用隔离验收数据。截图、备份和依赖目录均不提交；源码发布包包含校验清单和离线报告。协议微基准独立声明 AMD64 环境，不能作为 Pi 性能证据。
 

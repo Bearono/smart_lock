@@ -6,7 +6,7 @@
 
 新版采用温暖的家居界面与独立管理入口，设备默认使用 v3 AES-GCM 通信。具体实现、HTTPS 配置、工程结构、验收与实机边界见 [家门体验交付说明](docs/HOME_DELIVERY.md)。课程架构和威胁模型见 [设计说明](docs/COURSE_ARCHITECTURE.md)。
 
-交付工作范围与验收证据见 [完善方案](docs/DELIVERY_PLAN.md) 和 [验收记录](docs/DELIVERY_REPORT.md)。
+本版验收结果见 [家门体验与 v3 验收记录](docs/HOME_ACCEPTANCE.md)，算法对照见 [微基准记录](docs/HOME_BENCHMARK.md)。此前交付资料保留在 [完善方案](docs/DELIVERY_PLAN.md) 和 [历史验收记录](docs/DELIVERY_REPORT.md)。
 
 在仓库根目录执行：
 

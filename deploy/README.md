@@ -57,6 +57,8 @@ docker compose -f compose.device.yaml build
 docker compose -f compose.device.yaml -f compose.device.tls.yaml up -d --wait
 ```
 
+上面的镜像构建应在内存充足的 ARM64 构建主机执行，Pi 4B / 2 GB 不直接承担双任务 C++ 编译。可在构建主机执行 `docker save smart-lock-device:local -o smart-lock-device-arm64.tar`，传到 Pi 后执行 `docker load -i smart-lock-device-arm64.tar`，再只执行 `up -d --wait`。AMD64 主机可用 `docker buildx build --platform linux/arm64 --load -f deploy/device.Dockerfile -t smart-lock-device:local .`，跨架构编译较慢。GitHub CI 已在原生 ARM64 runner 验证该 Dockerfile，不把 runner 的内存或耗时当作 Pi 实测。
+
 服务地址应限于受控局域网/VPN，防火墙仅允许后端访问。每次 POST 必须有后端签名；修改模板建议在维护窗口更新只读挂载后重启。设备只用一个工作进程、两个请求线程，并在工作进程启动后运行独立的心跳和命令轮询线程；摄像头采集串行进行，避免重复装载人脸模型。内存上限 1200 MB 是保护配置，不是已经验证的峰值。
 
 设备镜像统一使用 Python 3.12，固定 NumPy、无界面 OpenCV 与 Pillow 版本；dlib 19.24.6 在独立构建阶段编译为 wheel，运行镜像不携带编译工具。构建阶段将并行任务限制为 2，建议在构建主机生成镜像后分发到设备。不要将本机 x86 构建结果视为 ARM 验收：ARM 镜像必须在对应架构单独构建验证，摄像头采集与推理性能仍需 Pi 实机测试。Docker 文件不包含 GPIO 驱动，不默认授予 privileged 权限。
