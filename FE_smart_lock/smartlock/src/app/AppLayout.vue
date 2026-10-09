@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, provide, onMounted } from 'vue'
+import { ref, provide, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDoorSession, doorSessionKey } from '../features/door/useDoorSession.ts'
 import AppIcon from '../shared/ui/AppIcon.vue'
@@ -19,6 +19,18 @@ const navigation = [
   { path: '/dashboard/guests', name: '访客', icon: 'guests' },
   { path: '/dashboard/security', name: '设置', icon: 'shield' }
 ]
+const pageTitle = computed(
+  () =>
+    ({
+      '/dashboard': '我的家',
+      '/dashboard/records': '家门动态',
+      '/dashboard/guests': '访客通行',
+      '/dashboard/security': '账户与设置',
+      '/dashboard/alarms': '异常提醒',
+      '/dashboard/users': '成员与权限',
+      '/dashboard/evidence': '安全证据'
+    })[route.path] || '我的家'
+)
 
 function logout() {
   for (const key of ['token', 'username', 'role']) localStorage.removeItem(key)
@@ -34,28 +46,64 @@ function acknowledge() {
 <template>
   <a class="sr-only" href="#main-content">跳到主要内容</a>
   <div class="app-layout">
+    <aside class="home-sidebar">
+      <RouterLink to="/dashboard" class="brand">
+        <span class="brand-symbol"><AppIcon name="doors" :size="24" /></span>
+        <span>
+          <strong class="brand-name">SmartLock</strong>
+          <span class="brand-caption">让每次回家，都安心</span>
+        </span>
+      </RouterLink>
+      <div class="home-space">
+        <AppIcon name="home" :size="19" />
+        <div>
+          <strong>我的家庭</strong>
+          <span>门锁与摄像头</span>
+        </div>
+      </div>
+      <p class="navigation-label">日常使用</p>
+      <nav class="home-navigation" aria-label="主要导航">
+        <RouterLink
+          v-for="item in navigation"
+          :key="item.path"
+          :to="item.path"
+          :class="['nav-link', { 'router-link-active': route.path === item.path }]"
+          :active-class="item.path === '/dashboard' ? '' : 'router-link-active'"
+          :aria-current="route.path === item.path ? 'page' : undefined"
+        >
+          <AppIcon :name="item.icon" />
+          {{ item.name }}
+          <span class="nav-indicator" />
+        </RouterLink>
+      </nav>
+      <nav v-if="isAdmin" class="management-navigation" aria-label="家庭管理">
+        <span class="navigation-label">家庭管理</span>
+        <RouterLink to="/dashboard/alarms">
+          <AppIcon name="alarms" :size="19" />
+          异常提醒
+        </RouterLink>
+        <RouterLink to="/dashboard/users">
+          <AppIcon name="users" :size="19" />
+          成员与权限
+        </RouterLink>
+        <RouterLink to="/dashboard/evidence">
+          <AppIcon name="shield" :size="19" />
+          安全证据
+        </RouterLink>
+      </nav>
+      <div class="sidebar-note">
+        <AppIcon name="shield" :size="24" />
+        <strong>家的隐私，认真守护</strong>
+        <p>画面与设备控制仅向授权账户开放。</p>
+      </div>
+    </aside>
     <div class="workspace">
       <header class="home-header">
-        <RouterLink to="/dashboard" class="brand">
-          <span class="brand-symbol"><AppIcon name="lock" :size="22" /></span>
-          <span>
-            <strong class="brand-name">SmartLock</strong>
-            <span class="brand-caption">安心，从家门开始</span>
-          </span>
-        </RouterLink>
-        <nav class="home-navigation" aria-label="主要导航">
-          <RouterLink
-            v-for="item in navigation"
-            :key="item.path"
-            :to="item.path"
-            :class="['nav-link', { 'router-link-active': route.path === item.path }]"
-            :active-class="item.path === '/dashboard' ? '' : 'router-link-active'"
-            :aria-current="route.path === item.path ? 'page' : undefined"
-          >
-            <AppIcon :name="item.icon" />
-            {{ item.name }}
-          </RouterLink>
-        </nav>
+        <div class="workspace-heading">
+          <span>家庭空间</span>
+          <AppIcon name="chevron" :size="14" />
+          <strong>{{ pageTitle }}</strong>
+        </div>
         <div class="topbar-actions">
           <RouterLink class="account-link" to="/dashboard/security">
             <span class="avatar">{{ username.slice(0, 1).toUpperCase() }}</span>
@@ -66,12 +114,6 @@ function acknowledge() {
           </button>
         </div>
       </header>
-      <nav v-if="isAdmin" class="management-navigation" aria-label="家庭管理">
-        <span>家庭管理</span>
-        <RouterLink to="/dashboard/alarms">异常提醒</RouterLink>
-        <RouterLink to="/dashboard/users">成员与权限</RouterLink>
-        <RouterLink to="/dashboard/evidence">安全证据</RouterLink>
-      </nav>
       <main id="main-content" class="main-content" tabindex="-1">
         <RouterView />
         <section v-if="command" class="panel command-tray">

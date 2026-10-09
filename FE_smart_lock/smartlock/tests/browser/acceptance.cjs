@@ -41,7 +41,13 @@ const users = [
   }
 ]
 const logs = [
-  { id: 1, username: 'qa_operator', action: 'TOKEN_UNLOCK', timestamp: '2026-10-08 14:30:00' }
+  {
+    id: 1,
+    device_id: 'qa_front',
+    username: 'qa_operator',
+    action: 'TOKEN_UNLOCK',
+    timestamp: '2026-10-08 14:30:00'
+  }
 ]
 const faceLogs = [
   {
@@ -160,8 +166,14 @@ async function fixture(page) {
         status: commandConfirmed ? 'executed' : 'pending',
         hardware_confirmed: commandConfirmed
       })
-    if (endpoint === '/api/lock/history')
-      return respond({ data: logs, total: 1, pages: 1, current_page: 1 })
+    if (endpoint === '/api/lock/history') {
+      const history = logs.filter(
+        (entry) =>
+          !url.searchParams.get('device_id') ||
+          entry.device_id === url.searchParams.get('device_id')
+      )
+      return respond({ data: history, total: history.length, pages: 1, current_page: 1 })
+    }
     if (endpoint === '/api/face/logs')
       return respond({
         data: url.searchParams.get('passed') === 'false' ? [] : faceLogs,
@@ -317,6 +329,13 @@ async function run() {
   )
   await page.locator('#device-select').selectOption('qa_back')
   assert.equal(await page.locator('.lock-hero strong').textContent(), '未知')
+  await page.locator('.recent-activity').getByText('还没有这扇家门的操作记录。').waitFor()
+  assert.equal(await page.locator('.recent-activity .recent-row').count(), 0)
+  assert.equal(await page.getByRole('button', { name: '上锁', exact: true }).isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: '验证并开门' }).isDisabled(), true)
+  assert.equal(calls.lock, 0, 'offline device must not submit commands')
+  devices[1].is_online = true
+  await page.getByRole('button', { name: '刷新状态', exact: true }).click()
   await page.getByRole('button', { name: '上锁', exact: true }).click()
   await page.getByText('命令 ID：lock-1', { exact: true }).waitFor()
   assert.equal(calls.lock, 1, 'unknown sensor still allows explicit lock')

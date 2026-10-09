@@ -8,7 +8,7 @@ import AppDialog from '../../shared/ui/AppDialog.vue'
 import StatusBadge from '../../shared/ui/StatusBadge.vue'
 import InlineNotice from '../../shared/ui/InlineNotice.vue'
 import EmptyState from '../../shared/ui/EmptyState.vue'
-import HomeIllustration from '../../shared/ui/HomeIllustration.vue'
+import RecentActivity from './RecentActivity.vue'
 import PrivateSnapshot from '../camera/PrivateSnapshot.vue'
 const session = useDoorSession()
 const {
@@ -45,7 +45,6 @@ const visibleDevices = computed(() =>
       .includes(search.value.toLowerCase())
   )
 )
-const username = localStorage.getItem('username') || '你'
 const batteryLabel = computed(() => {
   const battery = selected.value?.battery
   return typeof battery === 'number' && Number.isInteger(battery) && battery >= 0 && battery <= 100
@@ -109,21 +108,20 @@ onScopeDispose(() => {
 <template>
   <section class="home-welcome">
     <div>
-      <p class="eyebrow">我的家 · SMARTLOCK</p>
-      <h1>{{ username }}，欢迎回家。</h1>
-      <p class="subtext">看看门前，安心开启每一天。</p>
-      <div class="button-group welcome-actions">
-        <button v-if="devices.length > 1" class="button" @click="showList = !showList">
-          <AppIcon name="doors" />
-          {{ showList ? '返回门详情' : '设备列表' }}
-        </button>
-        <button class="button" :disabled="refreshing" @click="session.refresh">
-          <AppIcon name="refresh" :size="17" />
-          {{ refreshing ? '刷新中' : '刷新状态' }}
-        </button>
-      </div>
+      <p class="eyebrow">HOME, SWEET HOME</p>
+      <h1>家的安心，尽在眼前。</h1>
+      <p class="subtext">查看家门、门前画面与最近的通行动态。</p>
     </div>
-    <HomeIllustration />
+    <div class="button-group welcome-actions">
+      <button v-if="devices.length > 1" class="button" @click="showList = !showList">
+        <AppIcon name="doors" />
+        {{ showList ? '返回门详情' : '设备列表' }}
+      </button>
+      <button class="button" :disabled="refreshing" @click="session.refresh">
+        <AppIcon name="refresh" :size="17" />
+        {{ refreshing ? '刷新中' : '刷新状态' }}
+      </button>
+    </div>
   </section>
   <div class="stack">
     <InlineNotice v-if="error" tone="warning">
@@ -248,8 +246,8 @@ onScopeDispose(() => {
           </div>
           <div class="panel-body">
             <p class="subtext">门锁最近状态</p>
-            <div class="lock-hero">
-              <AppIcon name="lock" :size="30" />
+            <div class="lock-hero" :data-state="selected.reported_status">
+              <AppIcon name="lock" :size="40" />
               <div>
                 <strong>{{ lockState(selected.reported_status) }}</strong>
                 <span class="subtext">
@@ -277,7 +275,7 @@ onScopeDispose(() => {
               <button
                 v-else
                 class="button button--primary button--block"
-                :disabled="taskActive || !bound || !!error"
+                :disabled="taskActive || !bound || !!error || !selected.is_online"
                 @click="session.startFace"
               >
                 <AppIcon name="shield" :size="18" />
@@ -285,7 +283,7 @@ onScopeDispose(() => {
               </button>
               <button
                 class="button button--block"
-                :disabled="taskActive || !bound || !!error"
+                :disabled="taskActive || !bound || !!error || !selected.is_online"
                 @click="session.requestLock"
               >
                 <AppIcon name="lock" :size="17" />
@@ -294,11 +292,13 @@ onScopeDispose(() => {
               <p v-if="taskActive" class="subtext">
                 当前任务进行中，请先完成验证或确认原命令结果。
               </p>
+              <p v-else-if="!selected.is_online" class="subtext">设备离线，连接恢复后可操作。</p>
               <RouterLink class="subtext" to="/dashboard/security">认证与设置 →</RouterLink>
             </div>
           </div>
         </section>
       </div>
+      <RecentActivity :device-id="selectedId" :refresh-signal="`${phase}:${refreshing}`" />
     </template>
     <section v-if="['face', 'confirm', 'recover', 'failed'].includes(phase)" class="panel">
       <div class="panel-head">

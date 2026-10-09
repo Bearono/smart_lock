@@ -1,17 +1,17 @@
 :root {
-  --canvas: #f7f3ec;
-  --surface: #fffcf7;
-  --ink: #302d28;
-  --muted: #716a61;
-  --line: #e5ddd1;
-  --primary: #985638;
-  --primary-hover: #7d432a;
-  --nav: #efe5d6;
+  --canvas: #f5f6f2;
+  --surface: #ffffff;
+  --ink: #24352d;
+  --muted: #68736b;
+  --line: #e3e8e0;
+  --primary: #355e4f;
+  --primary-hover: #284a3d;
+  --nav: #fafbf7;
   --success: #356b54;
   --danger: #b33e3b;
   --warning: #886014;
-  --radius: 22px;
-  --shadow: 0 8px 32px #6d4c3010;
+  --radius: 20px;
+  --shadow: 0 3px 16px #263d2e04;
   font-family: Inter, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   color: var(--ink);
   background: var(--canvas);

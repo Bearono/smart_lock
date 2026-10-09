@@ -3,6 +3,7 @@
 Run explicitly: python tests/browser_fixture.py. The database and images live in
 a temporary directory and are removed when the process exits normally.
 """
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import sys
@@ -28,7 +29,7 @@ if __name__ == '__main__':
             db.session.add(user)
             db.session.flush()
             for device_id in ('qa_front', 'qa_back'):
-                db.session.add(Device(device_id=device_id))
+                db.session.add(Device(device_id=device_id, is_online=True, last_update=datetime.now()))
                 db.session.add(DeviceGrant(user_id=user.id, device_id=device_id))
                 db.session.add(MFACredential(user_id=user.id, credential_type='device', device_id=device_id, credential_data='', is_active=True))
             db.session.commit()

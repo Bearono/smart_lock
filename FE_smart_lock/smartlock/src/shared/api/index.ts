@@ -77,8 +77,10 @@ export const lock = {
     api.get('/api/lock/status', { params: { device_id: deviceId } }),
   control: (action: string, deviceId = 'door_01') =>
     api.post('/api/lock/control', { action, device_id: deviceId }),
-  getHistory: (page = 1, perPage = 10) =>
-    api.get(`/api/lock/history?page=${page}&per_page=${perPage}`)
+  getHistory: (page = 1, perPage = 10, deviceId?: string) =>
+    api.get('/api/lock/history', {
+      params: { page, per_page: perPage, device_id: deviceId || undefined }
+    })
 }
 
 export const device = {

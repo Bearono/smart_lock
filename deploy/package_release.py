@@ -23,7 +23,7 @@ FILES = (
 TREES = {
     'BE_smart_lock/smart_lock/app': {'.py'},
     'BE_smart_lock/smart_lock/tests': {'.py'},
-    'FE_smart_lock/smartlock/src': {'.js', '.ts', '.vue', '.css'},
+    'FE_smart_lock/smartlock/src': {'.js', '.ts', '.vue', '.css', '.webp'},
     'packages/smartlock_protocol/smartlock_protocol': {'.py'},
     'FE_smart_lock/smartlock/tests': {'.cjs'},
     'docs': {'.md'},

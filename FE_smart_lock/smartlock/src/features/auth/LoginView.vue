@@ -4,7 +4,6 @@ import { isAxiosError } from 'axios'
 import { useRouter } from 'vue-router'
 import { auth } from '../../shared/api/index.ts'
 import { errorMessage } from '../../shared/lib/presentation.js'
-import HomeIllustration from '../../shared/ui/HomeIllustration.vue'
 import AppIcon from '../../shared/ui/AppIcon.vue'
 import InlineNotice from '../../shared/ui/InlineNotice.vue'
 const router = useRouter()
@@ -160,7 +159,6 @@ onScopeDispose(() => {
           独立追踪命令执行结果
         </div>
       </div>
-      <HomeIllustration />
       <p class="auth-footer">SMARTLOCK / 智能家居门锁与摄像头</p>
     </aside>
     <main class="auth-main">

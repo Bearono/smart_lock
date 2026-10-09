@@ -218,6 +218,10 @@ def get_history():
 
     query = AccessLog.query
     user = current_user()
+    device_id = request.args.get('device_id')
+    if device_id:
+        require_device(device_id)
+        query = query.filter_by(device_id=device_id)
     if user.role != 'admin':
         query = query.filter_by(username=user.username)
     logs_pagination = query.order_by(AccessLog.id.desc()).paginate(

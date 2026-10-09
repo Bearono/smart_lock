@@ -1,6 +1,9 @@
 <script setup lang="ts">
 defineProps({ name: { type: String, default: 'doors' }, size: { type: Number, default: 20 } })
 const paths: Record<string, string> = {
+  home: 'M3 10l9-7 9 7v11h-6v-7H9v7H3z',
+  chevron: 'M9 5l7 7-7 7',
+  clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3 2',
   doors: 'M4 21h16M7 21V4l10-2v19M13 12h.01',
   records: 'M8 3H5v18h14V3h-3M9 2h6v4H9zM8 11h8M8 15h6',
   guests:

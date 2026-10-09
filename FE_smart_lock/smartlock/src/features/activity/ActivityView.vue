@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Activity } from '../../shared/api/records'
 import { ref, watch, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { lock, face } from '../../shared/api/index.ts'
 import { useResource } from '../../shared/lib/useResource.ts'
 import { useDoorSession } from '../door/useDoorSession.ts'
@@ -12,16 +13,17 @@ import StatusBadge from '../../shared/ui/StatusBadge.vue'
 import PaginationBar from '../../shared/ui/PaginationBar.vue'
 import AppDialog from '../../shared/ui/AppDialog.vue'
 import PrivateSnapshot from '../camera/PrivateSnapshot.vue'
+const route = useRoute()
 const tab = ref('operations'),
   page = ref(1),
-  deviceFilter = ref(''),
+  deviceFilter = ref(typeof route.query.device_id === 'string' ? route.query.device_id : ''),
   passed = ref(''),
   detail = ref<Activity | null>(null)
 const { devices } = useDoorSession()
 const resource = useResource<{ data: Activity[]; total: number; pages: number }>(
   () =>
     tab.value === 'operations'
-      ? lock.getHistory(page.value, 20)
+      ? lock.getHistory(page.value, 20, deviceFilter.value)
       : face.getLogs(
           page.value,
           20,
@@ -101,7 +103,7 @@ watch(
           人脸验证
         </button>
       </div>
-      <div v-if="tab === 'face'" class="filters">
+      <div class="filters">
         <div class="field">
           <label for="record-device">设备</label>
           <select id="record-device" v-model="deviceFilter">
@@ -111,7 +113,7 @@ watch(
             </option>
           </select>
         </div>
-        <div class="field">
+        <div v-if="tab === 'face'" class="field">
           <label for="record-result">验证结果</label>
           <select id="record-result" v-model="passed">
             <option value="">全部结果</option>

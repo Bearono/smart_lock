@@ -77,6 +77,22 @@ class HomeContractsTests(unittest.TestCase):
         self.assertIsNone(result['captured_at'])
         self.assertTrue(result['received_at'])
 
+    def test_history_filter_is_scoped_and_checks_device_access(self):
+        with self.app.app_context():
+            db.session.add(Device(device_id='other_device'))
+            db.session.add_all([
+                AccessLog(username='operator', action='LOCK', device_id='test_device'),
+                AccessLog(username='operator', action='UNLOCK', device_id='other_device'),
+                AccessLog(username='operator', action='LOCK', device_id=None),
+            ])
+            db.session.commit()
+        result = self.client.get('/api/lock/history?device_id=test_device', headers=self.headers['operator'])
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json['total'], 1)
+        self.assertEqual(result.json['data'][0]['device_id'], 'test_device')
+        denied = self.client.get('/api/lock/history?device_id=test_device', headers=self.headers['member'])
+        self.assertEqual(denied.status_code, 403)
+
     def test_evidence_is_admin_only_and_has_no_secret(self):
         endpoint = '/api/admin/security/evidence'
         self.assertEqual(self.client.get(endpoint, headers=self.headers['member']).status_code, 403)
