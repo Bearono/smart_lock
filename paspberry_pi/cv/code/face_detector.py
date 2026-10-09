@@ -4,6 +4,12 @@ import shutil
 import tempfile
 import urllib.parse
 from typing import List, Dict, Tuple, Optional
+try:
+    from .paths import models_dir
+    from .model_manifest import MODELS, verify_models
+except ImportError:
+    from paths import models_dir
+    from model_manifest import MODELS, verify_models
 
 import cv2
 import numpy as np
@@ -12,16 +18,11 @@ import requests
 # 获取当前文件所在目录，并计算项目根目录和模型目录
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_CURRENT_DIR)  # code/ 的上一级是项目根目录
-_DEFAULT_MODEL_DIR = os.path.join(_PROJECT_ROOT, "models")
+_DEFAULT_MODEL_DIR = str(models_dir())
 
 
-CAFFE_PROTO_URL = (
-    "https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/face_detector/deploy.prototxt"
-)
-CAFFE_MODEL_URL = (
-    "https://raw.githubusercontent.com/opencv/opencv_3rdparty/dnn_samples_face_detector_20170830/"
-    "res10_300x300_ssd_iter_140000.caffemodel"
-)
+CAFFE_PROTO_URL = MODELS['deploy.prototxt'][0]
+CAFFE_MODEL_URL = MODELS['res10_300x300_ssd_iter_140000.caffemodel'][0]
 
 
 def _ensure_dir(dir_path: str) -> None:
@@ -90,12 +91,15 @@ def _ensure_models(model_dir: str) -> Tuple[str, str]:
     model_path = os.path.join(model_dir, "res10_300x300_ssd_iter_140000.caffemodel")
     if os.getenv('SMART_LOCK_ENV') == 'production' and not all(os.path.isfile(p) for p in (proto_path, model_path)):
         raise RuntimeError('Production requires preinstalled, verified face models; runtime download is disabled')
+    if os.getenv('SMART_LOCK_ENV') == 'production':
+        verify_models(model_dir)
 
     if not os.path.isfile(proto_path):
         _download_file(CAFFE_PROTO_URL, proto_path)
     if not os.path.isfile(model_path):
         _download_file(CAFFE_MODEL_URL, model_path)
 
+    verify_models(model_dir)
     return proto_path, model_path
 
 

@@ -3,7 +3,7 @@ import type { Alarm } from '../../shared/api/records'
 import { ref, watch } from 'vue'
 import { alarm } from '../../shared/api/index.ts'
 import { useResource } from '../../shared/lib/useResource.ts'
-import { errorMessage, serverTime } from '../../shared/lib/presentation.js'
+import { errorMessage, serverTime, alarmLabel } from '../../shared/lib/presentation.js'
 import PageHeading from '../../shared/ui/PageHeading.vue'
 import InlineNotice from '../../shared/ui/InlineNotice.vue'
 import EmptyState from '../../shared/ui/EmptyState.vue'
@@ -78,7 +78,7 @@ function openDetail(item: Alarm) {
           <tbody>
             <tr v-for="item in data" :key="item.id">
               <td data-label="时间">{{ serverTime(item.time) }}</td>
-              <td data-label="类型">{{ item.type }}</td>
+              <td data-label="类型">{{ alarmLabel(item.type) }}</td>
               <td data-label="消息" style="max-width: 420px">{{ item.message }}</td>
               <td data-label="状态">
                 <StatusBadge
@@ -123,7 +123,7 @@ function openDetail(item: Alarm) {
       <p>{{ detail.message }}</p>
       <dl class="detail-list">
         <dt>类型</dt>
-        <dd>{{ detail.type }}</dd>
+        <dd>{{ alarmLabel(detail.type) }}</dd>
         <dt>发生时间</dt>
         <dd>{{ serverTime(detail.time) }}</dd>
         <dt>处理人</dt>

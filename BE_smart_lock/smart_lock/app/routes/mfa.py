@@ -24,6 +24,7 @@ import secrets
 import hashlib
 from .secure_receiver import save_snapshot_image
 from .secure_payload import decrypt_secure_payload
+from app.authenticators import pending_credential, activate_credential, lock_account
 
 mfa_bp = Blueprint('mfa', __name__)
 
@@ -53,18 +54,15 @@ def bind_totp():
         return jsonify({"msg": "TOTP already bound"}), 400
 
     # 生成TOTP密钥
-    secret = pyotp.random_base32()
+    credential = pending_credential(user)
+    if credential is None:
+        db.session.rollback()
+        return jsonify(msg='TOTP already bound'), 409
+    secret = credential.credential_data
     totp = pyotp.TOTP(secret)
     uri = totp.provisioning_uri(name=username, issuer_name="SmartLock")
 
     # 保存到数据库（待验证状态）
-    credential = MFACredential(
-        user_id=user.id,
-        credential_type='totp',
-        credential_data=secret,
-        is_active=False  # 需要验证后激活
-    )
-    db.session.add(credential)
     db.session.commit()
 
     return jsonify({
@@ -89,6 +87,7 @@ def verify_totp():
     user = User.query.filter_by(username=username).first()
 
     if credential_id:
+        lock_account(user.id)
         # 绑定确认场景
         credential = db.session.get(MFACredential, credential_id)
         if not credential or credential.user_id != user.id or credential.credential_type != 'totp':
@@ -110,7 +109,9 @@ def verify_totp():
 
     # 绑定确认：激活凭证
     if credential_id and not credential.is_active:
-        credential.is_active = True
+        if not activate_credential(user, credential):
+            db.session.rollback()
+            return jsonify(msg='Enrollment expired or authenticator already bound'), 409
         db.session.commit()
         return jsonify({"msg": "TOTP bound successfully"}), 200
 
@@ -265,7 +266,7 @@ def open_door_request():
 
     # ================= 新增：设备锁定状态拦截 =================
     if getattr(device_bound, 'is_locked', False):
-        log = AccessLog(action='BLOCKED_LOCKED_DEVICE_ATTEMPT', username=username)
+        log = AccessLog(action='BLOCKED_LOCKED_DEVICE_ATTEMPT', username=username, device_id=device_id)
         db.session.add(log)
         db.session.commit()
         return jsonify({
@@ -535,7 +536,7 @@ def open_door_confirm():
     db.session.add(unlock_token)
 
     # 记录访问日志
-    log = AccessLog(action='UNLOCK_TOKEN_ISSUED', username=username)
+    log = AccessLog(action='UNLOCK_TOKEN_ISSUED', username=username, device_id=session.device_id)
     db.session.add(log)
     db.session.commit()
 
@@ -616,6 +617,7 @@ def create_guest_pass():
         max_uses=max_uses
     )
     db.session.add(guest_pass)
+    db.session.add(AccessLog(action='GUEST_PASS_CREATED', username=username, device_id=device_id))
     db.session.commit()
 
     return jsonify({
@@ -674,7 +676,7 @@ def verify_guest_pass():
     db.session.add(unlock_token)
 
     # 记录访问日志
-    log = AccessLog(action='GUEST_TOKEN_ISSUED', username=guest_pass.guest_name or 'Guest')
+    log = AccessLog(action='GUEST_TOKEN_ISSUED', username=guest_pass.guest_name or 'Guest', device_id=guest_pass.device_id)
     db.session.add(log)
     db.session.commit()
 
@@ -710,6 +712,7 @@ def revoke_guest_pass(pass_id):
         return jsonify({"msg": "Pass not found"}), 404
 
     revoke_guest(guest_pass)
+    db.session.add(AccessLog(action='GUEST_PASS_REVOKED', username=username, device_id=guest_pass.device_id))
     db.session.commit()
 
     return jsonify({"msg": "Guest pass revoked"}), 200

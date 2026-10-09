@@ -78,3 +78,4 @@ jobs:
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: test "$(docker image inspect smart-lock-device:ci --format '{{.Architecture}}')" = "$EXPECTED_ARCH"
       - run: docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:ci python /app/device_smoke.py
+      - run: docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:ci python -B -m unittest discover -s /app/tests -v

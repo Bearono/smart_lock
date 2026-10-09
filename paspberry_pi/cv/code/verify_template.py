@@ -7,6 +7,10 @@ import os
 import sys
 import numpy as np
 from pathlib import Path
+try:
+    from .paths import templates_dir, embeddings_dir
+except ImportError:
+    from paths import templates_dir, embeddings_dir
 from typing import List, Dict
 
 # Ensure package root is importable when executed as a script
@@ -24,8 +28,8 @@ except Exception:
 # 获取当前文件所在目录，并计算项目根目录和默认目录
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_CURRENT_DIR)
-_DEFAULT_TEMPLATES_DIR = os.path.join(_PROJECT_ROOT, "data", "templates", "templates")
-_DEFAULT_EMBS_DIR = os.path.join(_PROJECT_ROOT, "data", "templates", "embs")
+_DEFAULT_TEMPLATES_DIR = str(templates_dir())
+_DEFAULT_EMBS_DIR = str(embeddings_dir())
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:

@@ -24,6 +24,7 @@ def main():
     assert UnavailableActuator().read_state() == 'UNKNOWN'
     client = app.test_client()
     assert client.get('/').status_code == 200
+    assert client.get('/health/ready').status_code == 503, 'Missing face assets must not appear ready'
     assert client.post('/auth_challenge', json={}).status_code == 401
     assert CommandWorker and HeartbeatWorker
     print(f'Offline device image checks passed: OpenCV {cv2.__version__}, dlib {dlib.__version__}')

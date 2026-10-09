@@ -57,6 +57,22 @@ def index():
     return "Smart lock device service is running."
 
 
+@app.route('/health/ready')
+def software_readiness():
+    """Configuration readiness only; physical camera/lock state comes from heartbeat."""
+    from model_manifest import verify_models
+    from paths import models_dir
+    from template_store import load_templates
+    try:
+        verify_models(models_dir())
+        templates = load_templates()
+        if not templates:
+            return jsonify(status='not_ready', reason='face_templates_missing', scope='software'), 503
+    except (OSError, ValueError):
+        return jsonify(status='not_ready', reason='face_assets_invalid', scope='software'), 503
+    return jsonify(status='ok', scope='software'), 200
+
+
 @app.route("/reload_templates", methods=["POST"])
 def reload_face_templates():
     """录入新人脸模板后，调用此接口刷新进程内缓存，无需重启服务。"""

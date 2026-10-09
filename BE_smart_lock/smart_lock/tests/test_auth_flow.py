@@ -68,6 +68,77 @@ class AuthFlowTests(unittest.TestCase):
     def post(self, path, body, authenticated=True, client=None):
         return (client or self.client).post(path, json=body, headers=self.headers if authenticated else {})
 
+    def test_repeated_enrollment_has_one_pending_secret(self):
+        with self.app.app_context():
+            MFACredential.query.filter_by(user_id=self.uid, credential_type='totp').update({'is_active': False})
+            db.session.commit()
+        first = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False)
+        second = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json['credential_id'], second.json['credential_id'])
+        self.assertEqual(first.json['secret'], second.json['secret'])
+
+    def test_registration_identity_can_be_used_as_a_safe_template_name(self):
+        for username in ('../alice', 'a/b', 'a\\b', ' alice ', 'alice.', 'a\x00b'):
+            with self.subTest(username=username):
+                self.assertEqual(self.post('/api/register', {'username': username,
+                    'password': 'new-account-password'}, False).status_code, 400)
+        self.assertEqual(self.post('/api/register', {'username': '家人',
+            'password': 'new-account-password'}, False).status_code, 201)
+
+    def test_authentication_lockout_queues_one_alarm_per_episode(self):
+        from app.door_auth import record_failure
+        from app.models import AlarmLog, AlarmDelivery
+        with self.app.app_context():
+            for _ in range(7):
+                record_failure(self.uid, 'door_a')
+                db.session.commit()
+            alarm = AlarmLog.query.one()
+            self.assertEqual(alarm.alarm_type, 'AUTH_LOCKOUT')
+            self.assertIn('alice', alarm.message)
+            self.assertIn('door_a', alarm.message)
+            self.assertEqual(AlarmDelivery.query.count(), 1)
+            self.assertEqual(AlarmDelivery.query.one().status, 'disabled')
+            other = MFACredential.query.filter_by(user_id=self.uid, device_id='door_b').one()
+            self.assertFalse(other.is_locked)
+
+    def test_historical_pending_secret_cannot_replace_active_authenticator(self):
+        with self.app.app_context():
+            pending_secret = pyotp.random_base32()
+            pending = MFACredential(user_id=self.uid, credential_type='totp',
+                                    credential_data=pending_secret, is_active=False)
+            db.session.add(pending)
+            db.session.commit()
+            pending_id = pending.id
+        result = self.post('/api/mfa/verify/totp', {'credential_id': pending_id,
+                                                   'code': pyotp.TOTP(pending_secret).now()})
+        self.assertEqual(result.status_code, 409)
+        with self.app.app_context():
+            self.assertEqual(MFACredential.query.filter_by(user_id=self.uid,
+                credential_type='totp', is_active=True).count(), 1)
+
+    def test_expired_pending_enrollment_is_rejected_and_rotated(self):
+        with self.app.app_context():
+            credential = MFACredential.query.filter_by(user_id=self.uid, credential_type='totp').one()
+            credential.is_active = False
+            credential.created_at = datetime.now() - timedelta(minutes=6)
+            credential_id = credential.id
+            db.session.commit()
+        result = self.post('/api/mfa/verify/totp', {'credential_id': credential_id,
+                                                   'code': pyotp.TOTP(self.secret).now()})
+        self.assertEqual(result.status_code, 401, 'Removing the active authenticator must invalidate the old JWT')
+        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False)
+        self.assertNotEqual(pre.json['secret'], self.secret)
+        with self.app.app_context():
+            credential = db.session.get(MFACredential, pre.json['credential_id'])
+            credential.created_at = datetime.now() - timedelta(minutes=6)
+            db.session.commit()
+        self.assertEqual(self.post('/api/login/mfa/bind', {'pre_token': pre.json['pre_token'],
+            'code': pyotp.TOTP(pre.json['secret']).now()}, False).status_code, 409)
+        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False)
+        self.assertEqual(self.post('/api/login/mfa/bind', {'pre_token': pre.json['pre_token'],
+            'code': pyotp.TOTP(pre.json['secret']).now()}, False).status_code, 200)
+
     def challenge(self, device='door_a'):
         response = self.post('/api/mfa/open-door/request', {'device_id': device})
         self.assertEqual(response.status_code, 200, response.json)
@@ -390,6 +461,19 @@ class AuthFlowTests(unittest.TestCase):
         self.assertEqual(self.post('/api/mfa/open-door/confirm', body).status_code, 400)
         body['totp_code'] = pyotp.TOTP(self.secret).now()
         self.assertEqual(self.post('/api/mfa/open-door/confirm', body).status_code, 200)
+
+    def test_guest_lifecycle_history_has_device_context_without_secret(self):
+        from app.models import AccessLog
+        response = self.post('/api/mfa/guest/create', {'device_id': 'door_a', 'guest_name': 'visitor'})
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            guest_id = GuestPass.query.one().id
+        self.assertEqual(self.post('/api/mfa/guest/revoke/' + str(guest_id), {}).status_code, 200)
+        with self.app.app_context():
+            entries = AccessLog.query.filter(AccessLog.action.in_(['GUEST_PASS_CREATED', 'GUEST_PASS_REVOKED'])).all()
+            self.assertEqual({entry.action for entry in entries}, {'GUEST_PASS_CREATED', 'GUEST_PASS_REVOKED'})
+            self.assertTrue(all(entry.device_id == 'door_a' and entry.username == 'alice' for entry in entries))
+            self.assertNotIn(response.json['pass_code'], repr([entry.__dict__ for entry in entries]))
 
     def test_guest_budget_device_binding_and_revocation(self):
         response = self.post('/api/mfa/guest/create', {'device_id': 'door_a', 'guest_name': 'guest', 'max_uses': 1})

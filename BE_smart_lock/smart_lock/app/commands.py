@@ -67,8 +67,12 @@ def register_commands(app):
     @with_appcontext
     def create_admin(username, password):
         """Create a new administrator; existing accounts are never promoted."""
-        if not username.strip() or len(username) > 80:
-            raise click.ClickException('Username must contain 1 to 80 characters')
+        from app.validation import validate_username
+        from werkzeug.exceptions import BadRequest
+        try:
+            validate_username(username)
+        except BadRequest as exc:
+            raise click.ClickException(exc.description) from exc
         if not 12 <= len(password) or len(password.encode()) > 72:
             raise click.ClickException('Password must contain at least 12 characters and at most 72 bytes')
         if User.query.filter_by(username=username).first():

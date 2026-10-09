@@ -15,7 +15,8 @@ from app import db, bcrypt
 from app.models import LoginChallenge, MFACredential, User
 from app.accounts import change_password
 from app.permissions import current_user
-from app.validation import text_field, totp_code, validate_password
+from app.validation import text_field, totp_code, validate_password, validate_username
+from app.authenticators import pending_credential, activate_credential
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -43,6 +44,7 @@ def update_password():
 def register():
     data = request.get_json() or {}
     username, password = data.get('username'), data.get('password')
+    validate_username(username)
     if (not isinstance(username, str) or not username.strip() or len(username) > 80
             or not isinstance(password, str) or len(password) < 12 or len(password.encode()) > 72):
         return jsonify(msg='Valid username and password are required'), 400
@@ -74,13 +76,10 @@ def prelogin():
         user_id=user.id, credential_type='totp', is_active=True).first()
     binding = credential is None
     if binding:
-        credential = MFACredential.query.filter_by(
-            user_id=user.id, credential_type='totp', is_active=False).first()
-        if not credential:
-            credential = MFACredential(user_id=user.id, credential_type='totp',
-                                       credential_data=pyotp.random_base32(), is_active=False)
-            db.session.add(credential)
-            db.session.flush()
+        credential = pending_credential(user)
+        if credential is None:
+            db.session.rollback()
+            return jsonify(msg='Login state changed; restart login', restart_login=True), 409
     pre_token = secrets.token_urlsafe(32)
     LoginChallenge.query.filter(LoginChallenge.expires_at <= datetime.now()).delete(synchronize_session=False)
     db.session.add(LoginChallenge(
@@ -131,7 +130,10 @@ def _complete_login(binding):
         db.session.rollback()
         return jsonify(msg='Login challenge already consumed', restart_login=True), 409
     if binding:
-        credential.is_active = True
+        if not activate_credential(user, credential):
+            db.session.commit()
+            return jsonify(msg='Enrollment expired or authenticator already bound; restart login',
+                           restart_login=True), 409
     db.session.commit()
     return jsonify(access_token=create_access_token(identity=user.username, additional_claims={
                        'mfa': True, 'auth_version': user.auth_version}),

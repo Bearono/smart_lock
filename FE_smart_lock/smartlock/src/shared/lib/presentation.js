@@ -4,10 +4,16 @@ const actions = {
   UNLOCK_TOKEN_ISSUED: '开门授权已签发',
   GUEST_TOKEN_ISSUED: '访客验证通过',
   ADMIN_APPROVE: '管理员批准账户',
-  ADMIN_REJECT: '管理员拒绝账户'
+  ADMIN_REJECT: '管理员拒绝账户',
+  TOTP_BOUND: '身份验证器已绑定',
+  GUEST_PASS_CREATED: '访客凭证已创建',
+  GUEST_PASS_REVOKED: '访客凭证已撤销'
 }
 export function actionLabel(value) {
   return actions[value] || value || '未提供'
+}
+export function alarmLabel(value) {
+  return { AUTH_LOCKOUT: '身份验证锁定' }[value] || value || '未提供'
 }
 export function serverTime(value) {
   if (!value) return '尚未上报'

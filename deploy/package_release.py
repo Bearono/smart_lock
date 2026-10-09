@@ -25,6 +25,7 @@ TREES = {
     'BE_smart_lock/smart_lock/tests': {'.py'},
     'FE_smart_lock/smartlock/src': {'.js', '.ts', '.vue', '.css', '.webp'},
     'packages/smartlock_protocol/smartlock_protocol': {'.py'},
+    'paspberry_pi/tests': {'.py'},
     'FE_smart_lock/smartlock/tests': {'.cjs'},
     'docs': {'.md'},
     '.github/workflows': {'.yml', '.yaml'},

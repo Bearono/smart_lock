@@ -21,6 +21,7 @@ COPY packages/smartlock_protocol /opt/smartlock_protocol
 RUN pip install --no-cache-dir --no-deps /opt/smartlock_protocol
 COPY paspberry_pi/*.py /app/
 COPY paspberry_pi/cv/code/*.py /app/cv/code/
+COPY paspberry_pi/tests /app/tests
 COPY deploy/device_smoke.py /app/device_smoke.py
 USER 10001:10001
 CMD ["gunicorn", "--config", "/app/gunicorn.conf.py", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "2", "--timeout", "60", "--access-logfile", "-", "app:app"]

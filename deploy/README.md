@@ -43,8 +43,8 @@ docker compose exec backend flask --app run grant-device --username alice --devi
 使用 64 位系统和 Docker。`compose.device.yaml` 默认对接 `/dev/video0` 的 USB/V4L2 摄像头，不能据此声称 CSI/Picamera2 已通过容器验证。CSI 摄像头需要针对系统 libcamera、设备节点和权限单独验证。
 
 1. 把登记口令保存为 `deploy/secrets/device_key`，只允许运维账号读取其父目录。
-2. 将已验证模型放入 `deploy/device/models`，包含 `deploy.prototxt` 和 `res10_300x300_ssd_iter_140000.caffemodel`。生产模式禁止运行时下载模型，应记录批准模型的 SHA-256 和来源。
-3. 将已录入的 `template_*.npy` 放入 `deploy/device/templates`。模板用户名与后端账号一致，目录以只读方式挂载。
+2. 在维护主机执行 `python deploy/prepare_face_models.py --download`，把固定版本的模型放入 `deploy/device/models`。再次执行不带 `--download` 的命令校验模型。来源和 SHA-256 固定在 `model_manifest.py`；缺失或被改动的模型不通过设备就绪检查，生产进程不自动下载。
+3. 使用下方模板管理工具登记已批准账户，输出到 `deploy/device/templates`。模板用户名与后端账号一致，目录以只读方式挂载。
 4. 按 [家门交付说明](../docs/HOME_DELIVERY.md) 配置后端与设备 HTTPS：只传输设备服务证书、设备服务私钥和 CA 公钥，CA 私钥留在维护主机。设备服务证书 SAN 必须匹配后端登记地址。
 5. 设置变量并部署：
 
@@ -176,3 +176,32 @@ docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local 
 ```
 
 该检查加载视觉依赖、处理合成空白图像，并验证设备 HTTP 健康与签名拒绝边界。它不启动摄像头，不连接后端，也不执行锁具动作。持续集成中的 `device-image` 作业执行相同检查。
+
+## 人脸模板登记、替换与删除
+
+这是受控运维流程，不是网页自助登记。先核实被登记者身份及后端账户审批、设备授权；在具备设备镜像视觉依赖的维护环境中处理 3–20 张不同的本人图像。每张只允许一张人脸，重复图片、无脸/多脸和损坏图片均拒绝。图像质量、是否同一人仍由登记者核查，不宣称自动活体校验。
+
+```sh
+python paspberry_pi/manage_templates.py --directory deploy/device/templates enroll --username alice --images capture1.jpg capture2.jpg capture3.jpg
+python paspberry_pi/manage_templates.py --directory deploy/device/templates validate
+python paspberry_pi/manage_templates.py --directory deploy/device/templates list
+# 替换必须显式指定 --replace；不会默认覆盖已有登记
+python paspberry_pi/manage_templates.py --directory deploy/device/templates install --username alice --vector approved-vector.npy --replace
+python paspberry_pi/manage_templates.py --directory deploy/device/templates remove --username alice
+```
+
+工具与推理共用 `SMART_LOCK_TEMPLATES_DIR`、`SMART_LOCK_MODELS_DIR`；默认路径分别是设备的 `cv/data/templates/templates` 和 `cv/models`。向量要求 128 维、有限非零数值，读取禁止 pickle，安装原子发布并拒绝符号链接。移除只删除指定账户模板。更新后验证并在维护窗口重启设备，使推理缓存刷新：`docker compose -f compose.device.yaml -f compose.device.tls.yaml restart device`。删除模板不能代替后端撤销设备授权，两者应一起执行。
+
+设备 `/` 仅表示进程存活；`/health/ready` 校验固定模型和至少一个合法模板。就绪不表示摄像头、锁具、识别准确率或活体能力通过验收。模型下载来源：[OpenCV 4.11.0 检测配置](https://github.com/opencv/opencv/blob/4.11.0/samples/dnn/face_detector/deploy.prototxt) 和 [OpenCV 检测模型](https://github.com/opencv/opencv_3rdparty/tree/dnn_samples_face_detector_20170830)。本地模型与个人模板不进入 Git 或源码交付包。
+
+初次 TOTP 登记窗口为 5 分钟；超时重新登录取得新登记信息。重复预登录复用当前窗口，不能通过旧登记替换已激活的认证器。历史重复待绑定凭据在成功激活时作废。
+
+连续认证失败达到锁定阈值时自动保存 `AUTH_LOCKOUT` 告警及通知任务，同一次锁定只生成一次；管理员解除锁定后再次触发可产生新告警。SMTP 未配置时通知明确为 disabled，后台告警仍可查看和处理。
+
+设备离线验收包含模板与就绪接口回归：
+
+```sh
+docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local python -B -m unittest discover -s /app/tests -v
+```
+
+最新复核范围、证据和剩余能力见 [软件验收复核](../docs/SOFTWARE_ACCEPTANCE_20261009.md)。

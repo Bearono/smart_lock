@@ -5,7 +5,7 @@
 """
 import os
 import sys
-import glob
+from pathlib import Path
 import numpy as np
 import cv2
 try:
@@ -13,6 +13,12 @@ try:
 except ImportError:
     from resource_guard import serialized_inference
 from typing import Tuple, Optional, Dict
+try:
+    from .paths import templates_dir as configured_templates_dir
+    from .template_store import load_templates
+except ImportError:
+    from paths import templates_dir as configured_templates_dir
+    from template_store import load_templates
 
 # Ensure package root is importable when executed as a script
 if __package__ is None or __package__ == "":
@@ -32,12 +38,13 @@ except Exception:
 # 获取当前文件所在目录，并计算项目根目录和模板目录
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_CURRENT_DIR)
-_DEFAULT_TEMPLATES_DIR = os.path.join(_CURRENT_DIR, "data", "templates", "templates")
+_DEFAULT_TEMPLATES_DIR = str(configured_templates_dir())
 
 
 # 全局变量：模板库和检测器（延迟加载）
 _templates_cache: Optional[Dict[str, np.ndarray]] = None
 _detector_cache: Optional[DnnFaceDetector] = None
+_templates_cache_path: Optional[str] = None
 
 
 def l2_normalize(embedding: np.ndarray) -> np.ndarray:
@@ -60,50 +67,15 @@ def _read_image(image_path: str) -> Optional[np.ndarray]:
 
 
 def _load_templates(templates_dir: str = None) -> Dict[str, np.ndarray]:
-    if templates_dir is None:
-        templates_dir = _DEFAULT_TEMPLATES_DIR
-    """
-    加载所有用户模板
-    
-    Args:
-        templates_dir: 模板文件目录
-    
-    Returns:
-        字典，key 为 user_id，value 为归一化的模板向量
-    """
-    templates = {}
-    
-    if not os.path.isdir(templates_dir):
-        return templates
-    
-    template_files = glob.glob(os.path.join(templates_dir, "template_*.npy"))
-    
-    for template_path in template_files:
-        try:
-            # 从文件名提取 user_id: template_user_001.npy -> user_001
-            filename = os.path.basename(template_path)
-            user_id = filename.replace("template_", "").replace(".npy", "")
-            
-            # 加载模板
-            template = np.load(template_path, allow_pickle=False).astype(np.float32)
-            
-            # 确保是 1D 向量并归一化
-            if template.ndim == 1:
-                template = l2_normalize(template)
-                templates[user_id] = template
-        except Exception:
-            continue
-    
-    return templates
+    return load_templates(templates_dir)
 
 
 def _get_templates(templates_dir: str = None) -> Dict[str, np.ndarray]:
-    if templates_dir is None:
-        templates_dir = _DEFAULT_TEMPLATES_DIR
-    """获取模板库（带缓存）"""
-    global _templates_cache
-    if _templates_cache is None:
-        _templates_cache = _load_templates(templates_dir)
+    global _templates_cache, _templates_cache_path
+    directory = str(Path(templates_dir or configured_templates_dir()).resolve())
+    if _templates_cache is None or _templates_cache_path != directory:
+        _templates_cache = _load_templates(directory)
+        _templates_cache_path = directory
     return _templates_cache
 
 
@@ -124,7 +96,7 @@ def recognize(
     match_threshold: float = 0.90,
 ) -> Tuple[Optional[str], float]:
     if templates_dir is None:
-        templates_dir = _DEFAULT_TEMPLATES_DIR
+        templates_dir = str(configured_templates_dir())
     """
     人脸识别函数
     
@@ -164,7 +136,7 @@ def recognize(
     # 2. 人脸检测
     detector = _get_detector(conf_threshold)
     faces = detector.detect(image)
-    if not faces:
+    if len(faces) != 1:
         return None, 0.0
     
     # 使用置信度最高的人脸
@@ -213,7 +185,7 @@ def recognize_from_path(
     match_threshold: float = 0.90,
 ) -> Tuple[Optional[str], float]:
     if templates_dir is None:
-        templates_dir = _DEFAULT_TEMPLATES_DIR
+        templates_dir = str(configured_templates_dir())
     """
     从图片文件路径进行识别
     
@@ -245,6 +217,6 @@ def reload_templates(templates_dir: str = None):
     """重新加载模板库（当模板文件更新后调用）"""
     global _templates_cache
     if templates_dir is None:
-        templates_dir = _DEFAULT_TEMPLATES_DIR
+        templates_dir = str(configured_templates_dir())
     _templates_cache = None
     _get_templates(templates_dir)  # 触发重新加载

@@ -12,6 +12,8 @@ services:
       SMART_LOCK_CA_BUNDLE: /run/tls/ca.crt
       SMART_LOCK_DEVICE_PASSWORD_FILE: /run/secrets/device_key
       DEVICE_STATE_DIR: /data
+      SMART_LOCK_MODELS_DIR: /app/cv/models
+      SMART_LOCK_TEMPLATES_DIR: /app/cv/data/templates/templates
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
     secrets: [device_key]
@@ -19,7 +21,7 @@ services:
       - ./deploy/tls/ca.crt:/run/tls/ca.crt:ro
       - device_state:/data
       - ./deploy/device/models:/app/cv/models:ro
-      - ./deploy/device/templates:/app/cv/code/data/templates/templates:ro
+      - ./deploy/device/templates:/app/cv/data/templates/templates:ro
     devices: ['/dev/video0:/dev/video0']
     group_add: ['${VIDEO_GID:-44}']
     ports: ['${DEVICE_BIND_IP:-127.0.0.1}:5000:5000']
@@ -31,7 +33,7 @@ services:
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
     healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:5000/', timeout=3)"]
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:5000/health/ready', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
