@@ -23,3 +23,6 @@ def worker_exit(server, worker):
     heartbeat = getattr(worker, 'device_heartbeat', None)
     if heartbeat:
         heartbeat.stop()
+
+    from app import camera
+    camera.close()

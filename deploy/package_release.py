@@ -17,7 +17,7 @@ FILES = (
     'FE_smart_lock/smartlock/eslint.config.mjs', 'FE_smart_lock/smartlock/README.md',
     'FE_smart_lock/smartlock/tsconfig.json',
     'FE_smart_lock/smartlock/.prettierrc.json',
-    'compose.device.tls.yaml',
+    'compose.device.tls.yaml', 'paspberry_pi/requirements.pi.txt',
     'packages/smartlock_protocol/pyproject.toml',
 )
 TREES = {

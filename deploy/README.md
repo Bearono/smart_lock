@@ -205,3 +205,39 @@ docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local 
 ```
 
 最新复核范围、证据和剩余能力见 [软件验收复核](../docs/SOFTWARE_ACCEPTANCE_20261009.md)。
+
+## CSI 摄像头原生部署
+
+Pi 4 + Rev 1.3 / OV5647 使用系统 Picamera2 采集；USB `/dev/video0` 容器配置不能直接替代 CSI 多设备节点和系统库。原生部署复用同一设备业务、协议及签名校验，无需 privileged 容器。
+
+```sh
+sudo python3 deploy/pi_dependencies.py --linger-user taylor
+# 以下以普通服务用户运行，保留系统相机库
+python3 deploy/pi_native.py prepare
+```
+
+原生虚拟环境使用 --system-site-packages 继承系统 Picamera2、NumPy、OpenCV、Pillow，不对系统 Python 运行 pip install。Python 3.13 profile 固定 dlib 20.0.1，USB Docker 仍固定 19.24.6，分别验收。编译限制单任务；运行依赖清单保存于 instance/pi-native/runtime-packages.txt，APT 版本另记录 dpkg-query。安装后递归校验应用依赖闭包、版本和环境标记；继承的无关 APT 工具依赖不纳入应用验收。
+
+启动前准备 deploy/.env（0600），明确 SMART_LOCK_ENV=production、SMART_LOCK_DEVICE_ID、BACKEND_URL（HTTPS）、SMART_LOCK_CA_BUNDLE、SMART_LOCK_DEVICE_PASSWORD_FILE、DEVICE_STATE_DIR、SMART_LOCK_MODELS_DIR、SMART_LOCK_TEMPLATES_DIR、SMART_LOCK_CAMERA_BACKEND=picamera2。提供 deploy/tls/pi-native.crt、pi-native.key（0600）和 CA 公钥；设备口令独立随机，不复用登录密码。证书 SAN 覆盖访问地址。
+
+```sh
+python3 deploy/pi_native.py install-service
+systemctl --user status smart-lock-device
+journalctl --user -u smart-lock-device --no-pager -n 50
+systemctl --user restart smart-lock-device
+systemctl --user stop smart-lock-device
+```
+
+服务监听 127.0.0.1:5443 HTTPS，单 worker、双线程，1200M 内存上限；通过用户 systemd 管理，linger 使其开机启动而不依赖交互登录。没有 NOPASSWD sudo，也未授予 Docker 管理权限。退出时释放相机；采集错误清理资源，下次可重新初始化。Picamera2 RGB888 数组实际为 BGR，直接供 OpenCV 使用，避免错误通道交换。明确选择 picamera2 时不退回其他视频节点。
+
+实验电脑后端和 Pi 通过双向 SSH 转发：
+
+```sh
+python deploy/pi_tunnel.py --host PI_IP --user taylor --identity PATH_TO_PRIVATE_KEY
+```
+
+保持该进程运行：电脑 loopback 15443 转发 Pi 5443；Pi loopback 18443 转发电脑后端 8443。Pi 的 BACKEND_URL=https://localhost:18443，Docker Desktop 后端登记地址=https://host.docker.internal:15443。设备证书 SAN 覆盖 localhost 和 host.docker.internal。仍严格验证 CA、SSH 主机密钥及后端命令签名，不关闭 TLS 检查。不开放整个局域网；隧道关闭后设备通信中断，正式部署应使用受控局域网/VPN地址及匹配证书。
+
+空模板目录仍返回就绪 503，不能安装虚构向量让就绪变绿。进程、真实相机、心跳和识别模板分别验收；需本人身份登记才进行人脸 MFA 测试。
+
+依据：[Picamera2 颜色映射](https://github.com/raspberrypi/picamera2/blob/main/picamera2/request.py)、[官方手册](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf)、[dlib 构建配置](https://github.com/davisking/dlib/blob/v20.0.1/setup.py)。
