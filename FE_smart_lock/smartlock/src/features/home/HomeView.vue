@@ -54,7 +54,8 @@ const batteryLabel = computed(() => {
 
 let imageGeneration = 0,
   disposed = false
-async function refreshSnapshot() {
+async function refreshSnapshot(capture = false) {
+  if (capture && snapshotBusy.value) return
   const current = ++imageGeneration,
     id = selectedId.value
   latestPath.value = ''
@@ -66,14 +67,17 @@ async function refreshSnapshot() {
     return
   }
   try {
-    const response = await media.latest(id)
+    const response = await (capture ? media.capture(id) : media.latest(id))
     if (!disposed && current === imageGeneration) {
       latestPath.value = response.data.snapshot || ''
       receivedAt.value = response.data.received_at || ''
     }
   } catch (failure) {
     if (!disposed && current === imageGeneration)
-      snapshotError.value = errorMessage(failure, '快照信息获取失败')
+      snapshotError.value = errorMessage(
+        failure,
+        capture ? '拍摄结果未确认，请先刷新已有画面' : '快照信息获取失败'
+      )
   } finally {
     if (!disposed && current === imageGeneration) snapshotBusy.value = false
   }
@@ -99,7 +103,7 @@ async function clearSnapshot() {
     clearing.value = false
   }
 }
-watch(selectedId, refreshSnapshot, { immediate: true })
+watch(selectedId, () => refreshSnapshot(), { immediate: true })
 onScopeDispose(() => {
   disposed = true
   imageGeneration++
@@ -209,9 +213,18 @@ onScopeDispose(() => {
               class="icon-button"
               aria-label="刷新快照"
               :disabled="snapshotBusy"
-              @click="refreshSnapshot"
+              @click="refreshSnapshot()"
             >
               <AppIcon name="refresh" :size="17" />
+            </button>
+          </div>
+          <div class="panel-body button-group" style="padding-top: 0; padding-bottom: 12px">
+            <button
+              class="button"
+              :disabled="snapshotBusy || !selected.is_online"
+              @click="refreshSnapshot(true)"
+            >
+              {{ snapshotBusy ? '正在获取画面…' : '拍摄一张新画面' }}
             </button>
           </div>
           <InlineNotice v-if="snapshotError" tone="warning">{{ snapshotError }}</InlineNotice>

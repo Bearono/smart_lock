@@ -151,6 +151,10 @@ export const face = {
 }
 
 export const media = {
+  capture: async (deviceId: string) => {
+    const response = await api.post('/api/video/capture', { device_id: deviceId })
+    return { ...response, data: parseSnapshot(response.data) }
+  },
   latest: async (deviceId?: string) => {
     const response = await api.get('/api/video/latest', { params: { device_id: deviceId } })
     return { ...response, data: parseSnapshot(response.data) }

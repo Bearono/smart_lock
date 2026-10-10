@@ -770,17 +770,8 @@ def _resolve_device_service_base(device_id):
 
 def _dispatch_face_challenge(device_id, request_id, nonce):
     base_url = _resolve_device_service_base(device_id)
-    import hashlib
-    import hmac
-    import json
-    import time
-    from app.provisioning import device_password
-    body = json.dumps({'request_id': request_id, 'nonce': nonce}, separators=(',', ':')).encode()
-    stamp, command_nonce = str(int(time.time())), secrets.token_hex(16)
-    message = json.dumps(['POST', '/auth_challenge', stamp, command_nonce, hashlib.sha256(body).hexdigest()], separators=(',', ':')).encode()
-    key = hashlib.sha256(b'smart-lock-backend-command\0' + device_password(device_id).encode()).digest()
-    headers = {'Content-Type': 'application/json', 'X-Command-Time': stamp,
-               'X-Command-Nonce': command_nonce, 'X-Command-Signature': hmac.new(key, message, hashlib.sha256).hexdigest()}
+    from app.device_commands import signed_command
+    body, headers = signed_command(device_id, '/auth_challenge', {'request_id': request_id, 'nonce': nonce})
     try:
         response = requests.post(
             f"{base_url}/auth_challenge",

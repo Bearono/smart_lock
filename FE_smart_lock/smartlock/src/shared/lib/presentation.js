@@ -7,7 +7,8 @@ const actions = {
   ADMIN_REJECT: '管理员拒绝账户',
   TOTP_BOUND: '身份验证器已绑定',
   GUEST_PASS_CREATED: '访客凭证已创建',
-  GUEST_PASS_REVOKED: '访客凭证已撤销'
+  GUEST_PASS_REVOKED: '访客凭证已撤销',
+  SNAPSHOT_CAPTURE: '门前新画面已获取'
 }
 export function actionLabel(value) {
   return actions[value] || value || '未提供'
@@ -49,7 +50,12 @@ export function errorMessage(error, fallback = '暂时无法完成，请稍后�
     'Device not bound': '请先在账户与安全中绑定该设备',
     'Device authorization revoked or locked': '设备认证权限已撤销或受限',
     'Invalid pass code': '访客凭证无效',
-    'Invalid credentials': '账户或密码不正确'
+    'Invalid credentials': '账户或密码不正确',
+    'Device camera service is unavailable': '摄像头服务尚未配置或已停用',
+    'Too many capture requests': '拍摄过于频繁，请稍后再试',
+    'Capture result is unknown; refresh stored images before trying again':
+      '拍摄结果未确认，请先刷新已有画面，不要重复拍摄',
+    'Unable to confirm a new camera image': '未能确认新画面已保存，请检查设备连接后刷新已有画面'
   }
   if (known[message]) return known[message]
   if (status === 403) return '没有执行此操作的权限，或授权已失效'

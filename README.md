@@ -8,6 +8,8 @@
 
 本版验收结果见 [家门体验与 v3 验收记录](docs/HOME_ACCEPTANCE.md)，算法对照见 [微基准记录](docs/HOME_BENCHMARK.md)。此前交付资料保留在 [完善方案](docs/DELIVERY_PLAN.md) 和 [历史验收记录](docs/DELIVERY_REPORT.md)。
 
+课程最终交付范围、本人脸实测步骤和 8–10 分钟答辩脚本见 [最终交付手册](docs/COURSE_FINAL_DELIVERY.md)。Pi 4B / OV5647 原生 CSI 接入和实际验收见 [实机记录](docs/PI_INTEGRATION_20261010.md)。网页可主动拍摄新画面，刷新按钮仍只读取已存照片。
+
 在仓库根目录执行：
 
 ```sh

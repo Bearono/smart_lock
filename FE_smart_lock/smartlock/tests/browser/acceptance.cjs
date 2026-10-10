@@ -62,7 +62,7 @@ const faceLogs = [
     snapshot: null
   }
 ]
-const calls = { verify: 0, consume: 0, face: 0, lock: 0 }
+const calls = { verify: 0, consume: 0, face: 0, lock: 0, capture: 0 }
 let lostConsumption = false,
   rejectGrant = false,
   deviceFailure = false,
@@ -109,6 +109,15 @@ async function fixture(page) {
       const target = devices.find((item) => item.device_id === endpoint.split('/')[4])
       target.display_name = body.display_name
       return respond(target)
+    }
+    if (endpoint === '/api/video/capture') {
+      calls.capture++
+      assert.equal(body.device_id, 'qa_front')
+      return respond({
+        snapshot: `/api/media/${'a'.repeat(32)}.jpg`,
+        received_at: '2026-10-11T00:00:00Z',
+        captured_at: null
+      })
     }
     if (endpoint === '/api/video/latest')
       return respond({
@@ -284,10 +293,14 @@ async function run() {
   await noOverflow(page, 'desktop door')
   await page.screenshot({ path: path.join(artifacts, 'doors-desktop.png'), fullPage: true })
   snapshotFixtures = true
+  await page.getByRole('button', { name: '拍摄一张新画面', exact: true }).click()
+  await page.locator('.snapshot-button img').waitFor()
+  assert.equal(calls.capture, 1)
   await page.getByRole('button', { name: '刷新快照', exact: true }).click()
   await page.locator('.snapshot-button img').waitFor()
   const slowImage = page.waitForRequest((request) => request.url().includes('/api/media/bbbb'))
   await page.locator('#device-select').selectOption('qa_back')
+  assert.equal(await page.getByRole('button', { name: '拍摄一张新画面' }).isDisabled(), true)
   await slowImage
   const slowResponse = page.waitForResponse((response) =>
     response.url().includes('/api/media/bbbb')

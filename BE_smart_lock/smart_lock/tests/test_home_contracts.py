@@ -5,6 +5,8 @@ from tempfile import TemporaryDirectory
 import sys
 import time
 import unittest
+from unittest.mock import patch, Mock
+import requests
 from flask_jwt_extended import create_access_token
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app, db
@@ -43,6 +45,75 @@ class HomeContractsTests(unittest.TestCase):
                 db.session.remove()
                 db.engine.dispose()
         self.tmp.cleanup()
+
+    def provision_camera(self):
+        from app.models import DeviceProvisioning
+        from app.security_store import _cipher
+        with self.app.app_context():
+            db.session.add(DeviceProvisioning(device_id='test_device', enabled=True,
+                service_url='https://camera.invalid',
+                encrypted_password=_cipher().encrypt(b'independent-device-secret-32-bytes')))
+            db.session.commit()
+
+    def test_capture_requires_login_access_and_provisioning(self):
+        with patch('app.routes.video.requests.post') as dispatch:
+            self.assertEqual(self.client.post('/api/video/capture', json={'device_id':'test_device'}).status_code, 401)
+            self.assertEqual(self.client.post('/api/video/capture', json={'device_id':'test_device'}, headers=self.headers['member']).status_code, 403)
+            self.assertEqual(self.client.post('/api/video/capture', json={'device_id':'test_device'}, headers=self.headers['operator']).status_code, 503)
+            self.assertEqual(self.client.post('/api/video/capture', json=[], headers=self.headers['operator']).status_code, 400)
+            dispatch.assert_not_called()
+
+    def test_capture_confirms_new_device_scoped_media_and_signs_command(self):
+        self.provision_camera()
+        filename='b'*32+'.jpg'
+        def upload(*args, **kwargs):
+            with self.app.app_context():
+                db.session.add(MediaAsset(filename=filename,device_id='test_device'))
+                db.session.commit()
+            return Mock(status_code=200,json=lambda:{'status':'image_sent','info':{'snapshot':'/api/media/'+filename}})
+        with patch('app.routes.video.requests.post',side_effect=upload) as dispatch:
+            result=self.client.post('/api/video/capture',json={'device_id':'test_device'},headers=self.headers['operator'])
+            self.assertEqual(result.status_code,200,result.json)
+            self.assertEqual(result.json['snapshot'],'/api/media/'+filename)
+            self.assertIsNone(result.json['captured_at'])
+            self.assertTrue(result.json['received_at'])
+            self.assertEqual(dispatch.call_args.args[0],'https://camera.invalid/capture_and_send')
+            self.assertFalse(dispatch.call_args.kwargs['allow_redirects'])
+            self.assertEqual(len(dispatch.call_args.kwargs['headers']['X-Command-Signature']),64)
+        with self.app.app_context():
+            self.assertEqual(AccessLog.query.one().action,'SNAPSHOT_CAPTURE')
+
+    def test_capture_rejects_missing_foreign_and_old_receipts(self):
+        self.provision_camera()
+        with self.app.app_context():
+            db.session.add_all([MediaAsset(filename='old.jpg',device_id='test_device'),
+                MediaAsset(filename='foreign.jpg',device_id='other_device')])
+            db.session.commit()
+        for filename in ('missing.jpg','foreign.jpg','old.jpg'):
+            reply=Mock(status_code=200,json=lambda:{'status':'image_sent','info':{'snapshot':'/api/media/'+filename}})
+            with patch('app.routes.video.requests.post',return_value=reply):
+                result=self.client.post('/api/video/capture',json={'device_id':'test_device'},headers=self.headers['operator'])
+                self.assertEqual(result.status_code,502)
+        with self.app.app_context():
+            self.assertEqual(AccessLog.query.count(),0)
+
+    def test_capture_timeout_and_invalid_reply_do_not_retry(self):
+        self.provision_camera()
+        for side_effect,reply,status in ((requests.Timeout(),None,504),(None,Mock(status_code=302),502),
+                (None,Mock(status_code=200,json=lambda:[]),502)):
+            with patch('app.routes.video.requests.post',side_effect=side_effect,return_value=reply) as dispatch:
+                result=self.client.post('/api/video/capture',json={'device_id':'test_device'},headers=self.headers['operator'])
+                self.assertEqual(result.status_code,status)
+                self.assertEqual(dispatch.call_count,1)
+
+    def test_capture_rate_limit_blocks_device_dispatch(self):
+        self.provision_camera()
+        self.app.config['RATE_LIMIT_ENABLED']=True
+        with patch('app.routes.video.admit',return_value=(False,20)), patch('app.routes.video.requests.post') as dispatch:
+            result=self.client.post('/api/video/capture',json={'device_id':'test_device'},headers=self.headers['operator'])
+            self.assertEqual(result.status_code,429)
+            self.assertEqual(result.headers['Retry-After'],'20')
+            dispatch.assert_not_called()
 
     def session(self, confirm=True):
         client = Client('test_device', 'ChangeMe-Spake2-Device-Password')
