@@ -195,8 +195,16 @@ watch(
         <dd class="mono">{{ detail.device_id }}</dd>
         <dt>相似度原始值</dt>
         <dd>{{ detail.similarity_score ?? '未提供' }}</dd>
+        <dt>照片攻击检测分数</dt>
+        <dd>{{ detail.liveness_score ?? '历史记录未提供' }}</dd>
         <dt>失败原因</dt>
-        <dd>{{ detail.failure_reason || '无' }}</dd>
+        <dd>
+          {{
+            detail.failure_reason === 'face_presentation_check_failed'
+              ? '照片攻击检测未通过，请本人面对摄像头重试'
+              : detail.failure_reason || '无'
+          }}
+        </dd>
       </dl>
       <PrivateSnapshot :path="detail.snapshot || ''" title="验证记录快照" />
     </div>

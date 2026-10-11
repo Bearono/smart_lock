@@ -274,6 +274,7 @@ class FaceRecognitionLog(db.Model):
     expected_username = db.Column(db.String(80))
     face_user_id = db.Column(db.String(50))
     similarity_score = db.Column(db.Float)
+    liveness_score = db.Column(db.Float)
     passed = db.Column(db.Boolean, default=False)
     snapshot_path = db.Column(db.String(200))
     failure_reason = db.Column(db.String(200))
@@ -287,6 +288,7 @@ class FaceRecognitionLog(db.Model):
             'expected_username': self.expected_username,
             'face_user_id': self.face_user_id,
             'similarity_score': self.similarity_score,
+            'liveness_score': self.liveness_score,
             'passed': self.passed,
             'snapshot': self.snapshot_path,
             'failure_reason': self.failure_reason,

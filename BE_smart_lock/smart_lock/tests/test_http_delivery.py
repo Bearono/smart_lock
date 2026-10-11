@@ -83,6 +83,7 @@ class HTTPDeliveryTests(unittest.TestCase):
             packet = SecureEnvelope.seal(self.device_session, {
                 'device_id': 'http_door', 'request_id': body['request_id'],
                 'session_nonce': body['nonce'], 'face_user_id': 'alice', 'similarity_score': 0.99,
+                'liveness_score': 0.99,  # Simulated evidence; this fixture does not validate PAD accuracy.
             })
             response = self.api('POST', '/api/mfa/open-door/face-result', json=packet)
             return jsonify(status='success' if response.ok else 'error', backend_reply=response.json()), response.status_code

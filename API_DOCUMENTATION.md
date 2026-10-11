@@ -212,3 +212,7 @@
 旧客户端缺少该字段时记录为 `UNKNOWN`，避免保留过期能力。`/api/device/status`
 返回此字段；它描述最近设备反馈，不能代替命令执行回执或实际锁状态。
 首页在执行器缺失时保留拍摄与身份验证，禁用上锁并明确说明无法实体开门。
+
+## 同帧人脸防伪证据
+
+`POST /api/mfa/open-door/face-result` 的设备认证密文中增加 `liveness_score`，必须是有限数且范围为 0–1。生产环境要求字段存在且达到初始阈值 0.80，同时保留相似度、身份、设备和 nonce 校验；缺失或低分记为认证失败，原因 `face_presentation_check_failed`。`GET /api/face/logs` 返回可空的 `liveness_score`，历史记录为 null。该分数是固定模型的被动攻击检测输出，不是摄像头可信证明；真实攻击效果待独立实测。

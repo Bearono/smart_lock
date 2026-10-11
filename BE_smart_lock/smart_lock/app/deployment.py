@@ -4,6 +4,10 @@ import os
 
 def configure(app):
     production = app.config['DEPLOYMENT_ENV'] == 'production'
+    if app.config.get('FACE_PAD_REQUIRED') is None:
+        app.config['FACE_PAD_REQUIRED'] = production
+    if type(app.config['FACE_PAD_REQUIRED']) is not bool:
+        raise ValueError('FACE_PAD_REQUIRED must be a boolean')
     if app.config['DEPLOYMENT_ENV'] not in ('development', 'production'):
         raise ValueError('SMART_LOCK_ENV must be development or production')
     if not 1 <= app.config['SECURITY_SESSION_TTL'] <= 86400:
@@ -22,6 +26,8 @@ def configure(app):
                 raise ValueError(f'{name} is forbidden in production')
         if not app.config['DEVICE_DISPATCH_REQUIRED']:
             raise ValueError('Production requires device dispatch')
+        if not app.config['FACE_PAD_REQUIRED']:
+            raise ValueError('Production requires face presentation-attack checks')
         if not app.config.get('RATE_LIMIT_ENABLED', True):
             raise ValueError('Production requires rate limiting')
         if '*' in app.config['CORS_ORIGINS']:

@@ -42,9 +42,11 @@ def evidence():
             {'name': '消息重放', 'detail': '数据库唯一约束保存会话、请求 ID 与 nonce'},
             {'name': '命令生命周期', 'detail': '短期有效，执行回执与最近状态分开'},
             {'name': '图片隐私', 'detail': '授权后读取私有目录图片；不存在公开静态图片入口'},
+            {'name': '人脸防伪策略', 'detail': '生产认证要求同帧防伪分数；缺失或低分拒绝，阈值仍需实机评测'},
         ],
         'storage': {'sessions': DeviceSecuritySession.query.count(),
                     'receipts': SecureMessageReceipt.query.count(), 'commands': DoorCommand.query.count()},
         'limitations': ['python-spake2 不承诺常数时间实现，不能宣称生产级认证。',
+                        '被动人脸防伪模型已接入；真人、屏幕和打印照片攻击效果尚待实测。',
                         '页面不能证明树莓派实机性能、锁具反馈或远程 TLS 部署已验收。'],
     }

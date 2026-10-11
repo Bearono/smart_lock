@@ -14,6 +14,7 @@ jobs:
           cache-dependency-path: BE_smart_lock/smart_lock/requirements.txt
       - run: pip install -r BE_smart_lock/smart_lock/requirements.txt
       - run: pip install --no-deps ./packages/smartlock_protocol
+      - run: pip install numpy==2.2.4
       - run: python -B -m unittest discover -s BE_smart_lock/smart_lock/tests -p 'test_*.py' -v
   frontend:
     runs-on: ubuntu-latest

@@ -130,6 +130,22 @@ class HomeContractsTests(unittest.TestCase):
     def packet(self, session):
         return Envelope.seal(session, {'lock_status': 'LOCKED'}, endpoint='/api/device/heartbeat')
 
+    def test_ofdm_adapter_preserves_authentication_and_durable_replay_gate(self):
+        from smartlock_protocol.audio import envelope_wav, envelope_from_wav
+        _, session = self.session()
+        packet = self.packet(session)
+        recovered = envelope_from_wav(envelope_wav(packet))
+        self.assertEqual(self.client.post('/api/device/heartbeat', json=recovered).status_code, 200)
+        restarted_app = create_app(dict(self.app.config))
+        self.apps.append(restarted_app)
+        self.assertEqual(restarted_app.test_client().post('/api/device/heartbeat',
+            json=recovered).json['code'], 'SECURE_MESSAGE_REPLAY')
+        corrupted = self.packet(session)
+        corrupted['ciphertext'] = 'AAAA'
+        # Valid PCM and CRC do not confer authentication on attacker-controlled data.
+        self.assertGreaterEqual(self.client.post('/api/device/heartbeat',
+            json=envelope_from_wav(envelope_wav(corrupted))).status_code, 400)
+
     def test_name_is_persistent_authorized_and_audited(self):
         url = '/api/admin/devices/test_device/name'
         self.assertEqual(self.client.put(url, json={'display_name': '入户门'}, headers=self.headers['member']).status_code, 403)

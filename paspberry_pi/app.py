@@ -65,6 +65,9 @@ def software_readiness():
     from template_store import load_templates
     try:
         verify_models(models_dir())
+        if os.getenv('SMART_LOCK_ENV') == 'production':
+            from anti_spoof import verify_pad_model
+            verify_pad_model()
         templates = load_templates()
         if not templates:
             return jsonify(status='not_ready', reason='face_templates_missing', scope='software'), 503
@@ -94,7 +97,12 @@ def trigger_recognition():
         return jsonify({"status": "error", "message": "Unable to capture image frame"}), 500
 
     try:
-        user_id, confidence = recognize(frame)
+        if os.getenv('SMART_LOCK_ENV') == 'production':
+            from recognize import recognize_with_pad
+            user_id, confidence, pad_score = recognize_with_pad(frame)
+        else:
+            user_id, confidence = recognize(frame)
+            pad_score = 0.0
     except Exception as exc:
         return jsonify(
             {
@@ -179,7 +187,7 @@ def handle_auth_challenge():
         request_id=request_id,
         face_user_id=user_id,
         similarity_score=confidence,
-        liveness_score=None,
+        liveness_score=pad_score,
         frame=frame,
         session_nonce=nonce,
     )

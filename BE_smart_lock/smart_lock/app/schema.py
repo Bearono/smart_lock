@@ -9,6 +9,7 @@ def upgrade_schema():
     existing_tables = set(inspector.get_table_names())
 
     column_specs = {
+        'face_recognition_logs': {'liveness_score': 'FLOAT'},
         'device_security_sessions': {
             'protocol_version': "VARCHAR(20) NOT NULL DEFAULT 'SL-SEC-v2'",
             'confirmed': 'BOOLEAN NOT NULL DEFAULT 1', 'transcript': 'BLOB',

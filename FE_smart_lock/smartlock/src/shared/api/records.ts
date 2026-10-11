@@ -30,6 +30,7 @@ export interface Activity {
   passed?: boolean
   request_id?: string
   similarity_score?: number
+  liveness_score?: number | null
   failure_reason?: string
   snapshot?: string | null
 }

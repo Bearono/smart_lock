@@ -161,6 +161,33 @@ class AuthFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.json)
         return challenge
 
+    def test_required_pad_rejects_missing_and_low_score_and_audits(self):
+        from app.models import FaceRecognitionLog
+        self.app.config['FACE_PAD_REQUIRED'] = True
+        for value in (None, 0.1):
+            challenge = self.challenge()
+            packet = self.packet(challenge, liveness_score=value)
+            result = self.post('/api/mfa/open-door/face-result', packet, False)
+            self.assertEqual(result.status_code, 401, result.json)
+            with self.app.app_context():
+                log = FaceRecognitionLog.query.filter_by(request_id=challenge['request_id']).one()
+                self.assertFalse(log.passed)
+                self.assertEqual(log.failure_reason, 'face_presentation_check_failed')
+                self.assertEqual(log.liveness_score, value)
+        challenge = self.challenge()
+        self.assertEqual(self.post('/api/mfa/open-door/face-result',
+            self.packet(challenge, liveness_score=0.9), False).status_code, 200)
+
+    def test_pad_malformed_score_cannot_verify_face(self):
+        self.app.config['FACE_PAD_REQUIRED'] = True
+        challenge = self.challenge()
+        for value in (True, '0.99', -1, 2):
+            result = self.post('/api/mfa/open-door/face-result',
+                self.packet(challenge, liveness_score=value), False)
+            self.assertEqual(result.status_code, 400)
+        with self.app.app_context():
+            self.assertFalse(AuthSession.query.filter_by(request_id=challenge['request_id']).one().face_verified)
+
     def issued(self):
         challenge = self.verified()
         response = self.post('/api/mfa/open-door/confirm', {'request_id': challenge['request_id']})

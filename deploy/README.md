@@ -242,4 +242,20 @@ python deploy/pi_tunnel.py --host PI_IP --user taylor --identity PATH_TO_PRIVATE
 
 空模板目录仍返回就绪 503，不能安装虚构向量让就绪变绿。进程、真实相机、心跳和识别模板分别验收；需本人身份登记才进行人脸 MFA 测试。
 
+### 生产认证的防伪模型
+
+本版生产认证还要求 MiniFASNetV2 ONNX。请在工作站的专用导出环境安装 PyTorch CPU 2.9.0、onnx 1.19.1、numpy 2.2.4 与 opencv-python-headless 4.11.0.86，再执行：
+
+```sh
+python deploy/export_pad.py --cache releases/pad-upstream --output deploy/device/models
+```
+
+仅按固定来源与校验值下载；拒绝覆盖已有输出。向 Pi 的 `SMART_LOCK_MODELS_DIR` 复制生成的 `minifasnet-v2.onnx`、`MINIFASNET-LICENSE` 与 `pad-export.json`，保持许可证随模型交付。Pi 使用已有 OpenCV，不安装 PyTorch。模型不包含个人模板；模型/许可证来源与认证阈值说明见 [防伪与音频验收](../docs/PAD_AUDIO_ACCEPTANCE.md)。缺失或校验失败时就绪 503，不提供生产绕过开关。
+
+音频软件实验额外依赖共享协议包的 `audio` 可选依赖；完整测试环境需安装 `pip install './packages/smartlock_protocol[audio]'`。运行 `python deploy/audio_lab.py --output releases/audio-lab.json` 只做软件回环，不启动声卡。实时声学传输与硬件指纹仍需真实录音数据。
+
+### 有限时长稳定性检查
+
+Docker 和隧道手动启动后，可执行 `python deploy/soak.py --seconds 1800 --interval 60 --output releases/soak.json`。只检查当前会话内就绪、在线和摄像头状态，最多运行两小时；不安装自动任务，也不会自动恢复隧道。报告中的失败采样保留，不可当成未发生。
+
 依据：[Picamera2 颜色映射](https://github.com/raspberrypi/picamera2/blob/main/picamera2/request.py)、[官方手册](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf)、[dlib 构建配置](https://github.com/davisking/dlib/blob/v20.0.1/setup.py)。

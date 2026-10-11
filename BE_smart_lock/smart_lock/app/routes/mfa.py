@@ -338,7 +338,7 @@ def open_door_request():
 
 @mfa_bp.route('/mfa/open-door/face-result', methods=['POST'])
 def receive_face_result():
-    """接收树莓派上传的人脸识别结果。必须使用 v2 加密信封（PAKE + AES-CBC + HMAC）。"""
+    """Receive device-authenticated face evidence through the secure envelope."""
     raw = request.get_json() or {}
 
     data = decrypt_secure_payload(raw)
@@ -348,6 +348,11 @@ def receive_face_result():
     if face_user_id is not None and not isinstance(face_user_id, str):
         return jsonify(msg='face_user_id must be a string or null'), 400
     similarity_score = data.get('similarity_score')
+    pad_score = data.get('liveness_score')
+    if pad_score is not None and (isinstance(pad_score, bool)
+            or not isinstance(pad_score, (int, float))
+            or not math.isfinite(pad_score) or not 0 <= pad_score <= 1):
+        return jsonify(msg='Invalid presentation attack score'), 400
     device_id = data.get('device_id')
     session_nonce = data.get('session_nonce')
     # Never accept device-supplied URLs or another device's asset as evidence.
@@ -404,6 +409,10 @@ def receive_face_result():
         and similarity_score is not None
         and similarity_score >= FACE_MATCH_THRESHOLD
     )
+    identity_passed = passed
+    # Conservative initial operating point; independent local PAD validation is required.
+    if current_app.config['FACE_PAD_REQUIRED']:
+        passed = passed and pad_score is not None and pad_score >= 0.80
     if not snapshot_path and data.get('snapshot_image'):
         try:
             snapshot_path = save_snapshot_image(data.get('snapshot_image'), prefix='face', device_id=device_id)
@@ -415,9 +424,11 @@ def receive_face_result():
         expected_username=user.username if user else None,
         face_user_id=face_user_id,
         similarity_score=similarity_score,
+        liveness_score=pad_score,
         passed=passed,
         snapshot_path=snapshot_path,
-        failure_reason=None if passed else 'face_user_or_score_mismatch',
+        failure_reason=(None if passed else 'face_presentation_check_failed'
+                        if identity_passed else 'face_user_or_score_mismatch'),
     ))
 
     if passed:

@@ -58,6 +58,7 @@ const faceLogs = [
     face_user_id: 'qa_operator',
     passed: true,
     similarity_score: 0.96,
+    liveness_score: 0.91,
     timestamp: '2026-10-08 14:30:00',
     snapshot: null
   }
@@ -333,6 +334,7 @@ async function run() {
   await page.getByRole('tab', { name: '人脸验证', exact: true }).click()
   await page.getByRole('button', { name: '查看详情' }).click()
   await page.getByRole('dialog').getByText('0.96', { exact: true }).waitFor()
+  await page.getByRole('dialog').getByText('0.91', { exact: true }).waitFor()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByRole('link', { name: '我的家', exact: true }).click()
   assert.equal(

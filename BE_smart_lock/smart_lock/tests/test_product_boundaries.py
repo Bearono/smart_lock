@@ -121,7 +121,8 @@ class ProductBoundaryTests(unittest.TestCase):
         base = dict(self.config, TESTING=False, DEPLOYMENT_ENV='production', AUTO_INIT_DB=False)
         for overrides in ({'SECRET_KEY': None}, {'JWT_SECRET_KEY': 'short'}, {'AUTO_INIT_DB': True},
                           {'ALLOW_DEMO_DEVICES': True}, {'ALLOW_LEGACY_SECURE_UPLOAD': True},
-                          {'DEVICE_DISPATCH_REQUIRED': False}, {'CORS_ORIGINS': ['*']}):
+                          {'DEVICE_DISPATCH_REQUIRED': False}, {'FACE_PAD_REQUIRED': False},
+                          {'FACE_PAD_REQUIRED': 'true'}, {'CORS_ORIGINS': ['*']}):
             with self.subTest(overrides=overrides), self.assertRaises(ValueError):
                 create_app(dict(base, **overrides))
         app = create_app(dict(base, SQLALCHEMY_DATABASE_URI='sqlite:///' + (Path(self.tmp.name) / 'empty.db').as_posix()))

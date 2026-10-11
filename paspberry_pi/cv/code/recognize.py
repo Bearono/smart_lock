@@ -88,6 +88,17 @@ def _get_detector(conf_threshold: float = 0.5) -> DnnFaceDetector:
 
 
 @serialized_inference
+def recognize_with_pad(image: np.ndarray):
+    """Identity and presentation evidence from one frame under the same inference lock."""
+    try:
+        from .anti_spoof import score_frame
+    except ImportError:
+        from anti_spoof import score_frame
+    identity, confidence = recognize(image)
+    return identity, confidence, score_frame(image, _get_detector())
+
+
+@serialized_inference
 def recognize(
     image: np.ndarray,
     templates_dir: str = None,
