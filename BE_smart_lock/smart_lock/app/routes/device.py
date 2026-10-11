@@ -27,6 +27,10 @@ def heartbeat():
         return jsonify(msg='Invalid reported lock status'), 400
     if data.get('camera_status') not in (None, 'ONLINE', 'OFFLINE', 'ERROR', 'UNKNOWN'):
         return jsonify(msg='Invalid camera status'), 400
+    if data.get('actuator_status') not in (None, 'AVAILABLE', 'UNAVAILABLE', 'ERROR', 'UNKNOWN'):
+        return jsonify(msg='Invalid actuator status'), 400
+    if data.get('actuator_status') == 'UNAVAILABLE' and data.get('lock_status') in ('LOCKED', 'UNLOCKED'):
+        return jsonify(msg='Unavailable actuator cannot confirm a lock state'), 400
     try:
         address = str(ipaddress.ip_address(data.get('ip') or request.remote_addr))
     except (ValueError, TypeError):
@@ -43,6 +47,9 @@ def heartbeat():
         device.battery = data['battery']
     if data.get('camera_status'):
         device.camera_status = data['camera_status']
+    device.actuator_status = data.get('actuator_status') or 'UNKNOWN'
+    if device.actuator_status == 'UNAVAILABLE':
+        device.reported_status = 'UNKNOWN'
 
     device.ip_address = address
     device.is_online = True

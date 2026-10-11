@@ -564,11 +564,11 @@ class ProductBoundaryTests(unittest.TestCase):
         for frame, expected in ((object(), 'ONLINE'), (None, 'OFFLINE')):
             camera.capture_frame.return_value = frame
             worker.report_once()
-            transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status=expected)
+            transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status=expected, actuator_status='UNAVAILABLE')
         camera.capture_frame.side_effect = OSError('fixture camera failure')
         with self.assertLogs('device_runtime_test', level='ERROR'):
             worker.report_once()
-        transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status='ERROR')
+        transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status='ERROR', actuator_status='UNAVAILABLE')
         transmitter.acknowledge_command.assert_not_called()
 
     def test_backup_restore_checks_content_and_never_overwrites_live_data(self):

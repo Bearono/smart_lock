@@ -416,6 +416,25 @@ class AuthFlowTests(unittest.TestCase):
         self.assertEqual(response.json['device']['reported_status'], 'UNLOCKED')
         self.assertEqual(response.json['device']['status'], 'LOCKED')
 
+    def test_actuator_health_is_authenticated_and_does_not_imply_lock_state(self):
+        challenge = self.challenge()
+        for actuator, lock_status, expected in (
+            ('UNAVAILABLE', 'UNKNOWN', 200), ('UNAVAILABLE', 'UNLOCKED', 400),
+            ('invalid', 'UNKNOWN', 400), ('AVAILABLE', 'UNKNOWN', 200),
+        ):
+            packet = self.packet(challenge, lock_status=lock_status, actuator_status=actuator)
+            response = self.post('/api/device/heartbeat', packet, False)
+            self.assertEqual(response.status_code, expected, response.json)
+            if expected == 200:
+                self.assertEqual(response.json['device']['actuator_status'], actuator)
+                self.assertEqual(response.json['device']['reported_status'], 'UNKNOWN')
+        # A legacy sender must clear stale capability instead of retaining it.
+        response = self.post('/api/device/heartbeat', self.packet(challenge, lock_status='UNKNOWN'), False)
+        self.assertEqual(response.json['device']['actuator_status'], 'UNKNOWN')
+        self.post('/api/device/heartbeat', self.packet(challenge, lock_status='LOCKED'), False)
+        response = self.post('/api/device/heartbeat', self.packet(challenge, actuator_status='UNAVAILABLE'), False)
+        self.assertEqual(response.json['device']['reported_status'], 'UNKNOWN')
+
     def test_consumption_rolls_back_if_commit_fails(self):
         credential = self.issued()
         with patch.object(db.session, 'commit', side_effect=RuntimeError('storage failure')):

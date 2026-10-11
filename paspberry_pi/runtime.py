@@ -23,14 +23,17 @@ class HeartbeatWorker:
             logger.exception('Camera health check failed')
             camera_status = 'ERROR'
         lock_status = 'UNKNOWN'
+        actuator_status = 'UNAVAILABLE' if self.actuator is None or getattr(self.actuator, 'configured', True) is False else 'UNKNOWN'
         if self.actuator is not None:
             try:
                 observed = self.actuator.read_state()
                 if observed in ('LOCKED', 'UNLOCKED'):
                     lock_status = observed
+                    actuator_status = 'AVAILABLE'
             except Exception:
                 logger.exception('Lock feedback unavailable')
-        return self.transmitter.heartbeat(lock_status, camera_status=camera_status)
+                actuator_status = 'ERROR'
+        return self.transmitter.heartbeat(lock_status, camera_status=camera_status, actuator_status=actuator_status)
 
     def _run(self):
         while not self.stop_event.is_set():

@@ -127,6 +127,7 @@ class Device(db.Model):
     reported_status = db.Column(db.String(20), default='UNKNOWN')
     battery = db.Column(db.Integer)
     camera_status = db.Column(db.String(20), default="UNKNOWN")
+    actuator_status = db.Column(db.String(20), default='UNKNOWN')
     ip_address = db.Column(db.String(45))
     is_online = db.Column(db.Boolean, default=False)
     last_update = db.Column(db.DateTime)
@@ -139,6 +140,7 @@ class Device(db.Model):
             'reported_status': self.reported_status,
             'battery': self.battery,
             'camera_status': self.camera_status,
+            'actuator_status': self.actuator_status,
             'ip_address': self.ip_address,
             'is_online': bool(self.last_update and timedelta(0) <= datetime.now() - self.last_update <= timedelta(minutes=2)),
             'last_update': serialize_time(self.last_update) if self.last_update else None

@@ -449,6 +449,17 @@ async function run() {
     })
     await noOverflow(page, `${route} mobile text 200%`)
   }
+  devices[0].actuator_status = 'UNAVAILABLE'
+  await page.goto(base + '/dashboard')
+  await page
+    .getByText('当前设备未配置门锁执行器。可拍摄画面、验证身份；开门和上锁无法实际执行。')
+    .waitFor()
+  assert.equal(await page.getByRole('button', { name: '上锁', exact: true }).isDisabled(), true)
+  assert.equal(
+    await page.getByRole('button', { name: '验证并开门', exact: true }).isEnabled(),
+    true
+  )
+  devices[0].actuator_status = 'AVAILABLE'
   await page.goto(base + '/dashboard/security')
   await page.getByRole('button', { name: '修改密码', exact: true }).waitFor()
 

@@ -29,6 +29,8 @@ class ActuatorUnavailableError(RuntimeError):
 
 
 class UnavailableActuator:
+    configured = False
+
     def set_state(self, target):
         raise ActuatorUnavailableError('No actuator driver configured')
 

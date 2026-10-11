@@ -4,6 +4,7 @@ export interface Device {
   display_name: string | null
   reported_status: 'LOCKED' | 'UNLOCKED' | 'UNKNOWN'
   camera_status: 'ONLINE' | 'OFFLINE' | 'ERROR' | 'UNKNOWN'
+  actuator_status: 'AVAILABLE' | 'UNAVAILABLE' | 'ERROR' | 'UNKNOWN'
   is_online: boolean
   battery: number | null
   last_update: string | null
@@ -38,6 +39,11 @@ export function parseDevice(value: unknown): Device {
     display_name: nullableString(item.display_name),
     reported_status: lock as Device['reported_status'],
     camera_status: camera as Device['camera_status'],
+    actuator_status: (['AVAILABLE', 'UNAVAILABLE', 'ERROR', 'UNKNOWN'].includes(
+      String(item.actuator_status)
+    )
+      ? item.actuator_status
+      : 'UNKNOWN') as Device['actuator_status'],
     is_online: item.is_online,
     battery:
       typeof item.battery === 'number' &&

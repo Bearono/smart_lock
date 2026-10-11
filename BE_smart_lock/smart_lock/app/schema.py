@@ -25,6 +25,7 @@ def upgrade_schema():
             'display_name': 'VARCHAR(60)',
             'reported_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
             'camera_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
+            'actuator_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
             'ip_address': "VARCHAR(45)",
             'is_online': "BOOLEAN DEFAULT 0",
         },

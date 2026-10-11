@@ -269,6 +269,12 @@ onScopeDispose(() => {
               </div>
             </div>
             <div class="stack stack--small">
+              <InlineNotice v-if="selected.actuator_status === 'UNAVAILABLE'" tone="warning">
+                当前设备未配置门锁执行器。可拍摄画面、验证身份；开门和上锁无法实际执行。
+              </InlineNotice>
+              <InlineNotice v-else-if="selected.actuator_status === 'ERROR'" tone="warning">
+                门锁反馈读取失败，请检查设备。身份验证通过不代表门锁已动作。
+              </InlineNotice>
               <InlineNotice v-if="authError" tone="warning">
                 {{ authError }}
                 <button class="table-action" @click="session.refreshAuth">重试</button>
@@ -296,7 +302,13 @@ onScopeDispose(() => {
               </button>
               <button
                 class="button button--block"
-                :disabled="taskActive || !bound || !!error || !selected.is_online"
+                :disabled="
+                  taskActive ||
+                  !bound ||
+                  !!error ||
+                  !selected.is_online ||
+                  selected.actuator_status === 'UNAVAILABLE'
+                "
                 @click="session.requestLock"
               >
                 <AppIcon name="lock" :size="17" />

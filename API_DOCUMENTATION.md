@@ -204,3 +204,11 @@
 - 时区由 `SMART_LOCK_SERVER_TIMEZONE` 显式声明；旧数据库没有确定来源时，不附加虚构的 UTC 偏移。
 
 完整部署、迁移与限制参见 `docs/HOME_DELIVERY.md`。
+
+## 设备执行器能力
+
+设备加密心跳支持 `actuator_status`：`AVAILABLE`、`UNAVAILABLE`、`ERROR`、`UNKNOWN`。
+未配置驱动时上报 `UNAVAILABLE`，且锁状态只能为 `UNKNOWN`；服务端拒绝矛盾上报。
+旧客户端缺少该字段时记录为 `UNKNOWN`，避免保留过期能力。`/api/device/status`
+返回此字段；它描述最近设备反馈，不能代替命令执行回执或实际锁状态。
+首页在执行器缺失时保留拍摄与身份验证，禁用上锁并明确说明无法实体开门。

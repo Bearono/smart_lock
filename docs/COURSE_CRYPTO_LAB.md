@@ -32,4 +32,20 @@ PYTHONPATH=packages/smartlock_protocol .venv-pi/bin/python -m smartlock_protocol
 
 XXTEA 轮次及混合运算参考 [xxtea-c 原始实现](https://github.com/xxtea/xxtea-c/blob/master/xxtea.c)，使用字数组接口，未使用该库的字符串密钥归一化和字节填充格式。RSA、ECDSA、X25519 使用 [cryptography 官方接口](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/)。
 
-课程任务书中的架构分析、KDC 与公钥分发比较、完整协议安全评估及性能实验仍需分别验收；音频和 Android 按当前用户安排暂缓，不能因这些原语测试通过就标成全部完成。实体门锁未配备，实机执行应继续返回执行器不可用，锁状态 UNKNOWN。
+## 密钥分发对照代码
+
+`smartlock_protocol.distribution_lab` 提供两种隔离实验：
+
+- KDC：维护者授权发行，使用各接收方独立预置的 AES-256 长期密钥保护会话票据；双方取得相同随机会话密钥。票据绑定双方身份、会话编号和有效期。
+- 公钥分发：RSA-2048 OAEP 封装随机会话密钥，预置信任的发行者使用 ECDSA-P256 签署身份、会话、有效期和密文；接收方先验签再解封装。
+
+两种接收路径都校验身份、会话、有效期和重放。实验重放表只在内存中保存，上限 2048，不自动淘汰；生产所需持久化、并发仲裁、证书注册和吊销不由本实验提供。发行由本地维护者调用，不提供未经鉴权的网络发行接口。两种方案均不提供前向保密。KDC 掌握会话密钥；公钥方案依赖可信公钥预置。线上现有 v3 协议的独立持久化和并发测试不应与这些实验混为一谈。
+
+```powershell
+& .\.venv-test\Scripts\python.exe -m smartlock_protocol.distribution_lab --output releases/distribution-windows.json
+& .\.venv-test\Scripts\python.exe deploy/course_benchmark.py --iterations 50 --output releases/course-benchmark-windows.json
+```
+
+树莓派使用同一源码和对应虚拟环境执行，输出到 `instance/`。算法 CPU 实验包含加解密、签名验签、DH/HKDF、KDC 发行和双方解票、公钥分发，记录样本数、中位数和 p95；RSA 密钥生成单列、最多 10 次。初始化后先预热，不把密钥生成混入每次加解密耗时。Python XXTEA 和原生 AES-GCM 的时间不能作为同语言算法排名，也不能由速度推断安全性。设备实际 v3 信封测量另由 `deploy/protocol_benchmark.py` 提供。
+
+音频和 Android 按当前用户安排暂缓，完整课程验收不得把它们标成已完成。实体门锁未配备，实机执行应继续返回执行器不可用，锁状态 UNKNOWN。
