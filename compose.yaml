@@ -28,7 +28,7 @@ services:
     command: [flask, --app, run, deliver-alarms, --watch]
     depends_on:
       init: {condition: service_completed_successfully}
-    restart: unless-stopped
+    restart: 'no'
     mem_limit: 128m
   init:
     <<: *backend
@@ -38,7 +38,7 @@ services:
     <<: *backend
     depends_on:
       init: {condition: service_completed_successfully}
-    restart: unless-stopped
+    restart: 'no'
     mem_limit: 512m
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)"]
@@ -54,7 +54,7 @@ services:
     ports: ['127.0.0.1:${SMART_LOCK_WEB_PORT:-8080}:8080']
     depends_on:
       backend: {condition: service_healthy}
-    restart: unless-stopped
+    restart: 'no'
     read_only: true
     tmpfs: [/var/cache/nginx, /var/run, /tmp]
     security_opt: [no-new-privileges:true]

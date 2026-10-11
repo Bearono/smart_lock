@@ -14,3 +14,15 @@ export function normalizeCommandStatus(data) {
   if (status === 'executed' && data.hardware_confirmed !== true) return 'unknown'
   return status
 }
+
+export function commandFailureMessage(data) {
+  if (data?.status !== 'failed') return ''
+  const messages = {
+    ACTUATOR_UNAVAILABLE:
+      '本次操作已获授权，设备尚未接入锁具，无法执行实体开锁。请连接锁具驱动与状态反馈后再试。',
+    FEEDBACK_MISMATCH: '设备未取得与目标一致的锁具反馈，请检查锁具和传感器。',
+    ACTUATION_FAILED: '锁具动作未完成，请检查设备与驱动。系统不会自动重复开锁。',
+    COMMAND_INTERRUPTED: '设备在执行期间中断，实际锁具状态未知，请现场核查。'
+  }
+  return messages[data.failure_reason] || ''
+}

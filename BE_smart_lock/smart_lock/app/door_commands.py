@@ -74,20 +74,27 @@ def current(device_id):
     return command if command and refresh(command, now).status == 'pending' else None
 
 
-def acknowledge(command, status, reported_status):
+def acknowledge(command, status, reported_status, failure_reason=None):
     """Validate and atomically record a receipt; identical receipts are idempotent."""
     if not isinstance(status, str) or status not in ('executed', 'failed'):
         return Acknowledgement('Invalid command acknowledgement', 400)
+    if failure_reason is not None and (not isinstance(failure_reason, str) or failure_reason not in {
+            'ACTUATOR_UNAVAILABLE', 'FEEDBACK_MISMATCH', 'ACTUATION_FAILED', 'COMMAND_INTERRUPTED'}):
+        return Acknowledgement('Invalid failure reason', 400)
+    if status == 'executed' and failure_reason is not None:
+        return Acknowledgement('Successful receipt cannot contain a failure reason', 400)
     if status == 'executed' and reported_status != command.target_status:
         return Acknowledgement('Sensor state does not confirm the command target', 400)
     now = time.time()
     refresh(command, now)
     if command.status == status:
+        if command.failure_reason != failure_reason:
+            return Acknowledgement('Receipt conflicts with the recorded failure reason', 409)
         return Acknowledgement('Acknowledgement already recorded', 200)
     changed = DoorCommand.query.filter(
         DoorCommand.id == command.id, DoorCommand.status == 'pending',
         DoorCommand.expires_at > now,
-    ).update({'status': status, 'acknowledged_at': now}, synchronize_session=False)
+    ).update({'status': status, 'acknowledged_at': now, 'failure_reason': failure_reason}, synchronize_session=False)
     db.session.refresh(command)
     if changed:
         return Acknowledgement('Acknowledgement recorded', 200)

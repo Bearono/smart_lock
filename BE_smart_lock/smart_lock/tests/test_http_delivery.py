@@ -161,9 +161,10 @@ class HTTPDeliveryTests(unittest.TestCase):
                 reply.raise_for_status()
                 return SecureResponse.verify(fixture.device_session, packet['header'], '/api/lock/sync', reply.json())
 
-            def acknowledge_command(self, command_id, status, reported_status):
+            def acknowledge_command(self, command_id, status, reported_status, failure_reason=None):
                 packet = SecureEnvelope.seal(fixture.device_session, dict(
-                    device_id='http_door', command_id=command_id, status=status, reported_status=reported_status))
+                    device_id='http_door', command_id=command_id, status=status, reported_status=reported_status,
+                    failure_reason=failure_reason))
                 reply = fixture.api('POST', '/api/lock/ack', json=packet)
                 reply.raise_for_status()
                 return reply.json()

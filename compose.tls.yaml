@@ -18,7 +18,7 @@ services:
     tmpfs: [/var/cache/nginx, /var/run, /tmp]
     security_opt: [no-new-privileges:true]
     mem_limit: 64m
-    restart: unless-stopped
+    restart: 'no'
     healthcheck:
       test: [CMD-SHELL, 'kill -0 1 && nginx -t']
       interval: 15s

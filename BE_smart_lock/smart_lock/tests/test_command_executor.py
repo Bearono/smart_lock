@@ -38,7 +38,7 @@ class CommandExecutorTests(unittest.TestCase):
         self.executor.run_once()
         self.make_executor().run_once()
         self.actuator.set_state.assert_called_once_with('UNLOCKED')
-        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'executed', 'UNLOCKED')
+        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'executed', 'UNLOCKED', failure_reason=None)
 
     def test_lost_receipt_retries_without_reexecution_even_if_sync_fails(self):
         self.transmitter.acknowledge_command.side_effect = [TimeoutError(), None]
@@ -65,21 +65,21 @@ class CommandExecutorTests(unittest.TestCase):
         self.now = 1031
         self.make_executor().run_once()
         self.actuator.set_state.assert_called_once()
-        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN')
+        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN', failure_reason='COMMAND_INTERRUPTED')
 
     def test_mismatch_and_driver_error_never_report_success(self):
         self.actuator.read_state.return_value = 'LOCKED'
         self.executor.run_once()
-        self.transmitter.acknowledge_command.assert_called_with('a' * 32, 'failed', 'LOCKED')
+        self.transmitter.acknowledge_command.assert_called_with('a' * 32, 'failed', 'LOCKED', failure_reason='FEEDBACK_MISMATCH')
         self.command['id'] = 'b' * 32
         self.actuator.set_state.side_effect = RuntimeError('unavailable')
         self.executor.run_once()
-        self.transmitter.acknowledge_command.assert_called_with('b' * 32, 'failed', 'UNKNOWN')
+        self.transmitter.acknowledge_command.assert_called_with('b' * 32, 'failed', 'UNKNOWN', failure_reason='ACTUATION_FAILED')
 
     def test_default_driver_is_explicitly_unavailable(self):
         self.executor.actuator = module.UnavailableActuator()
         self.executor.run_once()
-        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN')
+        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN', failure_reason='ACTUATOR_UNAVAILABLE')
 
     def test_expired_and_invalid_commands_do_not_reach_driver(self):
         self.now = 1030
@@ -138,7 +138,7 @@ class CommandExecutorTests(unittest.TestCase):
         self.executor.clock = lambda: next(ticks)
         self.executor.run_once()
         self.actuator.set_state.assert_not_called()
-        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN')
+        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN', failure_reason='ACTUATION_FAILED')
 
     def test_worker_lifecycle_and_observed_heartbeat(self):
         spec = importlib.util.spec_from_file_location('device_runtime', ROOT / 'paspberry_pi/runtime.py')

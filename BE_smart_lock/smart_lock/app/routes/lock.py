@@ -174,7 +174,7 @@ def acknowledge_command():
     command = db.session.get(DoorCommand, command_id)
     if not command or command.device_id != data.get('device_id'):
         return jsonify(msg='Command not found'), 404
-    result = acknowledge(command, data.get('status'), data.get('reported_status'))
+    result = acknowledge(command, data.get('status'), data.get('reported_status'), data.get('failure_reason'))
     db.session.commit()
     return jsonify(msg=result.message), result.status_code
 
@@ -189,7 +189,7 @@ def command_status(command_id):
     status = refresh(command).status
     db.session.commit()
     return jsonify(id=command.id, status=status, hardware_confirmed=status == 'executed',
-                   expires_at=command.expires_at), 200
+                   expires_at=command.expires_at, failure_reason=command.failure_reason), 200
 
 
 @lock_bp.route('/command-status', methods=['POST'])
@@ -207,7 +207,7 @@ def capability_command_status():
     status = refresh(command).status
     db.session.commit()
     return jsonify(id=command.id, status=status, expires_at=command.expires_at,
-                   hardware_confirmed=status == 'executed'), 200
+                   hardware_confirmed=status == 'executed', failure_reason=command.failure_reason), 200
 
 
 @lock_bp.route('/history', methods=['GET'])

@@ -238,6 +238,8 @@ python deploy/pi_tunnel.py --host PI_IP --user taylor --identity PATH_TO_PRIVATE
 
 保持该进程运行：电脑 loopback 15443 转发 Pi 5443；Pi loopback 18443 转发电脑后端 8443。Pi 的 BACKEND_URL=https://localhost:18443，Docker Desktop 后端登记地址=https://host.docker.internal:15443。设备证书 SAN 覆盖 localhost 和 host.docker.internal。仍严格验证 CA、SSH 主机密钥及后端命令签名，不关闭 TLS 检查。不开放整个局域网；隧道关闭后设备通信中断，正式部署应使用受控局域网/VPN地址及匹配证书。
 
+按用户要求，电脑端保持手动启动：先打开 Docker Desktop，再运行 `docker compose -f compose.yaml -f compose.tls.yaml up -d --wait`，并在另一终端启动上述隧道。项目电脑端容器 restart 策略均为 no，不安装 Windows 自启任务或自动重连服务。退出时按 Ctrl+C 结束隧道，并执行 `docker compose -f compose.yaml -f compose.tls.yaml stop`。树莓派设备服务仍保留已授权的开机自启。电脑关机、睡眠或隧道断开后需人工恢复；地址改变时使用路由器显示的新 Pi 地址。
+
 空模板目录仍返回就绪 503，不能安装虚构向量让就绪变绿。进程、真实相机、心跳和识别模板分别验收；需本人身份登记才进行人脸 MFA 测试。
 
 依据：[Picamera2 颜色映射](https://github.com/raspberrypi/picamera2/blob/main/picamera2/request.py)、[官方手册](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf)、[dlib 构建配置](https://github.com/davisking/dlib/blob/v20.0.1/setup.py)。

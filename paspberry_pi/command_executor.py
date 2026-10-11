@@ -24,9 +24,13 @@ class Actuator(Protocol):
     def read_state(self) -> str: ...
 
 
+class ActuatorUnavailableError(RuntimeError):
+    pass
+
+
 class UnavailableActuator:
     def set_state(self, target):
-        raise RuntimeError('No actuator driver configured')
+        raise ActuatorUnavailableError('No actuator driver configured')
 
     def read_state(self):
         return 'UNKNOWN'
@@ -45,6 +49,9 @@ class CommandExecutor:
                 id TEXT PRIMARY KEY, target TEXT NOT NULL, expires REAL NOT NULL,
                 status TEXT NOT NULL, observed TEXT NOT NULL DEFAULT 'UNKNOWN',
                 delivered INTEGER NOT NULL DEFAULT 0)''')
+            columns = {row[1] for row in connection.execute('PRAGMA table_info(executions)')}
+            if 'failure_reason' not in columns:
+                connection.execute('ALTER TABLE executions ADD COLUMN failure_reason TEXT')
 
     def _connect(self):
         # Autocommit makes every journal transition durable before external I/O.
@@ -74,7 +81,7 @@ class CommandExecutor:
                 if previous != (target, expires):
                     raise ValueError('Command ID reused with different payload')
                 return
-        status, observed = 'failed', 'UNKNOWN'
+        status, observed, reason = 'failed', 'UNKNOWN', 'ACTUATION_FAILED'
         try:
             if self.clock() < expires:
                 self.actuator.set_state(target)
@@ -82,24 +89,29 @@ class CommandExecutor:
                 observed = reading if isinstance(reading, str) and reading in STATES else 'UNKNOWN'
                 if observed == target and self.clock() < expires:
                     status = 'executed'
+                    reason = None
+                else:
+                    reason = 'FEEDBACK_MISMATCH'
+        except ActuatorUnavailableError:
+            reason = 'ACTUATOR_UNAVAILABLE'
         except Exception:
             logger.exception('Command execution failed: %s', command_id)
         with self._connect() as connection:
-            connection.execute("UPDATE executions SET status=?,observed=? WHERE id=? AND status='executing'",
-                               (status, observed, command_id))
+            connection.execute("UPDATE executions SET status=?,observed=?,failure_reason=? WHERE id=? AND status='executing'",
+                               (status, observed, reason, command_id))
 
     def _deliver(self):
         now = self.clock()
         with self._connect() as connection:
             # Wait until expiry before recovering an interrupted reservation.
             # Another worker may still own a live reservation; never steal it.
-            connection.execute("UPDATE executions SET status='failed' WHERE status='executing' AND expires<=?", (now,))
+            connection.execute("UPDATE executions SET status='failed',failure_reason='COMMAND_INTERRUPTED' WHERE status='executing' AND expires<=?", (now,))
             connection.execute('DELETE FROM executions WHERE expires<?', (now - RETENTION_SECONDS,))
             receipts = connection.execute(
-                "SELECT id,status,observed FROM executions WHERE delivered=0 AND status!='executing' ORDER BY expires DESC LIMIT 1").fetchall()
-        for command_id, status, observed in receipts:
+                "SELECT id,status,observed,failure_reason FROM executions WHERE delivered=0 AND status!='executing' ORDER BY expires DESC LIMIT 1").fetchall()
+        for command_id, status, observed, reason in receipts:
             try:
-                self.transmitter.acknowledge_command(command_id, status, observed)
+                self.transmitter.acknowledge_command(command_id, status, observed, failure_reason=reason)
             except Exception as exc:
                 response = getattr(exc, 'response', None)
                 if response is None or response.status_code not in (404, 409):

@@ -8,6 +8,7 @@
     <div v-if="status === 'pending'" class="loading-line" />
     <div class="command-result">
       <p>{{ labels[status] }}</p>
+      <span v-if="failureMessage">{{ failureMessage }}</span>
       <small class="mono">命令 ID：{{ commandId }}</small>
       <button v-if="status === 'unknown'" class="button button--small" type="button" @click="start">
         查询原命令结果
@@ -18,7 +19,7 @@
 
 <script>
 import { lock } from '../../shared/api/index.ts'
-import { commandLabels, normalizeCommandStatus } from './commandStatus.js'
+import { commandLabels, normalizeCommandStatus, commandFailureMessage } from './commandStatus.js'
 
 export default {
   name: 'CommandStatus',
@@ -27,7 +28,13 @@ export default {
     credential: { type: Object, default: null }
   },
   emits: ['settled'],
-  data: () => ({ status: 'pending', labels: commandLabels, timer: null, generation: 0 }),
+  data: () => ({
+    status: 'pending',
+    failureMessage: '',
+    labels: commandLabels,
+    timer: null,
+    generation: 0
+  }),
   watch: { commandId: 'start' },
   mounted() {
     this.start()
@@ -42,13 +49,16 @@ export default {
       const generation = ++this.generation
       const deadline = Date.now() + 45000
       this.status = 'pending'
+      this.failureMessage = ''
       const poll = async () => {
         let status = 'unknown'
+        let failureMessage = ''
         try {
           const response = this.credential
             ? await lock.getTokenCommand(this.credential.unlock_token, this.credential.device_id)
             : await lock.getCommand(this.commandId)
           status = normalizeCommandStatus(response.data)
+          failureMessage = commandFailureMessage(response.data)
         } catch {
           /* Keep querying until the bounded observation window ends. */
         }
@@ -61,6 +71,7 @@ export default {
           status = 'unknown'
         }
         this.status = status
+        this.failureMessage = failureMessage
         this.$emit('settled', status)
       }
       poll()

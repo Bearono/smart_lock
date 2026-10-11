@@ -13,7 +13,7 @@ def upgrade_schema():
             'protocol_version': "VARCHAR(20) NOT NULL DEFAULT 'SL-SEC-v2'",
             'confirmed': 'BOOLEAN NOT NULL DEFAULT 1', 'transcript': 'BLOB',
         },
-        'door_commands': {'user_id': 'INTEGER', 'guest_pass_id': 'INTEGER'},
+        'door_commands': {'user_id': 'INTEGER', 'guest_pass_id': 'INTEGER', 'failure_reason': 'VARCHAR(40)'},
         # Existing unbound sessions/tokens/passes remain unusable after migration.
         'auth_sessions': {
             'device_id': 'VARCHAR(50)',

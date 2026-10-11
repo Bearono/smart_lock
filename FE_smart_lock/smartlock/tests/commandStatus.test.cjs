@@ -3,13 +3,24 @@ const { test } = require('node:test')
 const fs = require('node:fs')
 const path = require('node:path')
 
+test('missing actuator receipt explains hardware boundary without reporting success', async () => {
+  const state = tracker(async () => ({
+    data: { status: 'failed', failure_reason: 'ACTUATOR_UNAVAILABLE' }
+  }))
+  state.instance.start()
+  await flush()
+  assert.equal(state.instance.status, 'failed')
+  assert.match(state.instance.failureMessage, /尚未接入锁具/)
+  assert.deepEqual(state.events, [['settled', 'failed']])
+})
+
 function tracker(getCommand) {
   const root = path.join(__dirname, '../src')
   const helpers = fs
     .readFileSync(path.join(root, 'features/door/commandStatus.js'), 'utf8')
     .replaceAll('export ', '')
-  const { commandLabels, normalizeCommandStatus } = new Function(
-    helpers + '; return { commandLabels, normalizeCommandStatus }'
+  const { commandLabels, normalizeCommandStatus, commandFailureMessage } = new Function(
+    helpers + '; return { commandLabels, normalizeCommandStatus, commandFailureMessage }'
   )()
   const script = fs
     .readFileSync(path.join(root, 'features/door/CommandStatus.vue'), 'utf8')
@@ -23,6 +34,7 @@ function tracker(getCommand) {
     'lock',
     'commandLabels',
     'normalizeCommandStatus',
+    'commandFailureMessage',
     'setTimeout',
     'clearTimeout',
     'Date',
@@ -31,6 +43,7 @@ function tracker(getCommand) {
     { getCommand },
     commandLabels,
     normalizeCommandStatus,
+    commandFailureMessage,
     (fn) => {
       timers.push(fn)
       return timers.length

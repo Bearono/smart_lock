@@ -31,6 +31,16 @@ from app.routes.security_protocol import SecureResponse
 
 
 class ProductBoundaryTests(unittest.TestCase):
+    def test_failure_reason_is_bounded_and_receipt_cannot_be_rewritten(self):
+        from app.door_commands import acknowledge
+        with self.app.app_context():
+            command = DoorCommand(status='failed', target_status='UNLOCKED', failure_reason='ACTUATOR_UNAVAILABLE')
+            self.assertEqual(acknowledge(command, 'failed', 'UNKNOWN', 'arbitrary stack trace').status_code, 400)
+            self.assertEqual(acknowledge(command, 'failed', 'UNKNOWN', []).status_code, 400)
+            self.assertEqual(acknowledge(command, 'executed', 'UNLOCKED', 'ACTUATOR_UNAVAILABLE').status_code, 400)
+            self.assertEqual(acknowledge(command, 'failed', 'UNKNOWN', 'ACTUATOR_UNAVAILABLE').status_code, 200)
+            self.assertEqual(acknowledge(command, 'failed', 'UNKNOWN', 'ACTUATION_FAILED').status_code, 409)
+
     def setUp(self):
         self.tmp = TemporaryDirectory()
         self.config = {'TESTING': True, 'BCRYPT_LOG_ROUNDS': 4, 'SECRET_KEY': 's' * 48,

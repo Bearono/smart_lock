@@ -65,6 +65,7 @@ class DoorCommand(db.Model):
     created_at = db.Column(db.Float, nullable=False)
     expires_at = db.Column(db.Float, nullable=False, index=True)
     acknowledged_at = db.Column(db.Float)
+    failure_reason = db.Column(db.String(40))
     guest_pass_id = db.Column(db.Integer, db.ForeignKey('guest_passes.id'))
 
 
