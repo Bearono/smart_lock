@@ -31,6 +31,28 @@ from app.routes.security_protocol import SecureResponse
 
 
 class ProductBoundaryTests(unittest.TestCase):
+    def test_conflicting_receipt_after_losing_atomic_update_is_rejected(self):
+        from app.door_commands import acknowledge
+        with self.app.app_context():
+            command = DoorCommand(id='a' * 32, status='pending', target_status='UNLOCKED',
+                                  expires_at=time.time() + 30)
+
+            def load_winning_receipt(_):
+                command.status = 'failed'
+                command.failure_reason = 'ACTUATOR_UNAVAILABLE'
+
+            # Another transaction wins between the initial check and the CAS.
+            with patch('app.door_commands.refresh'), \
+                    patch('app.door_commands.DoorCommand') as model, \
+                    patch.object(db.session, 'refresh', side_effect=load_winning_receipt):
+                model.query.filter.return_value.update.return_value = 0
+                model.id = DoorCommand.id
+                model.status = DoorCommand.status
+                model.expires_at = DoorCommand.expires_at
+                result = acknowledge(command, 'failed', 'UNKNOWN', 'ACTUATION_FAILED')
+                self.assertEqual(result.status_code, 409)
+                self.assertEqual(command.failure_reason, 'ACTUATOR_UNAVAILABLE')
+
     def test_failure_reason_is_bounded_and_receipt_cannot_be_rewritten(self):
         from app.door_commands import acknowledge
         with self.app.app_context():

@@ -99,5 +99,7 @@ def acknowledge(command, status, reported_status, failure_reason=None):
     if changed:
         return Acknowledgement('Acknowledgement recorded', 200)
     if command.status == status:
+        if command.failure_reason != failure_reason:
+            return Acknowledgement('Receipt conflicts with the recorded failure reason', 409)
         return Acknowledgement('Acknowledgement already recorded', 200)
     return Acknowledgement('Command expired, revoked, superseded or already acknowledged', 409)
