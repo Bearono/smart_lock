@@ -173,7 +173,12 @@ def handle_auth_challenge():
         return jsonify({"status": "error", "message": "Unable to capture image frame"}), 500
 
     try:
-        user_id, confidence = recognize(frame)
+        if os.getenv('SMART_LOCK_ENV') == 'production':
+            from recognize import recognize_with_pad
+            user_id, confidence, pad_score = recognize_with_pad(frame)
+        else:
+            user_id, confidence = recognize(frame)
+            pad_score = 0.0
     except Exception as exc:
         return jsonify(
             {
