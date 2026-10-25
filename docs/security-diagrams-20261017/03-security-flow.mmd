@@ -1,0 +1,7 @@
+flowchart LR
+    browser["浏览器"] -->|"HTTPS localhost:8443"| tls["工作站Nginx TLS入口"]
+    tls -->|"内部HTTP"| backend["Flask后端"]
+    piClient["Pi上传与轮询客户端"] -->|"HTTPS localhost:18443"| reverse["SSH反向转发至工作站8443"]
+    reverse --> tls
+    backend -->|"HTTPS host.docker.internal:15443"| forward["SSH本地转发至Pi5443"]
+    forward --> piServer["Pi原生HTTPS服务 localhost:5443"]
