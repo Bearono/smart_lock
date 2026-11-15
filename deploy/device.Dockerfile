@@ -5,7 +5,7 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.l
     && apt-get -o Acquire::Retries=3 install -y --no-install-recommends cmake make g++ \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir setuptools==84.2.1 wheel==0.46.2
-RUN pip wheel --no-cache-dir --no-build-isolation --no-deps --wheel-dir /wheels dlib==19.24.6
+RUN pip wheel --no-cache-dir --no-build-isolation --no-deps --wheel-dir /wheels dlib==20.0.1
 
 FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1

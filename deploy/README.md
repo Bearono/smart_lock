@@ -74,7 +74,7 @@ docker compose -f compose.device.yaml -f compose.device.tls.yaml up -d --wait
 
 服务地址应限于受控局域网/VPN，防火墙仅允许后端访问。每次 POST 必须有后端签名；修改模板建议在维护窗口更新只读挂载后重启。设备只用一个工作进程、两个请求线程，并在工作进程启动后运行独立的心跳和命令轮询线程；摄像头采集串行进行，避免重复装载人脸模型。内存上限 1200 MB 是保护配置，不是已经验证的峰值。
 
-设备镜像统一使用 Python 3.12，固定 NumPy、无界面 OpenCV 与 Pillow 版本；dlib 19.24.6 在独立构建阶段编译为 wheel，运行镜像不携带编译工具。构建阶段将并行任务限制为 2，建议在构建主机生成镜像后分发到设备。不要将本机 x86 构建结果视为 ARM 验收：ARM 镜像必须在对应架构单独构建验证，摄像头采集与推理性能仍需 Pi 实机测试。Docker 文件不包含 GPIO 驱动，不默认授予 privileged 权限。
+设备镜像统一使用 Python 3.12，固定 NumPy、无界面 OpenCV 与 Pillow 版本；dlib 20.0.1 在独立构建阶段编译为 wheel，运行镜像不携带编译工具。构建阶段将并行任务限制为 2，建议在构建主机生成镜像后分发到设备。不要将本机 x86 构建结果视为 ARM 验收：ARM 镜像必须在对应架构单独构建验证，摄像头采集与推理性能仍需 Pi 实机测试。Docker 文件不包含 GPIO 驱动，不默认授予 privileged 权限。
 
 ## 备份与恢复
 
@@ -229,7 +229,7 @@ sudo python3 deploy/pi_dependencies.py --linger-user taylor
 python3 deploy/pi_native.py prepare
 ```
 
-原生虚拟环境使用 --system-site-packages 继承系统 Picamera2、NumPy、OpenCV、Pillow，不对系统 Python 运行 pip install。Python 3.13 profile 固定 dlib 20.0.1，USB Docker 仍固定 19.24.6，分别验收。编译限制单任务；运行依赖清单保存于 instance/pi-native/runtime-packages.txt，APT 版本另记录 dpkg-query。安装后递归校验应用依赖闭包、版本和环境标记；继承的无关 APT 工具依赖不纳入应用验收。
+原生虚拟环境使用 --system-site-packages 继承系统 Picamera2、NumPy、OpenCV、Pillow，不对系统 Python 运行 pip install。Python 3.13 profile 与 USB Docker 都固定 dlib 20.0.1，分别验收。原生编译限制单任务；运行依赖清单保存于 instance/pi-native/runtime-packages.txt，APT 版本另记录 dpkg-query。安装后递归校验应用依赖闭包、版本和环境标记；继承的无关 APT 工具依赖不纳入应用验收。
 
 启动前准备 deploy/.env（0600），明确 SMART_LOCK_ENV=production、SMART_LOCK_DEVICE_ID、BACKEND_URL（HTTPS）、SMART_LOCK_CA_BUNDLE、SMART_LOCK_DEVICE_PASSWORD_FILE、DEVICE_STATE_DIR、SMART_LOCK_MODELS_DIR、SMART_LOCK_TEMPLATES_DIR、SMART_LOCK_CAMERA_BACKEND=picamera2。提供 deploy/tls/pi-native.crt、pi-native.key（0600）和 CA 公钥；设备口令独立随机，不复用登录密码。证书 SAN 覆盖访问地址。
 

@@ -59,4 +59,4 @@ python manage.py web-dev --port 5173
 python deploy/audit_dependencies.py --output releases/dependency-audit.json
 ```
 
-自动检查还需前端 test:browser、隔离后端 test:integration 和设备镜像 smoke/unittest；详见工程文档。源码包排除秘密、数据库、个人照片、模板、模型和本机依赖。main 按要求保留历史版本；历史 Git 中的秘密仍须视为已经暴露，不能重新使用。
+自动检查还需前端 test:browser、隔离后端 test:integration 和设备镜像 smoke/unittest；详见工程文档。源码包排除秘密、数据库、个人照片、模板、模型和本机依赖。main 为当前交付与默认开发入口，旧版本保留在 Git 历史中；历史 Git 中的秘密仍须视为已经暴露，不能重新使用。
