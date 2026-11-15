@@ -21,4 +21,10 @@
 
 `npm test` 检查弹簧稳定性、法线边界和颜色对比度；`test:browser` 检查响应式布局、文字放大和业务状态；`test:material` 检查动态效果、降级和资源释放。视觉效果不能决定认证或执行成功。
 
-设计参考 [Apple Materials](https://developer.apple.com/design/human-interface-guidelines/materials)、[Meet Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/) 与 [Apple Home](https://www.apple.com/home-app/)。项目使用自己的网页实现和[独立素材](assets.md)，不复制品牌代码或资产。
+设计参考 [Apple Materials](https://developer.apple.com/design/human-interface-guidelines/materials)、[Meet Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/) 与 [Apple Home](https://www.apple.com/home-app/)。项目采用独立的网页材质实现。
+
+## 资源
+
+图标集中在 `apps/web/src/shared/ui/AppIcon.vue`，使用内联 SVG；网站图标位于 `apps/web/public/favicon.ico`。背景、材质与高光通过 CSS 和 SVG 滤镜生成，不加载远程装饰图片或字体。
+
+门前画面来自授权快照接口，测试夹具仅用于自动化验证。个人照片与人脸模板不随源码分发。

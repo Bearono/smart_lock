@@ -1,8 +1,10 @@
-# SmartLock Web
+# Web 客户端
 
-Vue 3 + TypeScript + Vite 智能家居门锁界面，使用同源 `/api`。开发代理目标为 `127.0.0.1:8000`，生产镜像通过 Nginx 转发。Node 至少 22.12，部署镜像使用 Node 24。
+Vue 3、TypeScript 和 Vite 构建的响应式门锁界面。客户端使用同源 `/api`；开发代理连接 `127.0.0.1:8000`，部署通过 Nginx 转发。
 
-## 开发与检查
+## 开发
+
+使用 Node.js 24，在本目录执行：
 
 ```sh
 npm ci
@@ -14,77 +16,55 @@ npm run format:check
 npm run build
 ```
 
-## 结构与职责
+依赖版本以 `package-lock.json` 为准。`minimatch` 开发依赖覆盖用于修复 GHSA-g3hv-75wg-m249；修改覆盖前执行依赖审计和前端检查。
 
-- `app/`：应用装配、导航、路由、账户入口，以及跨页面保留的命令回执。
-- `features/`：按认证、我的家、开门、摄像头、动态、访客、设置、管理与安全证据组织。
-- `features/door/useDoorSession.ts`：登录布局持有的开门会话；敏感凭证只在内存存在。
-- `features/guests/guestFlow.js`：可独立测试的访客验证与原命令恢复流程。
-- `shared/lib/useResource.ts`：带类型的请求代次控制，旧响应与卸载后响应不会覆盖界面。
-- `features/camera/usePrivateImage.js`：私有图片获取、代次控制及对象 URL 回收。
-- `shared/ui/`：语义化状态、通知、空状态、标题、原生模态对话框、分页与原创家门插画。
-- `shared/styles/`：蓝白界面与玻璃材质设计变量、布局、响应式和减少动态效果规则。
-- `shared/api/`：TypeScript 传输接口、领域数据类型和设备/快照运行时校验。
+## 模块
 
-所有权限由后端执行。客户端的导航与路由角色控制只改善体验，不能作为授权依据。生产页面不连接测试数据。
+| 路径                             | 职责                                     |
+| -------------------------------- | ---------------------------------------- |
+| `src/app`                        | 路由、导航、布局和跨页面门控会话         |
+| `src/features`                   | 认证、门控、画面、动态、访客、设置和管理 |
+| `src/shared/api`                 | 传输、领域类型和响应校验                 |
+| `src/shared/lib`                 | 通用资源生命周期、账户状态和显示格式     |
+| `src/shared/ui`                  | 状态、通知、空态、标题、对话框和分页     |
+| `src/shared/styles` / `material` | 视觉变量、布局、弹簧交互和玻璃材质       |
 
-## 状态约定
+权限由后端执行；客户端导航和角色控制仅用于界面呈现。登录与授权令牌不进入 URL 或 Web Storage，私有图片在生命周期结束后释放对象 URL。
 
-- `reported_status` 是最近上报状态，`status` 是目标状态；界面不能将目标状态当成实际状态。
-- 命令受理、身份验证通过和设备执行确认分别展示。只有 `executed` 且 `hardware_confirmed === true` 才显示执行确认。
-- 命令轮询观察窗口为 45 秒，查询超时保持结果未知；可只读查询原命令，不自动重发控制。
-- 结果未知时，用户核查现场后可明确结束跟踪；此操作不撤销命令，也不将未知改成成功。
-- 访客 `used_count` 在验证、签发授权时扣减，界面称“验证额度”，不称成功开门次数。
-- 时间字段目前未携带时区，界面保留服务器时间，不进行隐含时区转换。快照未提供拍摄时间，不能标为实时视频。
-- 报警查询最近最多 100 条；操作审计和人脸日志分别分页，不伪造统一设备时间线。
-- 设备授权每行单独生效；已有授权但未上报的设备仍在权限详情中显示。
-- 登录、开门、访客令牌、TOTP 密钥不进入 URL 或新增持久化存储。退出和页面销毁清理内存凭证及私有图片。
+## 状态语义
 
-## 浏览器验收
+- `reported_status` 为设备最近反馈，`status` 为目标状态，分别展示。
+- `executed` 需要确认字段：实体模式检查 `hardware_confirmed`；模拟模式检查 `execution_confirmed`、`simulation_confirmed`，同时要求 `hardware_confirmed=false`。
+- 轮询观察窗口为 45 秒。未取得结果时保留原命令查询入口，不自动重新发送控制指令。
+- 访客额度在验证并签发授权时扣减；恢复丢失响应使用原凭证。
+- 显式时区按偏移解释；历史无时区值标注服务器时间。快照展示接收时间。
 
-先启动前端。测试脚本拦截 `/api/` 根路径，使用独立确定性夹具，不访问真实门禁设备、不修改后端数据库。
+## 浏览器测试
+
+先启动前端，再执行确定性夹具测试：
 
 ```sh
 npx playwright install chromium
 npm run test:browser
+npm run test:material
+npm run test:device-console
 ```
 
-也可使用系统 Edge，在 PowerShell 中执行：
+Windows 可设置 `$env:BROWSER_CHANNEL = 'msedge'` 使用系统 Edge。`FRONTEND_URL` 默认为 `http://127.0.0.1:5173`；截图输出至被忽略的 `test-artifacts/`。
 
-```powershell
-$env:BROWSER_CHANNEL = 'msedge'
-$env:FRONTEND_URL = 'http://127.0.0.1:5173'
-npm run test:browser
-```
-
-覆盖登录、丢失消费响应恢复、跨页面命令跟踪、上报状态与回执分离、无效 TOTP、权限提交失败、访客创建/撤销、报警详情、手机导航及 320/390/768/1280/1440px 下六个业务页面。浏览器运行错误或 Vue 警告会使验收失败。截图输出到已忽略的 `test-artifacts/`。
-
-Node 测试覆盖真实业务模块和命令跟踪，包括重复点击、凭证保留、响应丢失、未知结果及卸载后的迟到响应。模拟浏览器验收不替代真实设备端验证。
-
-## 隔离真实后端验收
-
-从仓库根目录显式运行：
+真实 HTTP 集成仅连接隔离后端。从仓库根目录启动一个新的夹具进程：
 
 ```sh
 python apps/api/tests/browser_fixture.py
 ```
 
-夹具只在 `127.0.0.1:8000` 监听，数据库和图片保存在临时目录。测试账户 `qa_operator`、密码 `local-qa-password`，首次登录按页面显示的密钥绑定 TOTP。该脚本不参与生产初始化。真实后端的认证和命令受理可在此前端页面检查；夹具没有合成的人脸成功与执行确认。
-
-启动一个全新的夹具及前端后，可执行自动集成验收。此测试会登记 TOTP、提交命令、创建并撤销访客凭证，只能用于夹具的临时数据库；不可指向真实部署。
+保留前端与夹具进程，在本目录运行：
 
 ```powershell
 $env:ISOLATED_BACKEND_FIXTURE = '1'
-$env:BROWSER_CHANNEL = 'msedge'
 npm run test:integration
 ```
 
-集成测试验证真实接口中的首次 TOTP 绑定、授权设备列表、上锁命令受理、审计记录、访客创建/撤销和已撤销凭证拒绝。首次登记是一次性动作，重复运行前必须重新启动夹具。
+夹具使用临时数据库，测试覆盖首次 TOTP 登记、会话恢复、命令回执、访客创建和撤销。重复运行前重启夹具，不将此测试指向实际部署。
 
-## 依赖维护
-
-运行与构建均以 `package-lock.json` 为准，使用 `npm ci` 安装。2026-10-31 更新 Vite、ESLint、TypeScript ESLint 和 follow-redirects。静态分析工具的传递依赖 minimatch 通过 `overrides` 固定为 11.0.3，以覆盖 GHSA-g3hv-75wg-m249；其上游依赖范围仍指向 10.x，取消覆盖前应重新审计并运行 lint、类型检查、构建与浏览器验收。覆盖只影响开发工具，未增加客户端运行依赖。
-
-## 当前接口边界
-
-网页未提供人脸登记接口；账户页明确说明现有维护方式。设备名称已持久化，新控制日志关联命令，快照显示服务器接收时间，后端在明确时区后输出偏移。没有可信设备拍摄时间，历史未关联记录不猜测设备；报警仍是最多 100 条筛选结果。
+界面规范见[视觉系统](../../docs/design/visual-system.md)，业务字段见 [API 参考](../../docs/reference/api.md)。

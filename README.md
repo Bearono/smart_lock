@@ -2,40 +2,35 @@
 
 [![CI](https://github.com/Bearono/smart_lock/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/Bearono/smart_lock/actions/workflows/verify.yml)
 
-智能门锁与门前摄像头系统。使用 Vue 网页和 Android 客户端访问同一业务后端，由树莓派完成实拍、人脸与活体检查，结合动态验证码授权开门；独立 ARM64 服务模拟锁舌执行并返回可追溯回执。
+基于树莓派的门禁验证系统。Web 和 Android 客户端共享业务后端，通过人脸与活体检测、动态验证码和一次性授权完成开门流程，独立 ARM64 服务模拟锁状态并返回执行回执。
 
-## 交付范围
+**[下载 Android APK](https://github.com/Bearono/smart_lock/releases/download/v1.1.0/SmartLock-1.1.0.apk)** · [版本说明与校验文件](https://github.com/Bearono/smart_lock/releases/tag/v1.1.0) · [部署指南](deploy/README.md) · [文档目录](docs/README.md)
 
-当前交付包含网页、Android App、后端、树莓派摄像头服务和 ARM64 模拟门锁。手机端与网页端的真实人脸验证、验证码、开锁及上锁流程均已完成联调，详情见[验收范围](docs/acceptance.md)。
+## 功能
 
-音频实验、实体锁具、整机重启自动恢复及长时间稳定性验收不在本次约定范围。模拟执行在界面和 API 中明确标识，不代表实体锁动作。协议包保留课程密码算法的独立回归。
+- **身份验证**：账户审批、TOTP 登录、设备访问权限、人脸与活体验证。
+- **门锁控制**：一次性开门授权、持久命令去重、执行回执和异常状态查询。
+- **访客通行**：有效期、验证次数限制、凭证撤销和原命令结果恢复。
+- **门前画面**：CSI 摄像头按需拍照、私有快照读取和访问控制。
+- **管理与审计**：设备命名、成员权限、操作记录、人脸验证记录和告警处理。
 
-## 系统组成
+## 安装客户端
 
-```mermaid
-flowchart LR
-  Web[Vue 网页] -->|HTTPS| API[Flask 业务后端]
-  Android[Android 客户端] -->|HTTPS| API
-  API --> Data[(SQLite / 私有媒体)]
-  API <-->|设备认证与加密消息| Pi[树莓派摄像头 / 人脸与活体]
-  Pi -->|签名命令与反馈| Lock[ARM64 模拟门锁]
-```
+APK 支持 Android 8.0 及以上。当前发布包为调试签名的本地联调版，默认服务地址为 `https://localhost:8443`，包含项目 CA 公钥证书。安装和证书说明见 [Android 指南](apps/android/README.md)。
 
-| 路径 | 职责 |
-| --- | --- |
-| [apps/api](apps/api/README.md) | 账户、权限、MFA、私有媒体、命令与审计 |
-| [apps/web](apps/web/README.md) | 网页界面、业务交互、响应式设计 |
-| [apps/android](apps/android/README.md) | 手机客户端与独立 APK 构建 |
-| [apps/device](apps/device/README.md) | 树莓派相机、识别、心跳与执行器适配 |
-| [apps/lock_sim](apps/lock_sim/README.md) | 独立 ARM64 模拟执行服务 |
-| [packages/smartlock_protocol](packages/smartlock_protocol/README.md) | 双端共享协议与密码实现 |
-| [deploy](deploy/README.md) | 镜像、TLS、初始化、维护与验收工具 |
-| [docs](docs/README.md) | 架构、开发规范、接口、安全与验收说明 |
-| workspace.toml / manage.py | 工作区清单与跨平台命令入口 |
+**APK 需要连接已部署的后台服务。** 参考部署采用以下分工：
 
-## 快速启动
+| 运行环境     | 服务                                          |
+| ------------ | --------------------------------------------- |
+| 电脑         | API、Web、HTTPS 入口、数据库和 ARM64 模拟门锁 |
+| 树莓派       | CSI 采集、人脸与活体检测、设备心跳和命令执行  |
+| Android 手机 | 客户端，通过 USB 端口转发访问电脑服务         |
 
-需要 Python 3.12、Docker Desktop（Linux 容器）。首次运行前按[开发指南](docs/development.md)安装锁定依赖，从仓库根目录执行：
+USB 模式需要保持手机连接，并在电脑执行 `adb reverse tcp:8443 tcp:8443`。局域网或远程访问需要部署可达的 HTTPS 入口，并使用与该部署证书匹配的客户端。参考部署仅监听电脑回环地址。
+
+## 启动后台
+
+准备 Python 3.12 和 Docker Compose v2；Windows 使用 Docker Desktop 的 Linux 容器。按[开发指南](docs/development.md)安装 Python 依赖后，从仓库根目录执行：
 
 ```sh
 python deploy/init_secrets.py
@@ -44,20 +39,32 @@ docker compose -f compose.yaml -f compose.tls.yaml up -d --build --wait backend 
 docker compose exec backend flask --app run create-admin --username operator
 ```
 
-管理员密码交互输入，无默认账号或密码。浏览器访问 **https://localhost:8443**，按[部署手册](deploy/README.md)配置本机课程 CA，首次登录绑定身份验证器。
+浏览器访问 **https://localhost:8443**。管理员密码由命令行交互设置，首次登录登记身份验证器。完整运行还需按[部署指南](deploy/README.md)配置设备身份、树莓派、模型、模板和[模拟门锁](apps/lock_sim/README.md)。
 
-以上启动业务服务；完整演示还需要配置树莓派设备及[模拟门锁](apps/lock_sim/README.md)。手机通过 USB 转发连接本机服务的操作见 [Android 指南](apps/android/README.md)。运行环境、证书及设备身份由部署者提供，源码不携带个人模板、账号数据库或私钥。
+## 仓库结构
 
-## 开发与检查
+| 路径                                                                 | 职责                                        |
+| -------------------------------------------------------------------- | ------------------------------------------- |
+| [apps/api](apps/api/README.md)                                       | Flask API、认证、授权、私有媒体、指令与审计 |
+| [apps/web](apps/web/README.md)                                       | Vue 界面、业务状态与响应式交互              |
+| [apps/android](apps/android/README.md)                               | Android 客户端、HTTPS 来源策略和 APK 构建   |
+| [apps/device](apps/device/README.md)                                 | 树莓派相机、识别、心跳与执行器适配          |
+| [apps/lock_sim](apps/lock_sim/README.md)                             | ARM64 模拟执行服务                          |
+| [packages/smartlock_protocol](packages/smartlock_protocol/README.md) | 双端共享协议与密码实现                      |
+| [deploy](deploy/README.md)                                           | 镜像、配置、维护、备份和发布工具            |
+| [docs](docs/README.md)                                               | 架构、开发、接口、安全与验证说明            |
+
+`workspace.toml` 声明组件与依赖入口，`manage.py` 提供统一检查和构建命令。
+
+## 验证与维护
 
 ```sh
 python manage.py check
 python manage.py verify --output releases/verification
-python manage.py web-dev --port 5173
 ```
 
-CI 分别检查仓库、后端、前端、Android、容器及 amd64/arm64 设备镜像。源码发布包由清单生成，校验与验收源码匹配；构建产物、依赖、原始照片与运行数据不提交 Git。
+CI 覆盖仓库约束、API、Web、Android、容器和 amd64/arm64 设备镜像。真实设备验证与自动化检查的范围见[验证说明](docs/acceptance.md)。当前执行端为模拟门锁，所有执行结果保留 `SIMULATED` 标识。
 
-- [架构与模块边界](docs/architecture.md) · [开发与测试](docs/development.md)
-- [接口参考](docs/reference/api.md) · [安全基线](docs/security.md)
-- [贡献约定](CONTRIBUTING.md) · [安全问题反馈](SECURITY.md)
+APK 与校验文件通过 GitHub Releases 分发；源码、依赖锁定和工程文档由 Git 管理。运行密钥、数据库、个人照片和人脸模板不进入源码或安装包。
+
+[贡献约定](CONTRIBUTING.md) · [安全问题反馈](SECURITY.md)

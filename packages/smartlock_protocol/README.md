@@ -2,12 +2,12 @@
 
 API 与树莓派共同安装的 Python 包，不依赖 Flask 或应用内部模块。
 
-| 模块 | 职责 |
-| --- | --- |
-| `v3` | 当前设备会话、密钥确认、AES-GCM 信封 |
-| `command_auth` | 设备与模拟执行器命令的认证格式 |
-| `v2` | 显式保留的旧协议教学基线；生产拒绝降级 |
-| `course_lab` / `distribution_lab` / `rsa_math` | 独立课程密码实验 |
+| 模块                                           | 职责                                   |
+| ---------------------------------------------- | -------------------------------------- |
+| `v3`                                           | 当前设备会话、密钥确认、AES-GCM 信封   |
+| `command_auth`                                 | 设备与模拟执行器命令的认证格式         |
+| `v2`                                           | 显式保留的旧协议教学基线；生产拒绝降级 |
+| `course_lab` / `distribution_lab` / `rsa_math` | 独立课程密码实验                       |
 
 ```sh
 python -m pip install --no-deps ./packages/smartlock_protocol

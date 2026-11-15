@@ -1,6 +1,6 @@
 # 部署与维护
 
-当前部署由电脑上的 API、网页、HTTPS 和 ARM64 模拟锁，以及树莓派上的 CSI 摄像头服务组成。首次部署先阅读[开发环境](../docs/development.md)；功能边界见[验收范围](../docs/acceptance.md)。所有命令从仓库根目录执行。
+参考部署由电脑上的 API、网页、HTTPS 和 ARM64 模拟锁，以及树莓派上的 CSI 摄像头服务组成。首次部署先阅读[开发环境](../docs/development.md)；支持范围见[验证说明](../docs/acceptance.md)。所有命令从仓库根目录执行。
 
 ## 电脑服务
 
@@ -11,15 +11,15 @@ docker compose -f compose.yaml -f compose.tls.yaml up -d --build --wait backend 
 docker compose exec backend flask --app run create-admin --username operator
 ```
 
-初始化工具只创建缺失密钥，不覆盖已有文件。管理员密码交互输入；首次登录需要绑定身份验证器。浏览器使用 **https://localhost:8443**；HTTP 8080 仅供本机预览。课程 CA 位于 `deploy/tls/ca.crt`，必须核对后由使用者决定是否信任，不能关闭证书验证。
+初始化工具只创建缺失密钥，不覆盖已有文件。管理员密码交互输入；首次登录需要绑定身份验证器。浏览器使用 **https://localhost:8443**；HTTP 8080 仅供本机预览。本地 CA 位于 `deploy/tls/ca.crt`，必须核对后由使用者决定是否信任，不能关闭证书验证。
 
-已有 Windows 演示环境先打开 Docker Desktop，再启动已有容器：
+已有部署可直接启动现有容器；Windows 上需先启动 Docker Desktop：
 
 ```powershell
-docker start smart-lock-backend-1 smart-lock-web-1 smart-lock-tls-1
+docker compose -f compose.yaml -f compose.tls.yaml start backend web tls
 ```
 
-容器名对应默认 Compose 项目。该操作不执行数据库初始化。首次安装、配置变更和升级使用 Compose；停止使用 `docker compose -f compose.yaml -f compose.tls.yaml stop`。通知发送单独配置，日常演示不启动邮件任务。
+`start` 使用现有容器和数据卷，不执行数据库初始化。首次安装、配置变更和升级使用 Compose；停止使用 `docker compose -f compose.yaml -f compose.tls.yaml stop`。通知发送作为独立服务配置和启动。
 
 API 不单独暴露宿主机端口；入口只绑定回环地址。后端以非 root 身份运行，文件系统只读，业务数据保存在 `data` 卷。`/health/live` 检查进程，`/health/ready` 检查数据库结构；设备在线情况以有效心跳为准。
 
@@ -48,17 +48,17 @@ python3 deploy/pi_native.py check-runtime
 
 准备 `deploy/.env`，限制为服务账户可读，并显式配置：
 
-| 配置 | 内容 |
-| --- | --- |
-| `SMART_LOCK_ENV` | `production` |
-| `SMART_LOCK_DEVICE_ID` | 已登记设备 ID |
-| `BACKEND_URL` | 验证证书的 HTTPS 后端地址 |
-| `SMART_LOCK_CA_BUNDLE` | CA 公钥文件 |
-| `SMART_LOCK_DEVICE_PASSWORD_FILE` | 独立设备口令文件 |
-| `DEVICE_STATE_DIR` | 可写的命令去重目录 |
-| `SMART_LOCK_MODELS_DIR` | 已校验模型目录 |
-| `SMART_LOCK_TEMPLATES_DIR` | 已登记人脸模板目录 |
-| `SMART_LOCK_CAMERA_BACKEND` | `picamera2` |
+| 配置                              | 内容                      |
+| --------------------------------- | ------------------------- |
+| `SMART_LOCK_ENV`                  | `production`              |
+| `SMART_LOCK_DEVICE_ID`            | 已登记设备 ID             |
+| `BACKEND_URL`                     | 验证证书的 HTTPS 后端地址 |
+| `SMART_LOCK_CA_BUNDLE`            | CA 公钥文件               |
+| `SMART_LOCK_DEVICE_PASSWORD_FILE` | 独立设备口令文件          |
+| `DEVICE_STATE_DIR`                | 可写的命令去重目录        |
+| `SMART_LOCK_MODELS_DIR`           | 已校验模型目录            |
+| `SMART_LOCK_TEMPLATES_DIR`        | 已登记人脸模板目录        |
+| `SMART_LOCK_CAMERA_BACKEND`       | `picamera2`               |
 
 为服务提供 `deploy/tls/pi-native.crt`、`pi-native.key` 和 CA 公钥，证书 SAN 必须覆盖后端实际访问的地址。设备不保存 CA 私钥。现有证书升级可用 `repair_local_tls.py` 检查并生成独立修复副本；该工具不会直接覆盖在线证书。
 
@@ -68,7 +68,7 @@ systemctl --user status smart-lock-device
 journalctl --user -u smart-lock-device --no-pager -n 50
 ```
 
-原生服务监听 `127.0.0.1:5443`，单 worker、双线程，串行使用相机和模型；退出时释放相机。当前电脑与 Pi 通过显式 SSH 转发连接：
+原生服务监听 `127.0.0.1:5443`，单 worker、双线程，串行使用相机和模型；退出时释放相机。参考拓扑中，电脑与 Pi 通过 SSH 转发连接：
 
 ```sh
 python deploy/pi_tunnel.py --host PI_ADDRESS --user SERVICE_USER --identity PATH_TO_PRIVATE_KEY
