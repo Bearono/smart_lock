@@ -314,6 +314,19 @@ def open_door_request():
             db.session.commit()
             return jsonify(msg=str(exc), code='DEVICE_DISPATCH_FAILED'), 502
         except RuntimeError as exc:
+            # The device forwards our callback's rejection. Use the authenticated,
+            # persisted evidence rather than misclassifying it as a gateway outage.
+            db.session.refresh(session)
+            evidence = FaceRecognitionLog.query.filter_by(
+                request_id=request_id, device_id=device_id, passed=False,
+            ).order_by(FaceRecognitionLog.id.desc()).first()
+            if session.status == 'failed' and evidence and evidence.failure_reason in (
+                    'face_user_or_score_mismatch', 'face_presentation_check_failed'):
+                reason = evidence.failure_reason
+                if not evidence.face_user_id and evidence.similarity_score == 0:
+                    reason = 'face_not_identified'
+                return jsonify(msg='Face verification failed', code='FACE_VERIFICATION_FAILED',
+                               reason=reason, snapshot=evidence.snapshot_path), 401
             session.status = 'failed'
             db.session.add(FaceRecognitionLog(
                 request_id=request_id,

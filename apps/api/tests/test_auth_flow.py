@@ -17,7 +17,7 @@ from flask_jwt_extended import create_access_token
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app, db, bcrypt
-from app.models import AuthSession, Device, DeviceGrant, GuestPass, MFACredential, UnlockToken, User
+from app.models import AuthSession, Device, DeviceGrant, FaceRecognitionLog, GuestPass, MFACredential, UnlockToken, User
 from app.routes.mfa import DeviceUnavailable
 from app.routes.security_protocol import SecureEnvelope, Spake2Client
 
@@ -353,6 +353,35 @@ class AuthFlowTests(unittest.TestCase):
         self.app.config['DEVICE_DISPATCH_REQUIRED'] = False
         with patch('app.routes.mfa._dispatch_face_challenge', side_effect=RuntimeError('face rejected')):
             self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_a'}).status_code, 502)
+
+    def test_callback_rejection_preserves_one_evidence_record_and_snapshot(self):
+        from app.door_auth import record_failure
+
+        def reject(device_id, request_id, nonce):
+            session = AuthSession.query.filter_by(request_id=request_id).one()
+            session.status = 'failed'
+            db.session.add(FaceRecognitionLog(
+                request_id=request_id, device_id=device_id, expected_username='alice',
+                face_user_id=None, similarity_score=0, liveness_score=0, passed=False,
+                failure_reason='face_user_or_score_mismatch',
+                snapshot_path='/api/media/' + 'a' * 32 + '.jpg'))
+            record_failure(self.uid, device_id)
+            db.session.commit()
+            raise RuntimeError('Device returned HTTP 401: Face verification failed')
+
+        with patch('app.routes.mfa._dispatch_face_challenge', side_effect=reject):
+            response = self.post('/api/mfa/open-door/request', {'device_id': 'door_a'})
+        self.assertEqual(response.status_code, 401, response.json)
+        self.assertEqual(response.json['code'], 'FACE_VERIFICATION_FAILED')
+        self.assertEqual(response.json['reason'], 'face_not_identified')
+        self.assertEqual(response.json['snapshot'], '/api/media/' + 'a' * 32 + '.jpg')
+        with self.app.app_context():
+            self.assertEqual(FaceRecognitionLog.query.count(), 1)
+            self.assertEqual(AuthSession.query.one().status, 'failed')
+            self.assertFalse(AuthSession.query.one().face_verified)
+            self.assertEqual(UnlockToken.query.count(), 0)
+            self.assertEqual(MFACredential.query.filter_by(
+                user_id=self.uid, device_id='door_a').one().failed_attempts, 1)
 
     def test_face_nonce_device_and_mac_validation(self):
         challenge = self.challenge()

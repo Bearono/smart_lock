@@ -72,6 +72,7 @@ let guestPasses = [],
   activeGrants = ['qa_front', 'registered_but_not_reported']
 let browser
 let snapshotFixtures = false,
+  faceRejected = false,
   receiptUnauthorized = false,
   emptyDevices = false
 
@@ -157,6 +158,16 @@ async function fixture(page) {
       })
     if (endpoint === '/api/mfa/open-door/request') {
       calls.face++
+      if (faceRejected)
+        return respond(
+          {
+            msg: 'Face verification failed',
+            code: 'FACE_VERIFICATION_FAILED',
+            reason: 'face_not_identified',
+            snapshot: '/api/media/' + 'a'.repeat(32) + '.jpg'
+          },
+          401
+        )
       return respond({
         request_id: 'request-1',
         requires_totp: true,
@@ -334,6 +345,20 @@ async function run() {
   })
   snapshotFixtures = false
   await page.getByRole('button', { name: '刷新快照', exact: true }).click()
+
+  faceRejected = true
+  const faceBefore = calls.face
+  await page.getByRole('button', { name: '验证并开门' }).click()
+  await page
+    .getByRole('alert')
+    .getByText(/未识别到可验证的人脸/)
+    .waitFor()
+  await page.getByRole('img', { name: '本次验证快照', exact: true }).waitFor()
+  assert.equal(await page.getByLabel('身份验证器验证码', { exact: true }).count(), 0)
+  assert.equal(calls.consume, 0)
+  assert.equal(calls.face, faceBefore + 1)
+  await page.getByRole('button', { name: '返回门锁', exact: true }).click()
+  faceRejected = false
 
   await page.getByRole('button', { name: '验证并开门' }).click()
   await page.getByLabel('身份验证器验证码', { exact: true }).fill('123456')

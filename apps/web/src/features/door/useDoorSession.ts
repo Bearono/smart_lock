@@ -131,6 +131,11 @@ export function createDoorSession() {
     } catch (failure) {
       if (!disposed) {
         phase.value = 'failed'
+        if (isAxiosError(failure)) {
+          const path = failure.response?.data?.snapshot
+          if (typeof path === 'string' && /^\/api\/media\/[a-f0-9]{32}\.jpg$/.test(path))
+            snapshotPath.value = path
+        }
         flowError.value = errorMessage(failure, '人脸验证请求未确认，请核查后重新开始')
       }
     } finally {

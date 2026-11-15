@@ -42,6 +42,16 @@ export function cameraState(value) {
 export function errorMessage(error, fallback = '暂时无法完成，请稍后重试') {
   const status = error?.response?.status
   const message = error?.response?.data?.msg
+  if (error?.response?.data?.code === 'FACE_VERIFICATION_FAILED') {
+    const reasons = {
+      face_not_identified:
+        '未识别到可验证的人脸。请检查下方照片，移开镜头遮挡，让一张完整人脸正对镜头。',
+      face_user_or_score_mismatch: '人脸与当前账号不匹配。请检查本次照片，确认由账号本人正对镜头。',
+      face_presentation_check_failed:
+        '活体检测未通过。请本人正对镜头，保持光线均匀，勿使用照片或屏幕。'
+    }
+    return reasons[error.response.data.reason] || '人脸验证未通过，请检查本次照片后重新验证'
+  }
   const known = {
     'Invalid TOTP code': '验证码不正确，请重新开始验证',
     'Invalid or already used TOTP code': '验证码无效或已使用，请等待身份验证器生成下一组验证码',
