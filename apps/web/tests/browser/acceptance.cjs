@@ -397,6 +397,18 @@ async function run() {
   await page.getByRole('dialog').getByText('0.91', { exact: true }).waitFor()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByRole('link', { name: '我的家', exact: true }).click()
+  const desktopResultOrder = await page
+    .locator('.command-tray')
+    .evaluate(
+      (panel) =>
+        panel.getBoundingClientRect().bottom <=
+        document.querySelector('.recent-activity').getBoundingClientRect().top
+    )
+  assert.equal(desktopResultOrder, true, 'Current result precedes recent activity on desktop')
+  await page.screenshot({
+    path: path.join(artifacts, 'result-before-activity-desktop.png'),
+    fullPage: true
+  })
   assert.equal(
     await page.locator('.lock-hero strong').textContent(),
     '已锁',
@@ -563,6 +575,23 @@ async function run() {
   await page.getByText('模拟门锁 · 操作结果代表模拟服务中的锁状态。', { exact: true }).waitFor()
   await page.getByRole('button', { name: '上锁', exact: true }).click()
   await page.getByText('模拟门锁已确认本次命令执行', { exact: true }).waitFor()
+  const mobileResultOrder = await page.locator('.command-tray').evaluate((panel) => ({
+    beforeHistory:
+      panel.getBoundingClientRect().bottom <=
+      document.querySelector('.recent-activity').getBoundingClientRect().top,
+    focused: document.activeElement === panel,
+    top: panel.getBoundingClientRect().top
+  }))
+  assert.equal(
+    mobileResultOrder.beforeHistory,
+    true,
+    'Current result precedes recent activity on mobile'
+  )
+  assert.equal(mobileResultOrder.focused, true)
+  assert.ok(
+    mobileResultOrder.top >= 0 && mobileResultOrder.top < 250,
+    'New command result is brought into view'
+  )
   await noOverflow(page, 'simulated lock mobile')
   await page.screenshot({ path: path.join(artifacts, 'simulated-lock-mobile.png'), fullPage: true })
   delete devices[0].execution_mode

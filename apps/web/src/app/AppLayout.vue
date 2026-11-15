@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, provide, onMounted, computed } from 'vue'
+import { ref, provide, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDoorSession, doorSessionKey } from '../features/door/useDoorSession.ts'
 import AppIcon from '../shared/ui/AppIcon.vue'
 import AppDialog from '../shared/ui/AppDialog.vue'
 import CommandStatus from '../features/door/CommandStatus.vue'
+import RecentActivity from '../features/home/RecentActivity.vue'
 import { auth } from '../shared/api/index.ts'
 import { account, clearAccount } from '../shared/lib/account.ts'
 import InlineNotice from '../shared/ui/InlineNotice.vue'
@@ -20,7 +21,18 @@ const logoutError = ref('')
 const signingOut = ref(false)
 const session = createDoorSession()
 provide(doorSessionKey, session)
-const { command, commandStatus } = session
+const { command, commandStatus, selected, selectedId, phase, refreshing } = session
+const commandPanel = ref<HTMLElement | null>(null)
+watch(
+  () => command.value?.id,
+  (id) => {
+    if (id && route.path === '/dashboard') {
+      commandPanel.value?.focus({ preventScroll: true })
+      commandPanel.value?.scrollIntoView({ block: 'start', behavior: 'auto' })
+    }
+  },
+  { flush: 'post' }
+)
 const navigation = [
   { path: '/dashboard', name: '我的家', icon: 'doors' },
   { path: '/dashboard/records', name: '动态', icon: 'records' },
@@ -121,7 +133,13 @@ function acknowledge() {
       <main id="main-content" class="main-content" tabindex="-1">
         <InlineNotice v-if="logoutError" tone="danger">{{ logoutError }}</InlineNotice>
         <RouterView />
-        <section v-if="command" class="panel command-tray">
+        <section
+          v-if="command"
+          ref="commandPanel"
+          class="panel command-tray"
+          tabindex="-1"
+          aria-label="本次执行结果"
+        >
           <div class="panel-head">
             <div>
               <h3>本次{{ command.action }}结果</h3>
@@ -147,6 +165,12 @@ function acknowledge() {
             </button>
           </div>
         </section>
+        <RecentActivity
+          v-if="route.path === '/dashboard' && selected"
+          class="home-activity"
+          :device-id="selectedId"
+          :refresh-signal="`${phase}:${refreshing}`"
+        />
       </main>
     </div>
   </div>

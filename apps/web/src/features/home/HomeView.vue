@@ -8,7 +8,6 @@ import AppDialog from '../../shared/ui/AppDialog.vue'
 import StatusBadge from '../../shared/ui/StatusBadge.vue'
 import InlineNotice from '../../shared/ui/InlineNotice.vue'
 import EmptyState from '../../shared/ui/EmptyState.vue'
-import RecentActivity from './RecentActivity.vue'
 import PrivateSnapshot from '../camera/PrivateSnapshot.vue'
 import HomeOverview from './HomeOverview.vue'
 const session = useDoorSession()
@@ -362,7 +361,6 @@ onScopeDispose(() => {
           </div>
         </section>
       </div>
-      <RecentActivity :device-id="selectedId" :refresh-signal="`${phase}:${refreshing}`" />
     </template>
     <section
       v-if="['face', 'confirm', 'recover', 'failed'].includes(phase)"
