@@ -6,6 +6,11 @@ import java.util.Arrays;
 import java.util.Random;
 
 public class OfdmCodecTest {
+    @Test public void legacyWavesRemainReadableAndRobustFramesAreBounded() {
+        byte[] payload = new byte[128];new Random(913).nextBytes(payload);
+        assertArrayEquals(payload, OfdmCodec.decode(OfdmCodec.encodeLegacy(payload)));
+        assertTrue(OfdmCodec.encode(new byte[2048]).length <= WaveFile.MAX_SAMPLES);
+    }
     @Test public void binaryRoundtripAcrossBounds() {
         for (int size : new int[] {1, 5, 8, 127, 256, 2048}) {
             byte[] original = new byte[size];

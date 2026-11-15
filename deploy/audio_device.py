@@ -72,18 +72,35 @@ def _audio_thread():
 @_audio_thread()
 def list_devices(backend=None):
     sd = backend if backend is not None else sound_backend()
-    return [dict(dict(value), index=i) for i, value in enumerate(sd.query_devices())]
+    return [dict(dict(value), index=i, host_api=sd.query_hostapis(value['hostapi'])['name'])
+            for i, value in enumerate(sd.query_devices())]
+
+
+def _input_options(sd, device, wasapi_raw):
+    if not wasapi_raw:
+        return {}
+    if sys.platform != 'win32' or sd.query_hostapis(sd.query_devices(device)['hostapi'])['name'] != 'Windows WASAPI':
+        raise ValueError('Raw input requires an explicitly selected Windows WASAPI microphone')
+    settings = sd.WasapiSettings()
+    # sounddevice 0.5.6 exposes PortAudio's documented WASAPI extension via this struct.
+    if not hasattr(settings, '_streaminfo') or not hasattr(settings._streaminfo, 'streamOption') or not hasattr(sd._lib, 'eStreamOptionRaw'):
+        raise RuntimeError('Installed audio backend does not expose WASAPI raw input')
+    settings._streaminfo.streamOption = sd._lib.eStreamOptionRaw
+    return {'extra_settings': settings}
 
 
 @_audio_thread()
-def record(seconds, device, backend=None):
+def record(seconds, device, backend=None, *, wasapi_raw=False):
     if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 0.1 <= seconds <= 10:
         raise ValueError('Recording duration must be between 0.1 and 10 seconds')
     if device is None:
         raise ValueError('Select an explicit input device')
+    if type(wasapi_raw) is not bool:
+        raise ValueError('Raw input option must be a boolean')
     sd = backend if backend is not None else sound_backend()
+    options = _input_options(sd, device, wasapi_raw)
     frames = int(seconds * RATE)
-    sd.check_input_settings(device=device, channels=1, dtype='int16', samplerate=RATE)
+    sd.check_input_settings(device=device, channels=1, dtype='int16', samplerate=RATE, **options)
     blocks = []
     # PortAudio callback + bounded wait: a stalled device cannot hang indefinitely.
     remaining = frames
@@ -105,7 +122,7 @@ def record(seconds, device, backend=None):
             raise sd.CallbackStop
 
     stream = sd.InputStream(device=device, channels=1, dtype='int16', samplerate=RATE,
-                            callback=callback, blocksize=1024)
+                            callback=callback, blocksize=1024, **options)
     try:
         stream.start()
         if not done.wait(seconds + 3):
@@ -182,6 +199,7 @@ def parser():
     rec.add_argument('--device', required=True, type=int)
     rec.add_argument('--seconds', default=5.0, type=float)
     rec.add_argument('--output', required=True, type=Path)
+    rec.add_argument('--wasapi-raw', action='store_true', help='Request unprocessed input from a Windows WASAPI microphone')
     playback = commands.add_parser('play')
     playback.add_argument('--device', required=True, type=int)
     playback.add_argument('--input', required=True, type=Path)
@@ -215,7 +233,7 @@ def main(argv=None):
         play(read_bounded(args.input), args.device, args.gain)
         return 0
     if args.command == 'record':
-        output = record(args.seconds, args.device)
+        output = record(args.seconds, args.device, wasapi_raw=args.wasapi_raw)
     elif args.command == 'encode':
         output = wav_bytes(encode(read_bounded(args.input, 2048)))
     elif args.command == 'decode':

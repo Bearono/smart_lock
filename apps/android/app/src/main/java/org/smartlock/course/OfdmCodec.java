@@ -9,7 +9,7 @@ public final class OfdmCodec {
     public static final int FFT = 256, PREFIX = 64, SYMBOL = 320, MAX_PAYLOAD = 2048;
     private static final int CARRIERS = 64, FIRST_BIN = 16;
     // NumPy default_rng(3101).choice((-1.0, 1.0), (2,64)); fixed wire-format constant.
-    private static final int[][] TRAINING = {
+    static final int[][] TRAINING = {
         {-1,1,1,-1,-1,-1,1,-1,1,-1,1,1,-1,-1,1,1,-1,1,-1,1,-1,-1,-1,1,-1,-1,1,-1,-1,-1,1,1,1,-1,1,1,-1,1,-1,-1,-1,-1,1,-1,-1,1,-1,-1,1,1,1,-1,1,1,1,-1,1,1,-1,-1,1,-1,-1,1},
         {-1,-1,-1,1,1,-1,-1,-1,1,-1,1,1,-1,-1,-1,-1,-1,1,1,1,-1,1,-1,1,1,1,-1,1,-1,-1,1,-1,-1,-1,-1,1,-1,1,-1,-1,-1,-1,1,1,-1,1,1,1,-1,1,1,-1,-1,1,1,1,1,1,1,1,1,1,1,-1}
     };
@@ -17,6 +17,10 @@ public final class OfdmCodec {
     private OfdmCodec() { }
 
     public static double[] encode(byte[] payload) {
+        return RobustOfdmCodec.encode(payload);
+    }
+
+    static double[] encodeLegacy(byte[] payload) {
         if (payload == null || payload.length < 1 || payload.length > MAX_PAYLOAD)
             throw new IllegalArgumentException("载荷必须为 1–2048 字节");
         ByteBuffer frame = ByteBuffer.allocate(payload.length + 10);
@@ -43,6 +47,11 @@ public final class OfdmCodec {
     }
 
     public static byte[] decode(double[] samples) {
+        try { return RobustOfdmCodec.decode(samples); }
+        catch (IllegalArgumentException invalidRobustFrame) { return decodeLegacy(samples); }
+    }
+
+    private static byte[] decodeLegacy(double[] samples) {
         if (samples == null || samples.length < 3 * SYMBOL || samples.length > WaveFile.MAX_SAMPLES)
             throw new IllegalArgumentException("录音长度无效");
         for (double value : samples) if (!Double.isFinite(value))
@@ -124,7 +133,7 @@ public final class OfdmCodec {
         return result;
     }
 
-    private static double[] symbol(int[] values) {
+    static double[] symbol(int[] values) {
         double[] real = new double[FFT], imag = new double[FFT];
         for (int i = 0; i < CARRIERS; i++) real[FIRST_BIN + i] = real[FFT - FIRST_BIN - i] = values[i];
         transform(real, imag, true);
@@ -135,7 +144,7 @@ public final class OfdmCodec {
     }
 
     /** Iterative radix-2 complex FFT, inverse normalized by n. */
-    private static void transform(double[] real, double[] imag, boolean inverse) {
+    static void transform(double[] real, double[] imag, boolean inverse) {
         int n = real.length;
         for (int i = 1, j = 0; i < n; i++) {
             int bit = n >>> 1;

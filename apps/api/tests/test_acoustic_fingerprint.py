@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 
 from smartlock_protocol import acoustic_fingerprint as af
-from smartlock_protocol.audio import analyze, decode, encode, read_wav, wav_bytes
+from smartlock_protocol.audio import _encode_legacy, analyze, decode, encode, read_wav, wav_bytes
 
 ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('course_audio_device', ROOT / 'deploy/audio_device.py')
@@ -51,6 +51,8 @@ class AcousticFingerprintTests(unittest.TestCase):
         calibrated = af.calibrate(template, [recording(i) for i in range(3, 7)],
                                   [recording(i, True) for i in range(7, 11)])
         self.assertIsNone(template['threshold'])
+        self.assertGreater(calibrated['threshold'], max(calibrated['calibration']['genuine_distances']))
+        self.assertLess(calibrated['threshold'], min(calibrated['calibration']['impostor_distances']))
         accepted = af.verify(calibrated, recording(20), b'known-challenge-0123456789')
         self.assertTrue(accepted['matched'])
         self.assertFalse(accepted['cryptographic_identity_verified'])
@@ -62,6 +64,25 @@ class AcousticFingerprintTests(unittest.TestCase):
         self.assertEqual(report['genuine_count'], 4)
         self.assertEqual(report['impostor_count'], 4)
         self.assertEqual(report['far'], 0)
+
+    def test_transport_profiles_cannot_share_calibration(self):
+        legacy = wav_bytes(_encode_legacy(b'known-challenge-0123456789') * 0.4)
+        with self.assertRaisesRegex(ValueError, 'transport profile'):
+            af.enroll('phone', [recording(1), recording(2), legacy])
+        template = af.enroll('phone', [recording(i) for i in range(3)])
+        with self.assertRaisesRegex(ValueError, 'transport profile'):
+            af._scored(template, [legacy], minimum=1)
+
+    def test_clipping_check_applies_to_decoded_frame(self):
+        values = read_wav(recording(1))
+        clean = af.extract(wav_bytes(values))
+        outside = af.extract(wav_bytes(np.concatenate((np.ones(1000), np.zeros(2000), values))))
+        self.assertEqual(clean['payload_sha256'], outside['payload_sha256'])
+        # A valid legacy frame retains its decodability with saturated guard samples.
+        clipped = _encode_legacy(b'known-challenge-0123456789') * 0.4
+        clipped[650:670] = 1
+        with self.assertRaisesRegex(ValueError, 'Clipped'):
+            af.extract(wav_bytes(clipped))
 
     def test_rejects_data_leakage_between_sets(self):
         enrolled = [recording(i) for i in range(3)]
@@ -122,7 +143,10 @@ class AcousticFingerprintTests(unittest.TestCase):
     def test_device_listing_accepts_native_index_field(self):
         class DeviceBackend:
             def query_devices(self):
-                return [{'index': 0, 'name': 'explicit test input', 'max_input_channels': 1}]
+                return [{'index': 0, 'name': 'explicit test input', 'max_input_channels': 1, 'hostapi': 0}]
+
+            def query_hostapis(self, index):
+                return {'name': 'test host API'}
         self.assertEqual(cli.list_devices(DeviceBackend())[0]['index'], 0)
 
 

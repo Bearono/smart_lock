@@ -12,14 +12,15 @@ import numpy as np
 
 from .audio import BINS, FFT, RATE, analyze, read_wav
 
-VERSION = 'SL-acoustic-path-v1'
+VERSION = 'SL-acoustic-path-v2'
 
 
 def extract(recording, expected_payload=None):
     samples = read_wav(recording)
-    if np.mean(np.abs(samples) >= 0.999) > 0.001:
-        raise ValueError('Clipped recording; reduce playback volume or input gain')
     result = analyze(samples)
+    frame = samples[result['start_sample']:result['start_sample'] + result['sample_count']]
+    if np.mean(np.abs(frame) >= 0.999) > 0.001:
+        raise ValueError('Clipped recording; reduce playback volume or input gain')
     if expected_payload is not None and result['payload'] != expected_payload:
         raise ValueError('Recording does not contain the expected challenge')
     magnitude = np.abs(result['channel'])
@@ -28,6 +29,7 @@ def extract(recording, expected_payload=None):
     # Bind trial identity to decoded PCM, so RIFF metadata cannot disguise reuse.
     pcm = np.rint(samples * 32767).astype('<i2').tobytes()
     return {'feature': response.tolist(),
+            'transport_profile': result['profile'],
             'recording_sha256': hashlib.sha256(pcm).hexdigest(),
             'source_file_sha256': hashlib.sha256(recording).hexdigest(),
             'payload_sha256': hashlib.sha256(result['payload']).hexdigest(),
@@ -40,6 +42,8 @@ def _vectors(records, minimum):
     identifiers = [r['recording_sha256'] for r in records]
     if len(set(identifiers)) != len(identifiers):
         raise ValueError('Duplicate recordings are not independent trials')
+    if len({r['transport_profile'] for r in records}) != 1:
+        raise ValueError('Acoustic trials must use one transport profile')
     matrix = np.asarray([r['feature'] for r in records], dtype=float)
     if matrix.shape != (len(records), len(BINS)) or not np.all(np.isfinite(matrix)):
         raise ValueError('Invalid acoustic feature vectors')
@@ -52,6 +56,7 @@ def enroll(device_id, recordings):
     records = [extract(item) for item in recordings]
     matrix, identifiers = _vectors(records, 3)
     return {'version': VERSION, 'device_id': device_id,
+            'transport_profile': records[0]['transport_profile'],
             'scope': 'speaker-microphone-room path; not a stand-alone authenticator',
             'sample_rate': RATE, 'frequencies_hz': (BINS * RATE / FFT).tolist(),
             'recording_hash_kind': 'decoded-pcm-s16le',
@@ -62,7 +67,8 @@ def enroll(device_id, recordings):
 
 
 def distance(template, feature):
-    if template.get('version') != VERSION or template.get('sample_rate') != RATE:
+    if (template.get('version') != VERSION or template.get('sample_rate') != RATE
+            or template.get('transport_profile') not in ('SL-OFDM-1', 'SL-OFDM-2')):
         raise ValueError('Unsupported acoustic template')
     center, scale, value = (np.asarray(x, dtype=float) for x in
                             (template['center_db'], template['scale_db'], feature))
@@ -76,6 +82,8 @@ def distance(template, feature):
 def _scored(template, recordings, minimum=3):
     records = [extract(item) for item in recordings]
     _, identifiers = _vectors(records, minimum)
+    if any(r['transport_profile'] != template.get('transport_profile') for r in records):
+        raise ValueError('Acoustic transport profile does not match enrollment')
     return [distance(template, record['feature']) for record in records], identifiers
 
 
@@ -95,7 +103,15 @@ def calibrate(template, genuine, impostor, target_far=0.0):
     candidates = [v for v in candidates if v >= 0 and sum(x <= v for x in negative) / len(negative) <= target_far]
     if not candidates:
         raise ValueError('No threshold satisfies the calibration FAR target')
-    threshold = max(candidates)
+    boundary = max(candidates)
+    # Keep a margin from the nearest rejected calibration sample instead of placing
+    # the threshold one floating-point step below it (which overfits tiny noise).
+    accepted_positive = [value for value in positive if value <= boundary]
+    if not accepted_positive:
+        raise ValueError('Calibration rejects every genuine recording; recollect or improve features')
+    lower = max(accepted_positive)
+    rejected_negative = [value for value in negative if value > boundary]
+    threshold = (lower + min(rejected_negative)) / 2 if rejected_negative else lower
     accepted = sum(value <= threshold for value in positive)
     if not accepted:
         raise ValueError('Calibration rejects every genuine recording; recollect or improve features')
@@ -117,6 +133,8 @@ def verify(template, recording, expected_payload=None):
     if type(threshold) not in (int, float) or not math.isfinite(threshold) or threshold < 0 or not template.get('calibration'):
         raise ValueError('Calibrate with independent genuine and impostor recordings before verification')
     record = extract(recording, expected_payload)
+    if record['transport_profile'] != template.get('transport_profile'):
+        raise ValueError('Acoustic transport profile does not match enrollment')
     score = distance(template, record['feature'])
     return {'device_id': template['device_id'], 'distance': score, 'threshold': threshold,
             'matched': score <= threshold, 'recording_sha256': record['recording_sha256'],

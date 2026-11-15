@@ -48,7 +48,7 @@ def symbol(carriers):
 PREAMBLE = np.concatenate([symbol(row) for row in TRAINING])
 
 
-def encode(payload):
+def _encode_legacy(payload):
     if not isinstance(payload, bytes) or not 1 <= len(payload) <= MAX_PAYLOAD:
         raise ValueError('OFDM payload must contain 1..2048 bytes')
     frame = b'SLA1' + struct.pack('!H', len(payload)) + payload
@@ -60,7 +60,7 @@ def encode(payload):
     return (output * (0.8 / np.max(np.abs(output)))).astype(np.float32)
 
 
-def analyze(samples):
+def _analyze_legacy(samples):
     """Recover an untrusted frame and channel measurements for explicit lab analysis."""
     values = np.asarray(samples, dtype=np.float64)
     if values.ndim != 1 or not 3 * SYMBOL <= len(values) <= RATE * 10 or not np.all(np.isfinite(values)):
@@ -93,7 +93,22 @@ def analyze(samples):
     if zlib.crc32(frame[:end]) != struct.unpack('!I', frame[end:end+4])[0]:
         raise ValueError('Damaged OFDM payload')
     return {'payload': frame[6:end], 'start_sample': offset,
-            'sync_score': float(score[offset]), 'channel': channel.copy()}
+            'sync_score': float(score[offset]), 'channel': channel.copy(), 'profile': 'SL-OFDM-1',
+            'sample_count': (2 + (8 * (length + 10) + len(BINS) - 1) // len(BINS)) * SYMBOL}
+
+
+def encode(payload):
+    from .audio_robust import encode as robust_encode
+    return robust_encode(payload)
+
+
+def analyze(samples):
+    """Decode SLA2, with read compatibility for previously exported SLA1 WAV files."""
+    from .audio_robust import analyze as robust_analyze
+    try:
+        return robust_analyze(samples)
+    except ValueError:
+        return _analyze_legacy(samples)
 
 
 def decode(samples):

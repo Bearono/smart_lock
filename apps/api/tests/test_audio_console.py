@@ -133,7 +133,8 @@ class AudioConsoleTests(unittest.TestCase):
     def test_acoustic_gate_is_optional_and_json_cannot_bypass_when_enabled(self):
         self.controller.initialize('laptop')
         model = self.folder / 'model.json'
-        model.write_text(json.dumps({'version': 'SL-acoustic-path-v1', 'sample_rate': 48000,
+        model.write_text(json.dumps({'version': 'SL-acoustic-path-v2', 'sample_rate': 48000,
+                                    'transport_profile': 'SL-OFDM-2',
                                     'center_db': [0] * 64, 'scale_db': [0.75] * 64,
                                     'threshold': 1, 'calibration': {'scope': 'synthetic test only'},
                                     'device_id': 'synthetic-path'}))

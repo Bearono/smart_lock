@@ -153,8 +153,8 @@ class ConsoleController:
     def devices(self):
         return audio_device.list_devices(self.backend)
 
-    def record(self, seconds, device):
-        self.last_recording = self._write('recording', '.wav', audio_device.record(seconds, device, backend=self.backend))
+    def record(self, seconds, device, *, wasapi_raw=False):
+        self.last_recording = self._write('recording', '.wav', audio_device.record(seconds, device, backend=self.backend, wasapi_raw=wasapi_raw))
         return {'path': self.last_recording}
 
     def play(self, path, device):
@@ -238,6 +238,10 @@ class AudioConsole:
         self.button(audio, '播放 WAV', self.play).grid(row=1, column=2, pady=(8, 0))
         self.button(audio, '播放密钥', self.play_session).grid(row=1, column=3, columnspan=3, pady=(8, 0))
         ttk.Label(audio, text='录音最多 10 秒；设备无响应时另留 3 秒清理。所有音频由你手动启动。').grid(row=2, column=0, columnspan=6, sticky='w', pady=(8, 0))
+        self.wasapi_raw = tk.BooleanVar(value=False)
+        raw_toggle = ttk.Checkbutton(audio, text='原始麦克风输入（选择 Windows WASAPI 设备后启用）', variable=self.wasapi_raw)
+        raw_toggle.grid(row=3, column=0, columnspan=6, sticky='w', pady=(8, 0))
+        self.controls.append(raw_toggle)
 
         acoustic = ttk.Frame(body)
         acoustic.grid(row=6, column=0, sticky='ew', pady=8)
@@ -397,8 +401,8 @@ class AudioConsole:
         self.status.configure(text=assurance + '。消息已保存：' + str(value['path']))
 
     def devices_loaded(self, devices):
-        self.input_devices = {f"{row['index']} · {row['name']}": row['index'] for row in devices if row['max_input_channels'] > 0}
-        self.output_devices = {f"{row['index']} · {row['name']}": row['index'] for row in devices if row['max_output_channels'] > 0}
+        self.input_devices = {f"{row['index']} · {row['name']} · {row.get('host_api', '')}": row['index'] for row in devices if row['max_input_channels'] > 0}
+        self.output_devices = {f"{row['index']} · {row['name']} · {row.get('host_api', '')}": row['index'] for row in devices if row['max_output_channels'] > 0}
         self.input_box.configure(values=list(self.input_devices))
         self.output_box.configure(values=list(self.output_devices))
         self.input_box.set('')
@@ -412,7 +416,8 @@ class AudioConsole:
         except ValueError:
             self.status.configure(text='录音时长应为 0.1–10 秒。')
             return
-        self.run('正在录音', lambda: self.controller.record(seconds, device), self.recorded)
+        raw = self.wasapi_raw.get()
+        self.run('正在录音', lambda: self.controller.record(seconds, device, wasapi_raw=raw), self.recorded)
 
     def recorded(self, value):
         self.status.configure(text='录音已保存，可在“导入请求”“验证确认”或“解密消息”中选择：' + str(value['path']))

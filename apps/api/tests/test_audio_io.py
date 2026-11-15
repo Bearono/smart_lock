@@ -133,6 +133,21 @@ class AudioIOTests(unittest.TestCase):
                     self.fail('Cannot open audio after failed initialization')
             ole.CoUninitialize.assert_not_called()
 
+    def test_raw_microphone_requires_wasapi_and_does_not_silently_fall_back(self):
+        backend = Mock()
+        backend.query_devices.return_value = {'hostapi': 2}
+        backend.query_hostapis.return_value = {'name': 'MME'}
+        with patch.object(audio_io.sys, 'platform', 'win32'):
+            with self.assertRaisesRegex(ValueError, 'WASAPI'):
+                audio_io._input_options(backend, 12, True)
+            backend.query_hostapis.return_value = {'name': 'Windows WASAPI'}
+            backend._lib.eStreamOptionRaw = 1
+            settings = backend.WasapiSettings.return_value
+            options = audio_io._input_options(backend, 12, True)
+            self.assertIs(options['extra_settings'], settings)
+            self.assertEqual(settings._streaminfo.streamOption, 1)
+        backend.InputStream.assert_not_called()
+
     def test_capture_exact_frame_count_and_closes_stream(self):
         backend = FakeBackend()
         recorded = audio_io.record(0.1, 3, backend=backend)
