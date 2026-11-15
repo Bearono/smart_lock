@@ -19,9 +19,6 @@ outputs/
 .local/
 apps/device/cv/models/
 apps/device/cv/outputs/
-examples/legacy_cv/data/
-examples/legacy_cv/models/
-examples/legacy_cv/outputs/
 
 .idea/
 .vscode/
@@ -39,7 +36,6 @@ releases/
 *.egg-info/
 # Local TLS keys and certificates
 deploy/tls/
-/apps/api/tests/perf/results/
 *.apk
 *.jks
 *.keystore

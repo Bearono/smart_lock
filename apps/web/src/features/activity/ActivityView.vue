@@ -62,7 +62,7 @@ watch(
 )
 </script>
 <template>
-  <PageHeading title="家门动态" description="查看操作记录和人脸验证记录。">
+  <PageHeading title="家门动态">
     <button class="button" :disabled="loading" @click="resource.load">刷新记录</button>
   </PageHeading>
   <div class="stack">

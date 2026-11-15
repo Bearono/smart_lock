@@ -99,10 +99,9 @@ public final class MainActivity extends Activity {
     private void buildConnectionPage() {
         LinearLayout body = paddedColumn();
         body.addView(text("⌂", 48, BLUE));
-        TextView title = text("把家，连在手心", 28, INK);
+        TextView title = text("连接我的家", 28, INK);
         title.setTypeface(null, Typeface.BOLD);
         body.addView(title);
-        body.addView(text("查看门前画面，验证身份，安心开门。", 16, MUTED));
         LinearLayout card = paddedColumn();
         card.setBackground(rounded(Color.WHITE, 24));
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
@@ -128,7 +127,6 @@ public final class MainActivity extends Activity {
         });
         addAction(card, returnButton);
         addAction(body, button("清除本机登录状态", false, this::confirmClearSession));
-        body.addView(text("登录和开门均需身份验证。拍照由树莓派摄像头完成。", 14, MUTED));
         body.addView(text("SmartLock 1.1 · 智能门锁", 12, MUTED));
         connectionPage = scroll(body);
         content.addView(connectionPage);
@@ -236,7 +234,7 @@ public final class MainActivity extends Activity {
                 if (view != web || loadFailed || !selected.allows(url)) return;
                 handler.removeCallbacks(loadTimeout);
                 progress.setVisibility(View.INVISIBLE);
-                connectionStatus.setText("已连接 · 安全访问");
+                connectionStatus.setText("已连接");
                 CookieManager.getInstance().flush();
             }
             @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {

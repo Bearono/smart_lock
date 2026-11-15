@@ -145,17 +145,7 @@ onScopeDispose(() => {
                   : '身份验证'
           }}
         </h1>
-        <p class="auth-intro subtext">
-          {{
-            mode === 'register'
-              ? '填写账户信息，提交后等待管理员审批。'
-              : step === 0
-                ? '登录后查看门前快照和管理通行权限。'
-                : needsBind
-                  ? '首次登录需要绑定身份验证器。'
-                  : '输入身份验证器中的六位验证码。'
-          }}
-        </p>
+        <p v-if="mode === 'register'" class="auth-intro subtext">注册后需等待管理员审批。</p>
         <form
           v-if="step === 0"
           class="form-section"
@@ -205,7 +195,7 @@ onScopeDispose(() => {
           </div>
           <InlineNotice v-if="error" tone="danger">{{ error }}</InlineNotice>
           <InlineNotice v-if="success" tone="success">{{ success }}</InlineNotice>
-          <button class="button button--primary button--block" :disabled="busy">
+          <button v-glass="'clear'" class="button button--primary button--block" :disabled="busy">
             {{ busy ? '正在提交…' : mode === 'register' ? '提交注册申请' : '继续验证' }}
             <AppIcon name="arrow" :size="17" />
           </button>

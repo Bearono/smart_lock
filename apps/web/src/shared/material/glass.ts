@@ -47,10 +47,11 @@ function opticalLayer(element: HTMLElement, finish: GlassFinish) {
   }))
     map.setAttribute(key, value)
   const lens = document.createElementNS(svgNS, 'feDisplacementMap')
+  const refraction = finish === 'clear' ? 24 : 16
   for (const [key, value] of Object.entries({
     in: 'soft',
     in2: 'normal',
-    scale: finish === 'clear' ? '24' : '16',
+    scale: String(refraction),
     xChannelSelector: 'R',
     yChannelSelector: 'G'
   }))
@@ -64,8 +65,15 @@ function opticalLayer(element: HTMLElement, finish: GlassFinish) {
   const opaque = matchMedia(
     '(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)'
   )
+  const deform = (event: Event) => {
+    if (opaque.matches || document.documentElement.dataset.material === 'opaque') return
+    const compression = Math.max(-0.045, Math.min(0.1, Number((event as CustomEvent).detail) || 0))
+    lens.setAttribute('scale', String(refraction * (1 + compression * 5)))
+  }
+  element.addEventListener('glass-deform', deform)
   function update() {
     frame = 0
+    lens.setAttribute('scale', String(refraction))
     if (opaque.matches || document.documentElement.dataset.material === 'opaque') {
       map.removeAttribute('href')
       element.style.removeProperty('--glass-filter')
@@ -106,6 +114,7 @@ function opticalLayer(element: HTMLElement, finish: GlassFinish) {
     observer.disconnect()
     appearanceObserver.disconnect()
     opaque.removeEventListener('change', preferenceChanged)
+    element.removeEventListener('glass-deform', deform)
     cancelAnimationFrame(frame)
     svg.remove()
     element.style.removeProperty('--glass-filter')

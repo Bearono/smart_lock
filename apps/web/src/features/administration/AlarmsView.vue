@@ -45,7 +45,7 @@ function openDetail(item: Alarm) {
 }
 </script>
 <template>
-  <PageHeading title="异常提醒" description="查看报警记录并更新处理状态。">
+  <PageHeading title="异常提醒">
     <button class="button" :disabled="loading" @click="resource.load">刷新报警</button>
   </PageHeading>
   <div class="stack">

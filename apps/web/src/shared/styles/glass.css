@@ -1,6 +1,8 @@
 /* Optical layers are limited to navigation and transient controls. Content
    cards retain a high-opacity fill; camera pixels are never filtered. */
 [data-glass] {
+  -webkit-backdrop-filter: var(--glass-filter, var(--glass-blur));
+  backdrop-filter: var(--glass-filter, var(--glass-blur));
   box-shadow:
     inset 1px 1px 1px #ffffffde,
     inset -1px -1px 1px #ffffff7a,
@@ -31,12 +33,15 @@
 }
 .button,
 .icon-button,
+.table-action,
 .nav-link,
 .management-navigation a,
+.account-link,
 .auth-links button,
+.auth-links a,
 .tab {
   position: relative;
-  transform: scale(var(--press-scale, 1));
+  transform: scale(var(--press-width, 1), var(--press-scale, 1));
   transform-origin: center;
   -webkit-tap-highlight-color: transparent;
 }
@@ -44,15 +49,29 @@
    near the edge must still click the same control after its spring moves. */
 .button::before,
 .icon-button::before,
+.table-action::before,
 .nav-link::before,
 .management-navigation a::before,
+.account-link::before,
 .auth-links button::before,
+.auth-links a::before,
 .tab::before {
   content: '';
   position: absolute;
   inset: -1px;
   border-radius: inherit;
-  transform: scale(calc(1 / var(--press-scale, 1)));
+  transform: scale(calc(1 / var(--press-width, 1)), calc(1 / var(--press-scale, 1)));
+}
+.button--primary[data-glass] {
+  background: linear-gradient(160deg, #0969d5ed, #0056bff5);
+  border-color: #ffffff50;
+  box-shadow:
+    inset 0 1px 1px #ffffff80,
+    inset 0 -1px 1px #003d8a40,
+    0 4px 12px #004aa326;
+}
+.button--primary[data-glass]:hover {
+  background: var(--primary-hover);
 }
 [style*='--press-scale'] {
   will-change: transform;
@@ -88,6 +107,10 @@
   [data-glass] {
     background: var(--canvas) !important;
   }
+  .button--primary[data-glass] {
+    color: var(--primary);
+    border-color: currentColor;
+  }
 }
 :root[data-material='opaque'] [data-glass] {
   background: var(--surface);
@@ -96,6 +119,9 @@
 }
 :root[data-material='opaque'] [data-glass]::after {
   display: none;
+}
+:root[data-material='opaque'] .button--primary[data-glass] {
+  background: var(--primary);
 }
 .appearance-value {
   color: var(--primary);
@@ -129,6 +155,10 @@
     backdrop-filter: none !important;
     box-shadow: none !important;
   }
+  .button--primary[data-glass] {
+    color: var(--primary);
+    border-color: currentColor;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .loading-line::after {
@@ -138,9 +168,12 @@
   }
   .button,
   .icon-button,
+  .table-action,
   .nav-link,
   .management-navigation a,
+  .account-link,
   .auth-links button,
+  .auth-links a,
   .tab {
     transform: none !important;
     transition: none !important;

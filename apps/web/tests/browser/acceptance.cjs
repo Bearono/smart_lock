@@ -572,7 +572,7 @@ async function run() {
   devices[0].execution_mode = 'SIMULATED'
   commandConfirmed = true
   await page.goto(base + '/dashboard')
-  await page.getByText('模拟门锁 · 操作结果代表模拟服务中的锁状态。', { exact: true }).waitFor()
+  await page.getByText('模拟门锁', { exact: true }).waitFor()
   await page.getByRole('button', { name: '上锁', exact: true }).click()
   await page.getByText('模拟门锁已确认本次命令执行', { exact: true }).waitFor()
   const mobileResultOrder = await page.locator('.command-tray').evaluate((panel) => ({
@@ -580,7 +580,9 @@ async function run() {
       panel.getBoundingClientRect().bottom <=
       document.querySelector('.recent-activity').getBoundingClientRect().top,
     focused: document.activeElement === panel,
-    top: panel.getBoundingClientRect().top
+    top: panel.getBoundingClientRect().top,
+    bottom: panel.getBoundingClientRect().bottom,
+    navigationTop: document.querySelector('.home-navigation').getBoundingClientRect().top
   }))
   assert.equal(
     mobileResultOrder.beforeHistory,
@@ -589,8 +591,8 @@ async function run() {
   )
   assert.equal(mobileResultOrder.focused, true)
   assert.ok(
-    mobileResultOrder.top >= 0 && mobileResultOrder.top < 250,
-    'New command result is brought into view'
+    mobileResultOrder.top >= 0 && mobileResultOrder.bottom <= mobileResultOrder.navigationTop,
+    `New command result is fully visible above mobile navigation: ${JSON.stringify(mobileResultOrder)}`
   )
   await noOverflow(page, 'simulated lock mobile')
   await page.screenshot({ path: path.join(artifacts, 'simulated-lock-mobile.png'), fullPage: true })

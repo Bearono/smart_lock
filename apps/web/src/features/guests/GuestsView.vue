@@ -93,7 +93,7 @@ function askRevoke(pass: GuestPass) {
 }
 </script>
 <template>
-  <PageHeading title="访客" description="创建临时通行凭证，设置有效期和使用次数。">
+  <PageHeading title="访客">
     <button class="button" :disabled="loading" @click="resource.load">刷新</button>
     <button class="button button--primary" @click="openCreate">
       <AppIcon name="guests" :size="18" />
@@ -106,9 +106,6 @@ function askRevoke(pass: GuestPass) {
       <div class="panel-head">
         <div>
           <h3>我的访客凭证</h3>
-          <p class="subtext">
-            额度在验证并签发开门授权时扣减，不代表成功开门次数。时间由服务器提供。
-          </p>
         </div>
       </div>
       <div v-if="loading" class="loading-line" />

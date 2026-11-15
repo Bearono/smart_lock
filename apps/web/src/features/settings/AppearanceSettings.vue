@@ -12,7 +12,6 @@ const finish = computed(() =>
       <span class="appearance-value">{{ finish }}</span>
     </div>
     <div class="panel-body stack">
-      <p class="subtext">调整导航与控件的玻璃浓度，找到舒服、清晰的外观。</p>
       <div class="field">
         <label for="material-tint">玻璃浓度</label>
         <input
@@ -23,16 +22,12 @@ const finish = computed(() =>
           max="100"
           step="5"
           :aria-valuetext="`${finish}，${materialTint}%`"
-          aria-describedby="material-note"
         />
         <div class="appearance-scale" aria-hidden="true">
           <span>通透</span>
           <span>纯色</span>
         </div>
       </div>
-      <p id="material-note" class="subtext">
-        仅保存在此浏览器；系统的减少透明度与增强对比度设置优先。
-      </p>
     </div>
   </section>
 </template>

@@ -34,7 +34,6 @@ watch(
     <div class="panel-head">
       <div>
         <h3>最近动态</h3>
-        <p class="subtext">当前家门的操作记录</p>
       </div>
       <RouterLink
         :to="{ path: '/dashboard/records', query: { device_id: deviceId } }"
@@ -58,7 +57,6 @@ watch(
             {{ item.username || '未记录操作者' }} · {{ serverTime(item.timestamp) }}
           </p>
         </div>
-        <span class="recent-kind">操作审计</span>
       </div>
     </div>
     <div v-else-if="!loading && !error" class="recent-empty">

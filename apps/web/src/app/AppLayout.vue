@@ -155,7 +155,6 @@ function acknowledge() {
           </div>
           <div class="panel-body">
             <CommandStatus :command-id="command.id" @settled="session.settled" />
-            <p class="subtext">执行回执描述本次操作，设备状态以最近上报为准。</p>
             <button
               v-if="commandStatus === 'unknown'"
               class="table-action"

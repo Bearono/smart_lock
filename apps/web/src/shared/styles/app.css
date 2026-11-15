@@ -123,8 +123,7 @@ img {
   text-decoration: none;
   transition:
     background 0.18s,
-    box-shadow 0.18s,
-    transform 0.18s;
+    box-shadow 0.18s;
 }
 .button:hover {
   background: #ffffff;
@@ -204,9 +203,6 @@ img {
   justify-content: space-between;
   gap: 24px;
   margin-bottom: 26px;
-}
-.page-heading .subtext {
-  margin-top: 8px;
 }
 .heading-actions {
   display: flex;

@@ -100,7 +100,7 @@ function changeFilter() {
 }
 </script>
 <template>
-  <PageHeading title="成员与权限" description="审批注册申请，管理成员的设备权限。">
+  <PageHeading title="成员与权限">
     <button class="button" :disabled="loading" @click="users.load">刷新用户</button>
   </PageHeading>
   <div class="stack">
@@ -190,7 +190,6 @@ function changeFilter() {
           <div class="panel-head">
             <div>
               <h3>{{ selected.username }}</h3>
-              <p class="subtext">设备权限与认证限制</p>
             </div>
             <StatusBadge :tone="selected.status === 'approved' ? 'success' : 'neutral'">
               {{ labels[selected.status] }}
@@ -201,7 +200,6 @@ function changeFilter() {
               {{ grants.error.value }}
               <button class="table-action" @click="grants.load(selected.id)">重试</button>
             </InlineNotice>
-            <p class="subtext">每个设备独立生效。访问授权之后，用户仍需绑定设备认证。</p>
             <div v-if="grants.loading.value" class="loading-line" />
             <template v-if="!grants.loading.value && !grants.error.value">
               <EmptyState v-if="!grantDevices.length" title="暂无已上报或已授权设备" icon="doors" />

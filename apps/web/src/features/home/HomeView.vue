@@ -92,14 +92,13 @@ watch(
   <section class="home-welcome">
     <div>
       <h1>我的家</h1>
-      <p class="subtext">家门状态、门前画面与通行动态。</p>
     </div>
     <div class="button-group welcome-actions">
       <button v-if="devices.length > 1" class="button" @click="showList = !showList">
         <AppIcon name="doors" />
         {{ showList ? '返回门详情' : '设备列表' }}
       </button>
-      <button class="button" :disabled="refreshing" @click="session.refresh">
+      <button v-glass="'clear'" class="button" :disabled="refreshing" @click="session.refresh">
         <AppIcon name="refresh" :size="17" />
         {{ refreshing ? '刷新中' : '刷新状态' }}
       </button>
@@ -189,6 +188,7 @@ watch(
             </div>
             <div class="button-group">
               <button
+                v-glass="'clear'"
                 class="button button--small"
                 :disabled="snapshotBusy || !!cameraHint"
                 :aria-describedby="cameraHint ? 'camera-availability' : undefined"
@@ -214,8 +214,7 @@ watch(
           <div v-if="snapshotBusy" class="loading-line" role="status" aria-label="正在获取快照" />
           <PrivateSnapshot :path="latestPath" />
           <p class="snapshot-caption subtext">
-            {{ receivedAt ? `服务器接收时间：${serverTime(receivedAt)}` : '尚无快照接收时间' }} ·
-            非实时视频
+            快照 · {{ receivedAt ? serverTime(receivedAt) : '尚未拍摄' }}
           </p>
           <div v-if="latestPath" class="panel-body" style="padding-top: 12px; padding-bottom: 12px">
             <button class="table-action" @click="clearTarget = latestPath">删除此快照</button>
@@ -238,20 +237,15 @@ watch(
         <section class="panel door-controls">
           <div class="panel-head">
             <h3>门锁</h3>
-            <AppIcon name="shield" :size="18" />
+            <StatusBadge v-if="selected.execution_mode === 'SIMULATED'">模拟门锁</StatusBadge>
+            <AppIcon v-else name="shield" :size="18" />
           </div>
           <div class="panel-body">
-            <p class="subtext">门锁最近状态</p>
-            <InlineNotice v-if="selected.execution_mode === 'SIMULATED'">
-              模拟门锁 · 操作结果代表模拟服务中的锁状态。
-            </InlineNotice>
             <div class="lock-hero" :data-state="selected.reported_status">
               <span class="lock-emblem"><AppIcon name="lock" :size="34" /></span>
               <div>
                 <strong>{{ lockState(selected.reported_status) }}</strong>
-                <span class="subtext">
-                  {{ selected.is_online ? '依据设备上报' : '设备离线，此为历史上报' }}
-                </span>
+                <span v-if="!selected.is_online" class="subtext">离线 · 上次状态</span>
               </div>
             </div>
             <div class="stack stack--small">
@@ -265,10 +259,7 @@ watch(
                 {{ authError }}
                 <button class="table-action" @click="session.refreshAuth">重试</button>
               </InlineNotice>
-              <p v-else-if="!authStatus" class="subtext">正在检查认证准备情况…</p>
-              <p v-else class="subtext">
-                {{ bound ? '设备认证已绑定，开门仍需身份验证。' : '请先完成该设备的认证绑定。' }}
-              </p>
+              <p v-else-if="!authStatus" class="subtext" role="status">正在检查认证…</p>
               <RouterLink
                 v-if="authStatus && !bound"
                 class="button button--primary"
@@ -279,6 +270,7 @@ watch(
               </RouterLink>
               <button
                 v-else
+                v-glass="'clear'"
                 class="button button--primary button--block"
                 :disabled="taskActive || !bound || !!cameraHint || actuatorUnavailable"
                 :aria-describedby="
@@ -299,11 +291,7 @@ watch(
                 <AppIcon name="lock" :size="17" />
                 上锁
               </button>
-              <p v-if="taskActive" class="subtext">
-                当前任务进行中，请先完成验证或确认原命令结果。
-              </p>
-              <p v-else-if="!selected.is_online" class="subtext">设备离线，连接恢复后可操作。</p>
-              <RouterLink class="subtext" to="/dashboard/security">认证与设置 →</RouterLink>
+              <p v-if="!selected.is_online" class="subtext">设备离线，连接恢复后可操作。</p>
             </div>
           </div>
         </section>
@@ -353,7 +341,6 @@ watch(
                 :disabled="busy"
               />
             </div>
-            <p v-else class="subtext">确认后将提交开门命令，执行结果会独立显示。</p>
             <div class="button-group">
               <button class="button button--primary" :disabled="busy">
                 {{ busy ? '正在提交…' : '确认并提交开门' }}
@@ -367,7 +354,6 @@ watch(
             <button class="button button--primary" :disabled="busy" @click="session.confirm">
               {{ busy ? '恢复中…' : '恢复原命令结果' }}
             </button>
-            <span class="subtext">不会重新签发访客或认证凭证。</span>
           </div>
           <button
             v-if="phase === 'failed'"

@@ -39,6 +39,15 @@ async function run() {
       }))
     assert.match(optical.filter, /url\(/)
     assert.ok(optical.image.startsWith('data:image/png;'))
+    const loginLenses = await page.locator('filter[id^="smartlock-lens-"]').count()
+    const refraction = () =>
+      button.evaluate((element) => {
+        const id = element.style.getPropertyValue('--glass-filter').match(/#([^\"]+)/)[1]
+        return Number(
+          document.getElementById(id).querySelector('feDisplacementMap').getAttribute('scale')
+        )
+      })
+    const restingRefraction = await refraction()
     const box = await button.boundingBox()
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.down()
@@ -49,6 +58,16 @@ async function run() {
             .querySelector('button[type="submit"], .form-section .button')
             ?.style.getPropertyValue('--press-scale')
         ) < 0.98
+    )
+    assert.ok(
+      (await refraction()) > restingRefraction,
+      'press changes the live background refraction'
+    )
+    assert.ok(
+      await button.evaluate(
+        (element) => Number(element.style.getPropertyValue('--press-width')) > 1
+      ),
+      'compression expands the control horizontally'
     )
     const samples = page.evaluate(
       () =>
@@ -76,6 +95,7 @@ async function run() {
       () =>
         !document.querySelector('.form-section .button')?.style.getPropertyValue('--press-scale')
     )
+    assert.equal(await refraction(), restingRefraction, 'refraction returns to rest')
     await page
       .evaluate(
         () =>
@@ -121,7 +141,7 @@ async function run() {
       assert.equal(await page.locator('filter[id^="smartlock-lens-"]').count(), 0)
       await page.goto(base)
       await button.waitFor()
-      assert.equal(await page.locator('filter[id^="smartlock-lens-"]').count(), 1)
+      assert.equal(await page.locator('filter[id^="smartlock-lens-"]').count(), loginLenses)
     }
     const register = page.getByRole('button', { name: '创建账户', exact: true })
     const edge = await register.boundingBox()
@@ -159,6 +179,7 @@ async function run() {
       checks: [
         'live SVG backdrop lens',
         'pressed scale',
+        'horizontal deformation and dynamic refraction',
         'spring overshoot and settling',
         'no idle animation loop',
         'reduced motion',

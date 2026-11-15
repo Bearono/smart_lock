@@ -117,7 +117,7 @@ function closePassword() {
 }
 </script>
 <template>
-  <PageHeading title="账户与安全" description="管理设备绑定、身份验证器和密码。">
+  <PageHeading title="账户与安全">
     <button class="button" @click="session.refreshAuth">刷新认证信息</button>
   </PageHeading>
   <div class="stack">
@@ -148,7 +148,6 @@ function closePassword() {
         <div class="panel-head">
           <div>
             <h3>设备认证绑定</h3>
-            <p class="subtext">管理员授予访问权限后，还需为设备建立认证绑定。</p>
           </div>
         </div>
         <div class="panel-body stack">
@@ -247,14 +246,10 @@ function closePassword() {
               {{ authStatus ? (authStatus.totp_bound ? '已绑定' : '未绑定') : '待确认' }}
             </StatusBadge>
           </div>
-          <div class="panel-body">
-            <p class="subtext">登录和敏感操作时，需要输入身份验证器中的六位验证码。</p>
-          </div>
         </section>
         <section class="panel">
           <div class="panel-head"><h3>账户密码</h3></div>
           <div class="panel-body stack">
-            <p class="subtext">修改密码将使现有会话失效，并撤销尚未完成的开门和访客授权。</p>
             <button class="button" :disabled="taskActive" @click="openPassword">修改密码</button>
           </div>
         </section>
@@ -262,9 +257,7 @@ function closePassword() {
         <section class="panel">
           <div class="panel-head"><h3>人脸验证</h3></div>
           <div class="panel-body">
-            <p class="subtext">
-              开门时使用设备摄像头验证人脸。登记或更新人脸资料，请联系设备管理员。
-            </p>
+            <p class="subtext">登记或更新人脸，请联系管理员。</p>
           </div>
         </section>
       </div>

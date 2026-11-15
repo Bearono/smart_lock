@@ -4,10 +4,10 @@ const storageKey = 'smartlock.material-tint'
 function readTint() {
   try {
     const saved = localStorage.getItem(storageKey)
-    const value = saved === null ? 55 : Number(saved)
-    return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 55
+    const value = saved === null ? 35 : Number(saved)
+    return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 35
   } catch {
-    return 55
+    return 35
   }
 }
 
@@ -17,11 +17,11 @@ export function installAppearance() {
   const minimum =
     Number.parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue('--material-min-opacity')
-    ) || 0.65
+    ) || 0.6
   const stop = watch(
     materialTint,
     (value) => {
-      const tint = Math.min(100, Math.max(0, Number.isFinite(value) ? value : 55))
+      const tint = Math.min(100, Math.max(0, Number.isFinite(value) ? value : 35))
       document.documentElement.style.setProperty(
         '--material-opacity',
         String(minimum + (tint / 100) * (1 - minimum))

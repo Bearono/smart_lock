@@ -13,7 +13,7 @@ function refresh() {
 onMounted(refresh)
 </script>
 <template>
-  <PageHeading title="安全证据" description="查看协议配置、验证记录和软件检查报告。">
+  <PageHeading title="安全证据">
     <button class="button" :disabled="loading" @click="refresh">刷新</button>
   </PageHeading>
   <InlineNotice v-if="error" tone="warning">{{ error }}</InlineNotice>
@@ -37,11 +37,8 @@ onMounted(refresh)
         <p v-for="check in data.verification.checks" :key="check.name">
           {{ check.name }} · {{ check.exit_code === 0 ? '通过' : '未通过' }}
         </p>
-        <p class="subtext">报告说明生成时的源码与环境，不代替当前设备状态或实机验收。</p>
       </div>
-      <p v-else class="panel-body subtext">
-        尚未提供离线验收报告。由维护人员运行 deploy/verify.py 后加载，网页不执行测试命令。
-      </p>
+      <p v-else class="panel-body subtext">暂无软件检查报告</p>
     </section>
     <section class="panel">
       <div class="panel-head">
@@ -69,13 +66,12 @@ onMounted(refresh)
       </div>
     </section>
     <section class="panel">
-      <div class="panel-head"><h3>数据库记录数量</h3></div>
+      <div class="panel-head"><h3>累计数据库记录</h3></div>
       <div class="panel-body">
         <p>
           会话 {{ data.storage.sessions }} · 防重放凭据 {{ data.storage.receipts }} · 命令
           {{ data.storage.commands }}
         </p>
-        <p class="subtext">数量包含历史或过期记录，不能解读为在线设备数、攻击数或安全评分。</p>
       </div>
     </section>
     <InlineNotice tone="warning">

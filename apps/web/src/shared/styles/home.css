@@ -14,10 +14,6 @@
   letter-spacing: -1.4px;
   overflow-wrap: anywhere;
 }
-.home-welcome .subtext {
-  margin-top: 9px;
-  font-size: 14px;
-}
 .welcome-actions {
   flex-shrink: 0;
 }
@@ -150,10 +146,6 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.door-controls .panel-body > .subtext {
-  text-align: center;
-  font-size: 12px;
-}
 .lock-hero {
   width: 100%;
   min-height: 206px;
@@ -231,12 +223,6 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.recent-kind {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 11px;
-  flex-shrink: 0;
-}
 .recent-empty {
   display: flex;
   align-items: center;
@@ -254,9 +240,6 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 24px;
     align-items: center;
-  }
-  .door-controls .panel-body > .subtext {
-    display: none;
   }
   .lock-hero {
     margin: 12px auto;
@@ -310,9 +293,6 @@
   }
   .recent-row {
     padding: 15px 18px;
-  }
-  .recent-kind {
-    display: none;
   }
 }
 

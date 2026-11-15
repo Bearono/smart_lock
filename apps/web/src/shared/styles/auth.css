@@ -77,10 +77,11 @@
   text-align: center;
   line-height: 1.2;
   overflow-wrap: anywhere;
+  margin-bottom: 28px;
 }
 .auth-card > .auth-intro {
   text-align: center;
-  margin: 10px 0 24px;
+  margin: -16px 0 24px;
 }
 .auth-card .field input {
   background: #ffffffd9;
@@ -170,14 +171,4 @@
 .guest-card h1 {
   font-size: 28px;
   margin-bottom: 10px;
-}
-.guest-card > .subtext {
-  margin-bottom: 26px;
-}
-.guest-footnote {
-  max-width: 440px;
-  text-align: center;
-  margin-top: 24px;
-  font-size: 12px;
-  color: var(--muted);
 }

@@ -14,7 +14,7 @@
             : labels[status]
         }}
       </p>
-      <span v-if="executionMode === 'SIMULATED'">当前回执来自门锁模拟服务。</span>
+      <span v-if="executionMode === 'SIMULATED' && status !== 'executed'">模拟门锁</span>
       <span v-if="failureMessage">{{ failureMessage }}</span>
       <small class="mono">命令 ID：{{ commandId }}</small>
       <button v-if="status === 'unknown'" class="button button--small" type="button" @click="start">
@@ -96,7 +96,7 @@ export default {
 .command-status {
   margin: 0 0 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 18px;
   overflow: hidden;
   background: #f7f9fc;
 }
@@ -133,8 +133,6 @@ export default {
 }
 small {
   color: var(--muted);
-}
-small {
   overflow-wrap: anywhere;
 }
 </style>

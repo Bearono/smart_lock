@@ -32,7 +32,7 @@ watch(
     <EmptyState
       v-else
       :title="loading ? '正在加载快照' : error ? '快照加载失败' : '暂无可用快照'"
-      :description="error || (loading ? '正在获取授权图片' : '设备上传图片后将在此显示')"
+      :description="error"
       icon="camera"
     >
       <button v-if="error" class="button button--small" @click="load(path)">重新加载</button>

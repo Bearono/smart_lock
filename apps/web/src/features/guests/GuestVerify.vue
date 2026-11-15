@@ -56,13 +56,6 @@ onScopeDispose(flow.dispose)
     <main class="panel guest-card">
       <div class="empty-icon"><AppIcon name="guests" :size="26" /></div>
       <h1>{{ commandId ? '查看执行结果' : '访客通行' }}</h1>
-      <p class="subtext">
-        {{
-          commandId
-            ? '凭证已验证，开门命令已提交。请查看设备执行回执。'
-            : '输入邀请人提供的访客凭证，验证后申请开门。'
-        }}
-      </p>
       <div class="steps">
         <div class="step step--active">01 · 验证凭证</div>
         <div class="step" :class="{ 'step--active': !!commandId }">02 · 执行确认</div>
@@ -119,7 +112,6 @@ onScopeDispose(flow.dispose)
         <RouterLink to="/">返回账户登录</RouterLink>
       </div>
     </main>
-    <p class="guest-footnote">访问范围与有效期由邀请人授权</p>
     <AppDialog v-if="restartOpen" title="再次验证前请核查" @close="restartOpen = false">
       <div class="stack">
         <p>

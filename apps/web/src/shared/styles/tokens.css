@@ -19,10 +19,10 @@
     radial-gradient(ellipse at 90% 0%, #e5ebf6 0%, transparent 48%),
     radial-gradient(ellipse at 0% 85%, #f4e9dd 0%, transparent 48%),
     linear-gradient(145deg, #f5f6fa, #f6f5f2);
-  --material-min-opacity: 0.65;
-  --nav: rgb(255 255 255 / var(--material-opacity, 0.8425));
+  --material-min-opacity: 0.6;
+  --nav: rgb(255 255 255 / var(--material-opacity, 0.74));
   --glass-surface: #ffffffb8;
-  --glass-toolbar: rgb(255 255 255 / var(--material-opacity, 0.8425));
+  --glass-toolbar: rgb(255 255 255 / var(--material-opacity, 0.74));
   --glass-border: #ffffffe6;
   --glass-blur: blur(24px) saturate(155%);
   --glass-shadow:

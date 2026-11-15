@@ -2,7 +2,7 @@ import { advanceSpring, springSettled } from './spring.js'
 
 type Spring = { position: number; velocity: number; target: number }
 const controls =
-  '.button, .icon-button, .nav-link, .management-navigation a, .auth-links button, .tab'
+  '.button, .icon-button, .table-action, .nav-link, .management-navigation a, .account-link, .auth-links button, .auth-links a, .tab'
 
 export function installFeedback() {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)')
@@ -16,6 +16,19 @@ export function installFeedback() {
   let frame = 0,
     previous = 0
 
+  function renderPress(element: HTMLElement, position: number) {
+    const scale = Math.max(0.9, Math.min(1.045, position))
+    element.style.setProperty('--press-scale', String(scale))
+    element.style.setProperty('--press-width', String(1 + (1 - scale) * 0.22))
+    element
+      .closest('[data-glass]')
+      ?.dispatchEvent(new CustomEvent('glass-deform', { detail: 1 - scale }))
+  }
+  function clearPress(element: HTMLElement) {
+    element.style.removeProperty('--press-scale')
+    element.style.removeProperty('--press-width')
+    element.closest('[data-glass]')?.dispatchEvent(new CustomEvent('glass-deform', { detail: 0 }))
+  }
   function tick(now: number) {
     const elapsed = previous ? (now - previous) / 1000 : 1 / 60
     previous = now
@@ -25,17 +38,14 @@ export function installFeedback() {
     }
     for (const [element, spring] of springs) {
       if (!element.isConnected || reduced.matches) {
-        element.style.removeProperty('--press-scale')
+        clearPress(element)
         springs.delete(element)
         continue
       }
       Object.assign(spring, advanceSpring(spring, spring.target, elapsed))
-      element.style.setProperty(
-        '--press-scale',
-        String(Math.max(0.9, Math.min(1.045, spring.position)))
-      )
+      renderPress(element, spring.position)
       if (springSettled(spring, spring.target)) {
-        if (spring.target === 1) element.style.removeProperty('--press-scale')
+        if (spring.target === 1) clearPress(element)
         springs.delete(element)
       }
     }
@@ -51,6 +61,11 @@ export function installFeedback() {
     }
     spring.target = target
     spring.velocity += impulse
+    // Show compression even when a tap ends before the next animation frame.
+    if (target < 1) {
+      spring.position = Math.min(spring.position, 0.972)
+      renderPress(element, spring.position)
+    }
     springs.set(element, spring)
     if (!frame) frame = requestAnimationFrame(tick)
   }
@@ -94,8 +109,8 @@ export function installFeedback() {
     clearGlows()
   }
   function reset() {
-    for (const element of springs.keys()) element.style.removeProperty('--press-scale')
-    for (const element of pointers.values()) element.style.removeProperty('--press-scale')
+    for (const element of new Set([...springs.keys(), ...pointers.values(), ...heldKeys.values()]))
+      clearPress(element)
     springs.clear()
     pointers.clear()
     heldKeys.clear()
@@ -111,7 +126,7 @@ export function installFeedback() {
       const element = control(event)
       if (element) {
         pointers.set(event.pointerId, element)
-        animate(element, 0.945, -0.6)
+        animate(element, 0.925, -0.8)
       }
       glow(event)
     },
@@ -134,7 +149,7 @@ export function installFeedback() {
       const element = control(event)
       if (element) {
         heldKeys.set(event.key, element)
-        animate(element, 0.945, -0.6)
+        animate(element, 0.925, -0.8)
       }
     },
     options
