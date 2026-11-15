@@ -2,7 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -108,6 +108,30 @@ class AudioIOTests(unittest.TestCase):
         self.event_patch = patch('threading.Event', ImmediateEvent)
         self.event_patch.start()
         self.addCleanup(self.event_patch.stop)
+
+    def test_windows_com_is_balanced_on_success_and_stream_failure(self):
+        for status in (0, 1):
+            ole = Mock()
+            ole.CoInitializeEx.return_value = status
+            with patch.object(audio_io.sys, 'platform', 'win32'), patch('ctypes.WinDLL', return_value=ole, create=True):
+                with self.assertRaisesRegex(RuntimeError, 'fixture'):
+                    with audio_io._audio_thread():
+                        raise RuntimeError('fixture')
+            ole.CoInitializeEx.assert_called_once_with(None, 0)
+            ole.CoUninitialize.assert_called_once_with()
+
+    def test_windows_com_respects_existing_sta_and_rejects_initialization_errors(self):
+        ole = Mock()
+        with patch.object(audio_io.sys, 'platform', 'win32'), patch('ctypes.WinDLL', return_value=ole, create=True):
+            ole.CoInitializeEx.return_value = -2147417850  # RPC_E_CHANGED_MODE
+            with audio_io._audio_thread():
+                pass
+            ole.CoUninitialize.assert_not_called()
+            ole.CoInitializeEx.return_value = -2147024882  # E_OUTOFMEMORY
+            with self.assertRaisesRegex(RuntimeError, 'COM initialization failed'):
+                with audio_io._audio_thread():
+                    self.fail('Cannot open audio after failed initialization')
+            ole.CoUninitialize.assert_not_called()
 
     def test_capture_exact_frame_count_and_closes_stream(self):
         backend = FakeBackend()

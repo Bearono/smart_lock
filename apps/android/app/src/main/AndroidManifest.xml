@@ -12,6 +12,7 @@
         <provider android:name=".ExportProvider" android:authorities="org.smartlock.course.exports"
             android:exported="false" android:grantUriPermissions="true" />
         <activity android:name=".MainActivity" android:exported="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

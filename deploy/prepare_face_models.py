@@ -1,4 +1,4 @@
-"""Install pinned public OpenCV models explicitly; device requests never download models."""
+"""Install pinned identity/PAD detector models; device requests never download models."""
 import argparse
 import hashlib
 import os
@@ -8,12 +8,14 @@ import tempfile
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'apps/device/cv/code'))
-from model_manifest import MODELS, verify_models
+from model_manifest import MODELS, PAD_DETECTOR_MODELS, verify_model_files
+
+ALL_MODELS = {**MODELS, **PAD_DETECTOR_MODELS}
 
 
 def prepare(directory):
     directory.mkdir(parents=True, exist_ok=True)
-    for name, (url, digest) in MODELS.items():
+    for name, (url, digest) in ALL_MODELS.items():
         target = directory / name
         if target.exists() or target.is_symlink():
             with target.open('rb') as source:
@@ -40,7 +42,7 @@ def prepare(directory):
         finally:
             if temporary is not None and temporary.exists():
                 temporary.unlink()
-    verify_models(directory)
+    verify_model_files(directory, ALL_MODELS)
 
 
 if __name__ == '__main__':
@@ -52,7 +54,7 @@ if __name__ == '__main__':
         if args.download:
             prepare(args.directory)
         else:
-            verify_models(args.directory)
-        print('Both pinned face models verified.')
+            verify_model_files(args.directory, ALL_MODELS)
+        print('Pinned identity and PAD detector models verified.')
     except (ValueError, OSError) as exc:
         parser.exit(1, f'Model preparation failed: {exc}\n')

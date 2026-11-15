@@ -13,7 +13,8 @@
     "format:check": "prettier --check src tests *.mjs *.html *.json README.md",
     "test:browser": "node tests/browser/acceptance.cjs",
     "test:integration": "node tests/browser/integration.cjs",
-    "test:material": "node tests/browser/material.cjs"
+    "test:material": "node tests/browser/material.cjs",
+    "test:device-console": "node tests/browser/device-console.cjs"
   },
   "dependencies": {
     "axios": "^1.13.2",

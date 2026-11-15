@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>SmartLock · 相机联调</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <span class="eyebrow">SMARTLOCK / 本机测试工具</span>
+          <h1>拍好了，我们再继续。</h1>
+          <p>
+            由你决定拍摄时机。按下按钮，倒计时结束后拍一张，再查看检测结果。
+          </p>
+        </div>
+        <span class="badge" id="connection">正在连接</span>
+      </header>
+      <div class="workspace">
+        <section class="camera-card">
+          <div class="preview">
+            <img id="photo" alt="本次测试拍摄的照片" hidden />
+            <div id="placeholder">
+              <span class="camera-icon">◎</span><strong>等待你按快门</strong>
+              <p>固定好树莓派摄像头，让脸位于镜头中央。</p>
+            </div>
+            <div class="countdown" id="countdown" hidden>
+              <b id="count">3</b><span>看向镜头，马上拍摄</span>
+            </div>
+          </div>
+          <div class="receipt">
+            <span class="dot" id="dot"></span>
+            <div>
+              <strong id="status">尚未开始拍摄</strong>
+              <p id="receipt">没有自动拍照。你点击后才会采集并保存测试照片。</p>
+            </div>
+          </div>
+        </section>
+        <aside class="controls">
+          <h2>这次怎么拍</h2>
+          <label for="sample">测试场景</label
+          ><select id="sample">
+            <option value="live_front">真人 · 正面</option>
+            <option value="live_angle">真人 · 轻微侧脸</option>
+            <option value="live_dim">真人 · 较暗光线</option>
+            <option value="screen_photo">手机展示本人照片</option>
+            <option value="print_photo">打印本人照片</option>
+            <option value="empty">空画面</option>
+            <option value="multiple">多人画面</option>
+          </select>
+          <label for="delay">倒计时</label
+          ><select id="delay">
+            <option value="0">立即拍摄</option>
+            <option value="3" selected>3 秒</option>
+            <option value="5">5 秒</option>
+            <option value="10">10 秒</option>
+          </select>
+          <button id="shoot" disabled>开始拍摄</button
+          ><button id="cancel" class="secondary" hidden>取消这次拍摄</button>
+          <p class="tip">
+            点击后看向摄像头即可。照片拍好会立即显示；检测期间不用继续保持姿势。
+          </p>
+          <div id="results" class="results" aria-live="polite">
+            <h3>本次检测</h3>
+            <p>拍摄后显示人脸数量、匹配分数和防伪分数。</p>
+          </div>
+          <p class="scope">
+            仅用于联调采样，不会开门，也不修改人脸模板。检测的是保存后的照片，不代替完整的登录与开门验收。
+          </p>
+        </aside>
+      </div>
+      <section class="history">
+        <div class="history-head">
+          <h2>测试记录</h2>
+          <span id="total">0 次</span>
+        </div>
+        <div id="trials"><p class="empty">第一张照片会从这里开始记录。</p></div>
+      </section>
+      <div class="sr-only" role="status" aria-live="polite" id="announce"></div>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

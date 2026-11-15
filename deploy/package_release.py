@@ -36,6 +36,7 @@ TREES = {
     '.github/workflows': {'.yml', '.yaml'},
     'apps/android/app/src': {'.java', '.xml'},
     'apps/android/tests': {'.java'},
+    'deploy/device_console': {'.html', '.css', '.js'},
 }
 
 

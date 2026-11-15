@@ -1,5 +1,6 @@
 """Explicit bounded audio I/O and calibrated acoustic-path experiments."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import math
@@ -45,11 +46,36 @@ def sound_backend():
     return sounddevice
 
 
+@contextmanager
+def _audio_thread():
+    """WASAPI requires COM on the calling thread, including GUI worker threads."""
+    if sys.platform != 'win32':
+        yield
+        return
+    import ctypes
+    ole = ctypes.WinDLL('ole32')
+    ole.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    ole.CoInitializeEx.restype = ctypes.c_int32
+    ole.CoUninitialize.argtypes = []
+    ole.CoUninitialize.restype = None
+    result = ole.CoInitializeEx(None, 0) & 0xffffffff  # COINIT_MULTITHREADED
+    # An existing STA belongs to its caller; leave its apartment and reference count alone.
+    if result not in (0, 1, 0x80010106):  # S_OK, S_FALSE, RPC_E_CHANGED_MODE
+        raise RuntimeError(f'Audio thread COM initialization failed: 0x{result:08x}')
+    try:
+        yield
+    finally:
+        if result in (0, 1):
+            ole.CoUninitialize()
+
+
+@_audio_thread()
 def list_devices(backend=None):
     sd = backend if backend is not None else sound_backend()
     return [dict(dict(value), index=i) for i, value in enumerate(sd.query_devices())]
 
 
+@_audio_thread()
 def record(seconds, device, backend=None):
     if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 0.1 <= seconds <= 10:
         raise ValueError('Recording duration must be between 0.1 and 10 seconds')
@@ -96,6 +122,7 @@ def record(seconds, device, backend=None):
     return wav_bytes(samples)
 
 
+@_audio_thread()
 def play(recording, device, gain=0.2, backend=None):
     if device is None:
         raise ValueError('Select an explicit output device')

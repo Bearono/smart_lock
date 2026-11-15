@@ -487,6 +487,12 @@ public final class MainActivity extends Activity {
         for (byte value : hash) result.append(String.format(Locale.ROOT, "%02x", value & 255));
         return result.toString();
     }
+    @Override public void onConfigurationChanged(android.content.res.Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        // Resizing keeps the active experiment and WebView in memory; no keys enter saved state.
+        content.requestLayout();
+        if (web != null) web.invalidate();
+    }
     @Override protected void onStop() { stopAudio(); if (web != null) web.onPause(); super.onStop(); }
     @Override protected void onResume() { super.onResume(); if (web != null) web.onResume(); }
     @Override protected void onDestroy() {
