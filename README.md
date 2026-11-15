@@ -1,62 +1,65 @@
-# SmartLock
+# 安居 · SmartLock
 
-面向家庭的智能门锁与摄像头课程项目：Vue 3 网页、Flask 业务后端、Android 客户端、共享设备安全协议、Raspberry Pi 4B / 2GB 摄像头与人脸认证，包含音频传输和密码分发实验。实体锁与真实声学链路属于交付范围，尚待硬件验收。
+[![CI](https://github.com/Bearono/smart_lock/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/Bearono/smart_lock/actions/workflows/verify.yml)
 
-软件具备安全认证、访客授权、私有画面、设备指令与失败回执闭环；当前硬件只有 Pi 和 OV5647，没有实体开门能力。人脸防伪模型已接入，独立真人和攻击效果验收尚待完成。不能将本项目称为已认证的工业门禁产品。
+智能门锁与门前摄像头系统。使用 Vue 网页和 Android 客户端访问同一业务后端，由树莓派完成实拍、人脸与活体检查，结合动态验证码授权开门；独立 ARM64 服务模拟锁舌执行并返回可追溯回执。
 
-## 阅读入口
+## 交付范围
 
-- [文档目录](docs/README.md)：当前资料和历史档案。
-- [本轮安全与功能审查](docs/SECURITY_REVIEW_20261018.md)：修复、验证和未完成事项。
-- [安全基线](docs/SECURITY_BASELINE.md)、[工程结构](docs/ENGINEERING.md)、[架构](docs/COURSE_ARCHITECTURE.md)。
-- [部署与升级](deploy/README.md)、[接口文档](API_DOCUMENTATION.md)。
-- [课程交付](docs/COURSE_FINAL_DELIVERY.md)、[人脸防伪与音频](docs/PAD_AUDIO_ACCEPTANCE.md)、[密码实验](docs/COURSE_CRYPTO_LAB.md)。
+当前交付包含网页、Android App、后端、树莓派摄像头服务和 ARM64 模拟门锁。手机端与网页端的真实人脸验证、验证码、开锁及上锁流程均已完成联调，详情见[验收范围](docs/acceptance.md)。
 
-## 首次部署
+音频实验、实体锁具、整机重启自动恢复及长时间稳定性验收不在本次约定范围。模拟执行在界面和 API 中明确标识，不代表实体锁动作。课程实验与历史资料独立存放，不参与日常开门。
 
-需要 Docker Desktop（Linux 容器）。仓库根目录执行：
+## 系统组成
+
+```mermaid
+flowchart LR
+  Web[Vue 网页] -->|HTTPS| API[Flask 业务后端]
+  Android[Android 客户端] -->|HTTPS| API
+  API --> Data[(SQLite / 私有媒体)]
+  API <-->|设备认证与加密消息| Pi[树莓派摄像头 / 人脸与活体]
+  Pi -->|签名命令与反馈| Lock[ARM64 模拟门锁]
+```
+
+| 路径 | 职责 |
+| --- | --- |
+| [apps/api](apps/api/README.md) | 账户、权限、MFA、私有媒体、命令与审计 |
+| [apps/web](apps/web/README.md) | 网页界面、业务交互、响应式设计 |
+| [apps/android](apps/android/README.md) | 手机客户端与独立 APK 构建 |
+| [apps/device](apps/device/README.md) | 树莓派相机、识别、心跳与执行器适配 |
+| [apps/lock_sim](apps/lock_sim/README.md) | 独立 ARM64 模拟执行服务 |
+| [packages/smartlock_protocol](packages/smartlock_protocol/README.md) | 双端共享协议与密码实现 |
+| [deploy](deploy/README.md) | 镜像、TLS、初始化、维护与验收工具 |
+| [docs](docs/README.md) | 架构、开发规范、接口、安全与验收说明 |
+| [examples](examples/README.md) | 不进入应用构建的实验和历史示例 |
+| workspace.toml / manage.py | 工作区清单与跨平台命令入口 |
+
+## 快速启动
+
+需要 Python 3.12、Docker Desktop（Linux 容器）。首次运行前按[开发指南](docs/development.md)安装锁定依赖，从仓库根目录执行：
 
 ```sh
 python deploy/init_secrets.py
 python deploy/init_local_tls.py
-docker compose -f compose.yaml -f compose.tls.yaml build
-docker compose -f compose.yaml -f compose.tls.yaml up -d --wait
+docker compose -f compose.yaml -f compose.tls.yaml up -d --build --wait backend web tls
 docker compose exec backend flask --app run create-admin --username operator
 ```
 
-密码在交互窗口输入，无默认账户或默认密码。浏览器正式认证使用 https://localhost:8443，并先按部署手册信任自己生成的 CA；不要跳过证书警告。http://localhost:8080 是仅回环的开发预览入口，不应作为公开登录入口。
+管理员密码交互输入，无默认账号或密码。浏览器访问 **https://localhost:8443**，按[部署手册](deploy/README.md)配置本机课程 CA，首次登录绑定身份验证器。
 
-首次登录登记 TOTP。网页会话使用 HttpOnly Cookie、CSRF 校验和服务端退出撤销；不要复制 JWT 到浏览器存储。新密码使用 scrypt，生产设备使用 v3 双向密钥确认和 AES-GCM。私有快照和 MFA 凭据落盘加密，密钥与数据库需要分别备份和保护。
+以上启动业务服务；完整演示还需要配置树莓派设备及[模拟门锁](apps/lock_sim/README.md)。手机通过 USB 转发连接本机服务的操作见 [Android 指南](apps/android/README.md)。运行环境、证书及设备身份由部署者提供，源码不携带个人模板、账号数据库或私钥。
 
-## 现有安装升级
-
-此次包含数据迁移，**先停止写入并备份数据库、媒体与对应密钥**。同一密钥下执行 init-db 后再启动新后端和前端。旧明文凭据与媒体会认证加密；回滚须恢复旧数据和旧代码，不能只回滚镜像。完整流程见部署手册。
-
-不运行 docker compose down -v。当前 Windows 容器保持 restart=no，Docker 和隧道由用户手动管理；Pi 用户服务自启是独立选项。
-
-## 工程与验证
-
-| 位置 | 职责 |
-| --- | --- |
-| apps/api/app | 认证、授权、设备控制、媒体与运维服务 |
-| apps/web/src | 按业务域组织的网页和共享组件 |
-| apps/android | Android 应用、JVM 测试与独立 SDK 构建入口 |
-| packages/smartlock_protocol | 双端协议及隔离课程实验 |
-| apps/device | 原生摄像头、人脸/PAD、设备工作线程与执行器接口 |
-| deploy | 镜像、TLS、迁移、备份和验证工具 |
-| docs | 当前资料；archive 保存历史证据 |
-| examples/legacy_crypto | 禁止用于真实数据的历史加密示例 |
-| examples/legacy_cv | 历史独立实验工具，不属于生产部署 |
-| workspace.toml、manage.py | 组件清单与跨平台工作区入口 |
-| .local | 保留的本机旧依赖和实验状态，Git 与镜像忽略 |
-
-Python 3.12 后端按 requirements.txt 与 requirements.lock 安装，随后安装 packages/smartlock_protocol；前端使用 Node 24 与 npm ci。Pi 原生依赖使用 requirements.pi.txt，Picamera2/OpenCV 等来自匹配版本的系统包。设备镜像单独构建，不能用 x86 测试替代 ARM 实测。
+## 开发与检查
 
 ```sh
 python manage.py check
 python manage.py verify --output releases/verification
 python manage.py web-dev --port 5173
-python deploy/audit_dependencies.py --output releases/dependency-audit.json
 ```
 
-自动检查还需前端 test:browser、隔离后端 test:integration 和设备镜像 smoke/unittest；详见工程文档。源码包排除秘密、数据库、个人照片、模板、模型和本机依赖。main 为当前交付与默认开发入口，旧版本保留在 Git 历史中；历史 Git 中的秘密仍须视为已经暴露，不能重新使用。
+CI 分别检查仓库、后端、前端、Android、课程实验、容器及 amd64/arm64 设备镜像。源码发布包由清单生成，校验与验收源码匹配；构建产物、依赖、原始照片与运行数据不提交 Git。
+
+- [架构与模块边界](docs/architecture.md) · [开发与测试](docs/development.md)
+- [接口参考](docs/reference/api.md) · [安全基线](docs/security.md)
+- [贡献约定](CONTRIBUTING.md) · [安全问题反馈](SECURITY.md)
+- [历史资料](docs/archive/README.md)：仅供追溯，不能代表当前状态。

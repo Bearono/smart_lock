@@ -31,4 +31,5 @@ entrypoint = "pyproject.toml"
 
 [boundaries]
 historical = ["examples/legacy_crypto", "examples/legacy_cv", "docs/archive"]
+laboratories = ["examples/android_audio", "examples/audio_lab"]
 local_only = [".local", "outputs", "releases", "instance", "deploy/secrets", "deploy/tls"]

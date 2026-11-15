@@ -6,7 +6,7 @@ from flask_jwt_extended import jwt_required
 
 from app import db
 from app.models import Device
-from .secure_payload import decrypt_secure_payload
+from app.secure_payload import decrypt_secure_payload
 from app.permissions import current_user, permitted_devices, require_device
 
 

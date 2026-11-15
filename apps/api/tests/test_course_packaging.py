@@ -10,20 +10,29 @@ SPEC.loader.exec_module(PACKAGE)
 
 
 class CoursePackagingTests(unittest.TestCase):
-    def test_android_and_audio_launch_sources_are_included(self):
+    def test_components_and_rebuild_resources_are_included(self):
         names = {path.relative_to(ROOT).as_posix() for path in PACKAGE.collect_files()}
-        for required in ('Start-CourseAudio.cmd', 'deploy/audio_console.py', 'deploy/audio_peer.py',
+        for required in ('examples/audio_lab/Start-CourseAudio.cmd', 'deploy/audio_console.py', 'deploy/audio_peer.py',
                          'apps/android/build_sdk.py', 'apps/android/app/src/main/AndroidManifest.xml',
-                         'apps/android/app/src/main/java/org/smartlock/course/D2dCrypto.java',
-                         'apps/android/app/src/main/java/org/smartlock/course/OfdmCodec.java',
-                         'apps/android/app/src/main/res/xml/network_security_config.xml'):
+                         'apps/android/app/src/main/java/org/smartlock/course/OriginPolicy.java',
+                         'apps/android/app/src/main/res/xml/network_security_config.xml',
+                         'apps/web/public/favicon.ico', 'apps/web/.prettierignore',
+                         'apps/device/requirements.txt', 'apps/device/cv/code/gateway/requirements.txt',
+                         'docs/reference/api.md', 'CONTRIBUTING.md', 'SECURITY.md',
+                         'examples/android_audio/test_jvm.py'):
             self.assertIn(required, names)
+        self.assertFalse(any(name.startswith('examples/legacy_') for name in names))
+        self.assertNotIn('apps/android/app/src/main/java/org/smartlock/course/OfdmCodec.java', names)
 
     def test_local_toolchains_keys_and_build_outputs_are_excluded(self):
         for path in PACKAGE.collect_files():
             relative = path.relative_to(ROOT)
             self.assertFalse({'.tools', '.gradle', 'build', 'instance', '.venv-course'} & set(relative.parts))
             self.assertNotIn(path.suffix, {'.apk', '.keystore', '.jks', '.key', '.db', '.sqlite3'})
+
+    def test_all_release_inputs_including_documentation_have_hashes(self):
+        names = {path.relative_to(ROOT).as_posix() for path in PACKAGE.collect_files()}
+        self.assertEqual(names, set(PACKAGE.source_hashes()))
 
 
 if __name__ == '__main__':

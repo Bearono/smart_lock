@@ -1,7 +1,7 @@
 # 性能与端到端验证
 
 这里的脚本只用于隔离测试环境，会创建测试账号、绑定设备并改变测试设备的目标状态。
-历史 `results/` 来自旧版认证流程，不能用于证明当前版本通过测试或衡量当前性能。
+历史结果已迁入 `docs/archive/performance/`；新结果仍写入被 Git 忽略的 `results/`。历史数据不证明当前性能。下列命令以 `apps/api` 为工作目录。
 
 ## 准备
 
@@ -61,7 +61,7 @@ python -B -m unittest discover -s tests -p 'test_*.py' -v
 
 回归测试独立创建临时 SQLite，不依赖测试账号或运行中的后端。前端在前端目录运行 `npm test`。
 
-CV 基准在 `paspberry_pi/cv/code` 执行：
+CV 基准在 `apps/device/cv/code` 执行：
 
 ```bash
 python bench_recognize.py --source image --path test.jpg --frames 100

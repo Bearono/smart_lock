@@ -1,6 +1,6 @@
 # 综合设计架构与威胁模型
 
-本文件描述当前软件设计，硬件接入与 Pi 资源测量按 `HOME_DELIVERY.md` 的边界验收。需求编号为本项目自定义编号，不是学校评分表。
+本文件描述五个组件和共享协议库的设计。实际交付边界见 [验收范围](acceptance.md)；需求编号为项目自定义编号。
 
 ## 需求与实现映射
 
@@ -20,14 +20,15 @@
 
 ```mermaid
 flowchart LR
-  B[浏览器：不可信输入] -->|HTTPS + HttpOnly Cookie/CSRF| T[TLS / Nginx]
+  B[网页 / Android WebView] -->|HTTPS + HttpOnly Cookie/CSRF| T[TLS / Nginx]
   T --> F[Flask：鉴权与业务]
   F --> D[(SQLite：权限、会话、重放、命令)]
   F --> M[授权私有媒体]
   P[Pi：独立设备口令] -->|HTTPS + v3 AEAD| T
   F -->|已签名设备指令| P
   P --> C[摄像头与串行推理]
-  P --> A[执行驱动与可信状态反馈]
+  P -->|独立签名命令 / HTTPS| A[ARM64 模拟执行服务]
+  A --> S[(锁状态 / 命令去重)]
   O[维护人员] -->|离线生成脱敏报告| E[报告文件]
   E --> F
 ```
@@ -114,4 +115,4 @@ stateDiagram-v2
 
 ## 2026-10-18 认证与存储修订
 
-当前浏览器会话、密码哈希、OTP 共享消费、凭据及私有媒体落盘保护以 [安全基线](SECURITY_BASELINE.md) 为准；浏览器不再保存 JWT。退出撤销在数据库持久化，隐私数据不随源码交付。[工程结构](ENGINEERING.md) 记录模块职责及遗留边界。
+当前浏览器会话、密码哈希、OTP 共享消费、凭据及私有媒体落盘保护以 [安全基线](security.md) 为准；浏览器不再保存 JWT。退出撤销在数据库持久化，隐私数据不随源码交付。[工程结构](development.md) 记录模块职责及遗留边界。

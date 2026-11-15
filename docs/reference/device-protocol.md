@@ -6,7 +6,11 @@
 
 `apps/device/command_executor.py` 的 `Actuator` 约定两个方法：`set_state(target)` 执行动作，`read_state()` 返回实测的 `LOCKED`、`UNLOCKED` 或 `UNKNOWN`。驱动必须限制 I/O 时间，支持心跳与执行线程同时读取，并在自身内部协调读写。动作返回不代表成功，只有随后读取与目标一致且未过期，才生成 executed 回执。
 
-当前启动配置使用 `UnavailableActuator`：读取为 UNKNOWN，动作明确失败。没有配置实物驱动时，网页命令会显示失败，不会假报已开锁。未来驱动在 `gunicorn.conf.py` 的初始化位置接入；当前软件验收只注入合成测试驱动，不访问 GPIO。
+未配置执行器时使用 `UnavailableActuator`：读取为 UNKNOWN，动作明确失败。当前演示显式配置 `RemoteSimulatedActuator`，将原始命令 ID 与到期时间送到独立 ARM64 服务；服务通过独立签名认证并持久去重。网页明确显示模拟执行，不访问 GPIO。
+
+模拟配置为 `SMART_LOCK_ACTUATOR=remote-simulator`、`SMART_LOCK_ALLOW_SIMULATED_ACTUATOR=true`，并提供 `SMART_LOCK_SIMULATOR_URL` 和独立的 `SMART_LOCK_SIMULATOR_SECRET_FILE`。HTTPS 必须使用受信 CA 校验，不能忽略证书或跟随重定向。参见 [模拟器启动说明](../../apps/lock_sim/README.md)。
+
+回执区分 `execution_mode=SIMULATED/PHYSICAL/UNKNOWN`。成功命令的 `execution_confirmed` 不等于实体确认；只有 PHYSICAL 模式才可置 `hardware_confirmed`，模拟模式使用 `simulation_confirmed`。已经接受的回执不能被后续请求改写。
 
 失败回执使用受限的 failure_reason：ACTUATOR_UNAVAILABLE（未接入锁具）、FEEDBACK_MISMATCH（反馈不一致）、ACTUATION_FAILED（动作异常）、COMMAND_INTERRUPTED（执行中断）。设备日志持久化原因并随加密回执发送；后台兼容升级保存该字段，命令查询向原有授权者返回原因。成功回执不能含失败原因，已经记录的原因不能改写。历史回执没有原因时仍显示通用失败，不猜测或修改历史结果。
 

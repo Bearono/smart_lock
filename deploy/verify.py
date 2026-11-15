@@ -21,6 +21,8 @@ def verify(output):
     frontend = ROOT / 'apps/web'
     checks = [
         ('repository', [sys.executable, 'deploy/check_repository.py'], ROOT),
+        ('protocol-wheel', [sys.executable, 'deploy/verify_protocol_package.py',
+                            '--output', str(output / 'protocol-wheel')], ROOT),
         ('backend', [sys.executable, '-B', '-m', 'unittest', 'discover', '-s',
                      'apps/api/tests', '-p', 'test_*.py', '-v'], ROOT),
         ('frontend-tests', [npm, 'test'], frontend),

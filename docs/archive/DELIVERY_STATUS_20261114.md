@@ -11,7 +11,7 @@
 | 实机链路 | 双向 SSH 隧道已接通。设备软件就绪接口 200，后端收到新心跳和指令轮询。无签名拍照请求返回 401 |
 | 现场硬件 | 系统相机枚举返回 `No cameras available!`。心跳为摄像头 `OFFLINE`、锁状态 `UNKNOWN`、执行器 `UNAVAILABLE` |
 
-访问 <https://localhost:8443/> 可使用已保存的账户和身份验证器进行网页验收。恢复服务和隧道的命令见 [部署手册](../deploy/README.md)。新前端镜像为 `smart-lock-web:delivery-20261114`，旧前端镜像为 `smart-lock-web:delivery-20261031`，需要时重新标记旧镜像为 `smart-lock-web:local`，用现有 Compose 配置仅重建 web 容器。
+访问 <https://localhost:8443/> 可使用已保存的账户和身份验证器进行网页验收。恢复服务和隧道的命令见 [部署手册](../../deploy/README.md)。新前端镜像为 `smart-lock-web:delivery-20261114`，旧前端镜像为 `smart-lock-web:delivery-20261031`，需要时重新标记旧镜像为 `smart-lock-web:local`，用现有 Compose 配置仅重建 web 容器。
 
 现场先正常关机并拔掉电源，重新扣紧 Pi 板端与摄像头端的 CSI 排线，然后开机。树莓派的相机自动探测已经启用。开机后运行 `rpicam-hello --list-cameras` 确认识别 OV5647。相机在线后，使用网页的“拍照”入口核对新快照时间、颜色和私有访问，再记录连续采集、网络重连和人脸防伪结果。实体锁、Android 和声学硬件按既定范围处理。 [树莓派相机安装说明](https://www.raspberrypi.com/documentation/accessories/camera-software.html)
 

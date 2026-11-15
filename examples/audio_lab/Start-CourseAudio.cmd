@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 if not exist ".venv-course\Scripts\pythonw.exe" (
   echo The project Python environment is missing: .venv-course
   pause
@@ -11,5 +11,5 @@ if not exist "deploy\audio_console.py" (
   pause
   exit /b 1
 )
-start "" "%~dp0.venv-course\Scripts\pythonw.exe" "%~dp0deploy\audio_console.py"
+start "" ".venv-course\Scripts\pythonw.exe" "deploy\audio_console.py"
 exit /b 0

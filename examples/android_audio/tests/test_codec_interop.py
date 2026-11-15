@@ -14,7 +14,7 @@ from smartlock_protocol.audio import encode, decode, wav_bytes, read_wav, _encod
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--java', default='java')
-    parser.add_argument('--classes', default=str(ROOT / 'apps/android/app/build/jvm-test'))
+    parser.add_argument('--classes', default=str(ROOT / 'examples/android_audio/build/jvm-test'))
     args = parser.parse_args()
     count = 0
     with TemporaryDirectory() as directory:

@@ -44,4 +44,4 @@ PYTHONPATH=packages/smartlock_protocol .venv-pi/bin/python deploy/protocol_bench
 
 每次使用新文件名；现有 `protocol_benchmark.py` 会覆盖同名输出。算法报告包含 XXTEA/RSA、签名/DH、分发或协议的功能/CPU 测量，不能当成网络、人脸或开锁时延。Windows 执行所得架构与数据仍然是 Windows 证据。不要将 Python XXTEA 与原生 AES-GCM 的耗时直接当作同语言算法优劣排名。
 
-后续恢复 CSI 后，应另测采集、识别/PAD、上传和认证全链路。真实音频传输需麦克风/扬声器及独立试次；物理声学指纹还需注册、匹配和跨设备负样本。资源采证不补足这些硬件条件。现有协议和执行限制见 [设备执行说明](DEVICE_EXECUTION.md)，密码实验口径见 [课程密码实验](COURSE_CRYPTO_LAB.md)。
+后续恢复 CSI 后，应另测采集、识别/PAD、上传和认证全链路。真实音频传输需麦克风/扬声器及独立试次；物理声学指纹还需注册、匹配和跨设备负样本。资源采证不补足这些硬件条件。现有协议和执行限制见 [设备执行说明](../reference/device-protocol.md)，密码实验口径见 [课程密码实验](COURSE_CRYPTO_LAB.md)。

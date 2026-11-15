@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from app.security_store import load_session, claim_message, SecurePayloadError
-from .security_protocol import (MAX_CLOCK_SKEW_SECONDS, PROTOCOL_VERSION, SecureEnvelope,
+from smartlock_protocol.v2 import (MAX_CLOCK_SKEW_SECONDS, PROTOCOL_VERSION, SecureEnvelope,
                                 b64d, canonical_json, constant_time_equal, hmac_sha256)
 
 

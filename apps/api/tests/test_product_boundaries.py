@@ -23,11 +23,11 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app, db, bcrypt
 from app.models import DeviceGrant, DeviceProvisioning, MediaAsset, MFACredential, User
-from app.routes.security_protocol import Spake2Client, SecureEnvelope
+from smartlock_protocol.v2 import Spake2Client, SecureEnvelope
 from app.rate_limit import admit
 from app.models import DoorCommand
 from app.door_commands import enqueue
-from app.routes.security_protocol import SecureResponse
+from smartlock_protocol.v2 import SecureResponse
 
 
 class ProductBoundaryTests(unittest.TestCase):

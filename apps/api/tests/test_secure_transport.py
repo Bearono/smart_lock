@@ -19,7 +19,7 @@ ROOT = BACKEND.parents[1]
 sys.path.insert(0, str(BACKEND))
 from app import create_app, db
 from app.models import DeviceSecuritySession, SecureMessageReceipt
-from app.routes.security_protocol import SecureEnvelope, Spake2Client, b64e, canonical_json, hmac_sha256
+from smartlock_protocol.v2 import SecureEnvelope, Spake2Client, b64e, canonical_json, hmac_sha256
 
 
 def load_device_transport():
@@ -182,7 +182,7 @@ with app.app_context():
             self.assertEqual(self.post(self.packet(), other).status_code, 200)
         self.assertEqual(self.post({'enc_key': 'x', 'payload': 'x'}).status_code, 401)
         other = self.new_app(ALLOW_LEGACY_SECURE_UPLOAD=True).test_client()
-        with patch('app.routes.secure_payload._decrypt_legacy', side_effect=AssertionError('no downgrade')):
+        with patch('app.secure_payload._decrypt_legacy', side_effect=AssertionError('no downgrade')):
             self.assertEqual(self.post({'header': {'version': 'unknown'}, 'enc_key': 'x', 'payload': 'x'}, other).status_code, 401)
 
     def test_device_really_rehandshakes_after_server_loses_session(self):

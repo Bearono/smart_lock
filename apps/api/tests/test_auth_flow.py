@@ -18,8 +18,8 @@ from flask_jwt_extended import create_access_token
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app, db, bcrypt
 from app.models import AuthSession, Device, DeviceGrant, FaceRecognitionLog, GuestPass, MFACredential, UnlockToken, User
-from app.routes.mfa import DeviceUnavailable
-from app.routes.security_protocol import SecureEnvelope, Spake2Client
+from app.face_challenges import DeviceUnavailable
+from smartlock_protocol.v2 import SecureEnvelope, Spake2Client
 
 
 class AuthFlowTests(unittest.TestCase):
@@ -52,9 +52,9 @@ class AuthFlowTests(unittest.TestCase):
             db.session.commit()
             self.headers = {'Authorization': 'Bearer ' + create_access_token(
                 identity='alice', additional_claims={'mfa': True})}
-        self.dispatch = patch('app.routes.mfa._dispatch_face_challenge', side_effect=DeviceUnavailable('offline'))
+        self.dispatch = patch('app.routes.mfa.door.dispatch_face_challenge', side_effect=DeviceUnavailable('offline'))
         self.dispatch.start()
-        self.policy = patch('app.routes.mfa.evaluate_mfa_policy', return_value=['device', 'face'])
+        self.policy = patch('app.routes.mfa.door.evaluate_mfa_policy', return_value=['device', 'face'])
         self.policy.start()
 
     def tearDown(self):
@@ -351,7 +351,7 @@ class AuthFlowTests(unittest.TestCase):
         self.app.config['DEVICE_DISPATCH_REQUIRED'] = True
         self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_a'}).status_code, 502)
         self.app.config['DEVICE_DISPATCH_REQUIRED'] = False
-        with patch('app.routes.mfa._dispatch_face_challenge', side_effect=RuntimeError('face rejected')):
+        with patch('app.routes.mfa.door.dispatch_face_challenge', side_effect=RuntimeError('face rejected')):
             self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_a'}).status_code, 502)
 
     def test_callback_rejection_preserves_one_evidence_record_and_snapshot(self):
@@ -369,7 +369,7 @@ class AuthFlowTests(unittest.TestCase):
             db.session.commit()
             raise RuntimeError('Device returned HTTP 401: Face verification failed')
 
-        with patch('app.routes.mfa._dispatch_face_challenge', side_effect=reject):
+        with patch('app.routes.mfa.door.dispatch_face_challenge', side_effect=reject):
             response = self.post('/api/mfa/open-door/request', {'device_id': 'door_a'})
         self.assertEqual(response.status_code, 401, response.json)
         self.assertEqual(response.json['code'], 'FACE_VERIFICATION_FAILED')
@@ -530,7 +530,7 @@ class AuthFlowTests(unittest.TestCase):
             self.assertTrue(UnlockToken.query.one().is_used)
 
     def test_night_policy_persists_until_confirmation(self):
-        with patch('app.routes.mfa.evaluate_mfa_policy', return_value=['device', 'face', 'totp']):
+        with patch('app.routes.mfa.door.evaluate_mfa_policy', return_value=['device', 'face', 'totp']):
             challenge = self.verified()
         body = {'request_id': challenge['request_id']}
         self.assertEqual(self.post('/api/mfa/open-door/confirm', body).status_code, 400)

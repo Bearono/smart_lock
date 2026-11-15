@@ -1,0 +1,100 @@
+[
+  {
+    "endpoint": "mfa.bind_totp",
+    "rule": "/api/mfa/bind/totp",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.verify_totp",
+    "rule": "/api/mfa/verify/totp",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.mfa_status",
+    "rule": "/api/mfa/status",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "endpoint": "mfa.unbind_totp",
+    "rule": "/api/mfa/unbind/totp",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.bind_device",
+    "rule": "/api/mfa/bind/device",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.unbind_device",
+    "rule": "/api/mfa/unbind/device",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.admin_unlock_device",
+    "rule": "/api/mfa/admin/device/unlock",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.open_door_request",
+    "rule": "/api/mfa/open-door/request",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.receive_face_result",
+    "rule": "/api/mfa/open-door/face-result",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.open_door_confirm",
+    "rule": "/api/mfa/open-door/confirm",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.create_guest_pass",
+    "rule": "/api/mfa/guest/create",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.verify_guest_pass",
+    "rule": "/api/mfa/guest/verify",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "endpoint": "mfa.list_guest_passes",
+    "rule": "/api/mfa/guest/list",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "endpoint": "mfa.revoke_guest_pass",
+    "rule": "/api/mfa/guest/revoke/<int:pass_id>",
+    "methods": [
+      "POST"
+    ]
+  }
+]

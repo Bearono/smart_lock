@@ -56,7 +56,7 @@ def save_session(session, *, protocol_version='SL-SEC-v2', confirmed=True, trans
 
 
 def load_session(session_id, *, allow_pending=False):
-    from app.routes.security_protocol import SecuritySession
+    from smartlock_protocol.v2 import SecuritySession
     with Session(db.engine) as store:
         record = store.get(DeviceSecuritySession, session_id)
         if not record or record.expires_at <= time.time():

@@ -1,4 +1,5 @@
 """Shared device authorization and transaction helpers for the door flow."""
+from datetime import datetime
 from sqlalchemy import func
 from flask import current_app
 from app import db
@@ -44,3 +45,18 @@ def reset_failures(user_id, device_id):
     MFACredential.query.filter_by(
         user_id=user_id, credential_type='device', device_id=device_id, is_active=True,
     ).update({MFACredential.failed_attempts: 0}, synchronize_session=False)
+
+
+def evaluate_mfa_policy(user_id):
+    """
+    场景因子评估：动态决定当前请求需要哪些验证因子。
+    返回包含所需因子标识符的列表，例: ['device', 'face', 'totp']
+    """
+    required_factors = ['device', 'face']
+    current_hour = datetime.now().hour
+    is_deep_night = current_hour >= 22 or current_hour < 6
+
+    if is_deep_night or current_app.config['DEPLOYMENT_ENV'] == 'production':
+        required_factors.append('totp')
+
+    return required_factors

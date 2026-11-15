@@ -8,7 +8,7 @@ import sys
 import pyotp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from app.routes.security_protocol import SecureEnvelope, Spake2Client
+from smartlock_protocol.v2 import SecureEnvelope, Spake2Client
 
 
 def test_totp_secret(username):

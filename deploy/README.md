@@ -1,19 +1,19 @@
-> 当前文档入口：[文档目录](../docs/README.md)。2026-10-18 升级会改变凭据和媒体存储格式，先阅读下方升级说明。
+> 当前文档入口：[文档目录](../docs/README.md)。交付边界以 [验收范围](../docs/acceptance.md) 为准。已有数据升级前先备份。
 
 # 部署、维护与验收
 
 ## 交付边界
 
-本版本交付软件与 Docker 配置，默认单站点、小规模 SQLite 部署。Pi 4B 2 GB 优先仅运行设备容器；后端可在另一台 Docker 主机部署。如果共机运行，必须实测内存、推理延时、并发和温度后再确定容量。没有以 Windows 或 x86 容器的运行结果推断 ARM 硬件性能。
+当前部署为单站点 SQLite：电脑运行后端、网页、TLS 与独立 ARM64 模拟锁；Pi 4B 2 GB 原生运行 CSI 摄像头与识别服务。Android 通过 HTTPS 访问同一业务后端。设备容器保留为独立部署选项，不能把容器测试当作 CSI 实测。
 
-上线前必须完成 GPIO/锁舌反馈/门磁驱动、断电保护、紧急出口、活体与误识率测试、现场网络/TLS、长期稳定性和备份恢复验收。此处是尚待验收的明确边界，不是已经具备的能力。
+本次使用模拟锁，音频、实体锁具、整机自动恢复和长时间稳定性验收已明确排除。若以后接入实体锁，需要另行完成驱动、反馈、电气与现场安全验收，不能沿用模拟执行结论。
 
 ## 初始化与启动
 
 ```sh
 python deploy/init_secrets.py
-docker compose build
-docker compose up -d --wait
+python deploy/init_local_tls.py
+docker compose -f compose.yaml -f compose.tls.yaml up -d --build --wait backend web tls
 docker compose exec backend flask --app run create-admin --username operator
 ```
 
@@ -113,7 +113,7 @@ npm run format:check
 npm run build
 ```
 
-现场验收至少覆盖：
+未来扩大到实体部署时，另行安排以下验收；这些项目不改变已确认的本次交付范围：
 
 | 验收项目 | 必须证明的行为 |
 | --- | --- |
@@ -177,7 +177,7 @@ docker compose exec backend flask --app run recover-account --username alice --r
 
 部署顺序依据 [Docker Compose 官方说明](https://docs.docker.com/compose/how-tos/startup-order/)；Flask 使用独立生产 WSGI 服务，参见 [Flask 部署文档](https://flask.palletsprojects.com/en/stable/deploying/)。Vue 迁移依据 [官方迁移说明](https://router.vuejs.org/guide/migration/)。
 
-设备命令执行、持久化状态卷和驱动接入契约见 [设备软件执行说明](../docs/DEVICE_EXECUTION.md)。默认没有实物驱动时报告执行失败；命令接收和回执重试已由软件执行器负责。
+设备命令执行、持久化状态卷和驱动接入契约见 [设备软件执行说明](../docs/reference/device-protocol.md)。默认没有实物驱动时报告执行失败；命令接收和回执重试已由软件执行器负责。
 
 本机 8080 被占用时可设置 `SMART_LOCK_WEB_PORT=18080` 再启动；监听地址仍为 127.0.0.1。使用 `docker compose -p smart-lock-acceptance` 可为验收隔离网络和数据卷。不要把验收账号用于实际部署。
 
@@ -263,7 +263,7 @@ python deploy/pi_tunnel.py --host PI_IP --user taylor --identity PATH_TO_PRIVATE
 python deploy/export_pad.py --cache releases/pad-upstream --output deploy/device/models
 ```
 
-仅按固定来源与校验值下载；拒绝覆盖已有输出。向 Pi 的 `SMART_LOCK_MODELS_DIR` 复制生成的 `minifasnet-v2.onnx`、`MINIFASNET-LICENSE` 与 `pad-export.json`，保持许可证随模型交付。Pi 使用已有 OpenCV，不安装 PyTorch。模型不包含个人模板；模型/许可证来源与认证阈值说明见 [防伪与音频验收](../docs/PAD_AUDIO_ACCEPTANCE.md)。缺失或校验失败时就绪 503，不提供生产绕过开关。
+仅按固定来源与校验值下载；拒绝覆盖已有输出。向 Pi 的 `SMART_LOCK_MODELS_DIR` 复制生成的 `minifasnet-v2.onnx`、`MINIFASNET-LICENSE` 与 `pad-export.json`，保持许可证随模型交付。Pi 使用已有 OpenCV，不安装 PyTorch。模型不包含个人模板；模型/许可证来源与认证阈值说明见 [防伪与音频验收](../docs/archive/PAD_AUDIO_ACCEPTANCE.md)。缺失或校验失败时就绪 503，不提供生产绕过开关。
 
 音频软件实验额外依赖共享协议包的 `audio` 可选依赖；完整测试环境需安装 `pip install './packages/smartlock_protocol[audio]'`。运行 `python deploy/audio_lab.py --output releases/audio-lab.json` 只做软件回环，不启动声卡。实时声学传输与硬件指纹仍需真实录音数据。
 

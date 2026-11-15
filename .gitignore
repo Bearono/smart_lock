@@ -39,3 +39,8 @@ releases/
 *.egg-info/
 # Local TLS keys and certificates
 deploy/tls/
+/apps/api/tests/perf/results/
+*.apk
+*.jks
+*.keystore
+*.whl

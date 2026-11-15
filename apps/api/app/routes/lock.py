@@ -7,12 +7,12 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from app import db
 from app.models import AccessLog, Device, UnlockToken, User, GuestPass
 from app.door_auth import device_binding
-from .secure_payload import decrypt_secure_payload
+from app.secure_payload import decrypt_secure_payload
 from app.permissions import require_device, current_user
 from app.door_commands import acknowledge, enqueue, refresh, current as current_command
 from app.models import DoorCommand
 from app.security_store import load_session
-from .security_protocol import SecureResponse
+from smartlock_protocol.v2 import SecureResponse
 from app.validation import text_field
 
 lock_bp = Blueprint('lock', __name__)

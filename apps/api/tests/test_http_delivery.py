@@ -20,7 +20,7 @@ from werkzeug.serving import make_server, WSGIRequestHandler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app, db
-from app.routes.security_protocol import SecureEnvelope, SecureResponse, Spake2Client
+from smartlock_protocol.v2 import SecureEnvelope, SecureResponse, Spake2Client
 from smartlock_protocol.v3 import Client as Spake2Client, Envelope as SecureEnvelope
 import time
 

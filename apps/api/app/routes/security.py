@@ -10,7 +10,7 @@ from app.security_store import save_session, load_session, SecurePayloadError
 from app.provisioning import device_password, device_credentials, validate_device_id
 from smartlock_protocol.v3 import VERSION, transcript, derive_session_key, proof, verify_proof
 
-from .security_protocol import (
+from smartlock_protocol.v2 import (
     PROTOCOL_VERSION,
     SPAKE2_BACKEND_ID,
     SecuritySession,

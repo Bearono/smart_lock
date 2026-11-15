@@ -1,4 +1,4 @@
-"""Compile and run protocol, URL, PNG and capture-boundary unit tests without Android hardware."""
+"""Compile and run the door client's origin and inline-image policy tests."""
 import argparse
 import os
 from pathlib import Path
@@ -21,14 +21,14 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     main = ROOT / 'app/src/main/java/org/smartlock/course'
     tests = ROOT / 'app/src/test/java/org/smartlock/course'
-    pure = ['OriginPolicy', 'WaveFile', 'OfdmCodec', 'RobustOfdmCodec', 'RecordingBudget']
-    cases = ['OriginPolicyTest', 'OfdmCodecTest', 'RecordingBudgetTest']
+    pure = ['OriginPolicy']
+    cases = ['OriginPolicyTest']
     classpath = os.pathsep.join(str(jar) for jar in jars)
     suffix = '.exe' if os.name == 'nt' else ''
     subprocess.run([str(args.jdk / ('bin/javac' + suffix)), '--release', '17', '-encoding', 'UTF-8',
                     '-cp', classpath, '-d', str(output),
                     *[str(main / f'{name}.java') for name in pure],
-                    *[str(tests / f'{name}.java') for name in cases], str(ROOT / 'tests/CodecInterop.java')], check=True)
+                    *[str(tests / f'{name}.java') for name in cases]], check=True)
     subprocess.run([str(args.jdk / ('bin/java' + suffix)), '-cp', str(output) + os.pathsep + classpath,
                     'org.junit.runner.JUnitCore', *['org.smartlock.course.' + case for case in cases]], check=True)
 

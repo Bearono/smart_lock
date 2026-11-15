@@ -2,6 +2,21 @@
 
 本目录用于追溯设计决定和当时的实验；其中未完成事项与测试数量可能已经变化。请从 [当前文档入口](../README.md) 开始阅读。
 
+## 近期阶段资料
+
+- [2026-11-14 运行记录](DELIVERY_STATUS_20261114.md)
+- [2026-10-31 交付记录](DELIVERY_STATUS_20261031.md)
+- [旧版课程交付说明](COURSE_FINAL_DELIVERY.md)
+- [旧版设备验收清单](DEVICE_ACCEPTANCE.md)
+- [旧版用户验收清单](USER_ACCEPTANCE_20261028.md)
+- [安全审查记录](SECURITY_REVIEW_20261018.md)
+- [设计计划](COURSE_PROJECT_DESIGN_PLAN.md)
+- [历史音频与 PAD 计划](PAD_AUDIO_ACCEPTANCE.md)
+
+原 `apps/api/tests/perf/results` 中的性能报告已归档到本目录的 `performance`，不再与测试源码混放。二进制历史报告不进入默认源码包。历史内容保留原结论，当前是否完成及是否属于范围请以当前验收说明为准。
+
+## 早期资料
+
 - [COURSE_FINAL_DELIVERY_20261011](COURSE_FINAL_DELIVERY_20261011.md)
 - [API_DOCUMENTATION_20261011](API_DOCUMENTATION_20261011.md)
 - [DELIVERY_PLAN](DELIVERY_PLAN.md)

@@ -10,7 +10,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 FILES = (
     '.gitignore', '.gitattributes', '.editorconfig', 'workspace.toml', 'manage.py',
-    'README.md', 'API_DOCUMENTATION.md', 'compose.yaml', 'compose.device.yaml', 'compose.tls.yaml', '.dockerignore',
+    'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'compose.yaml', 'compose.device.yaml', 'compose.tls.yaml', '.dockerignore',
     'apps/api/config.py', 'apps/api/run.py',
     'apps/api/requirements.txt', 'apps/api/requirements.lock',
     'apps/web/package.json', 'apps/web/package-lock.json',
@@ -18,26 +18,32 @@ FILES = (
     'apps/web/eslint.config.mjs', 'apps/web/README.md',
     'apps/web/tsconfig.json',
     'apps/web/.prettierrc.json',
+    'apps/web/.prettierignore', 'apps/web/.gitignore',
     'compose.device.tls.yaml', 'apps/device/requirements.pi.txt',
     'packages/smartlock_protocol/pyproject.toml',
-    'Start-CourseAudio.cmd',
+    'examples/README.md',
     'apps/android/.gitignore', 'apps/android/settings.gradle', 'apps/android/build.gradle',
     'apps/android/gradle.properties', 'apps/android/app/build.gradle',
     'apps/android/build_sdk.py', 'apps/android/test_jvm.py', 'apps/android/README.md',
     'compose.lock-sim.yaml', 'apps/lock_sim/requirements.txt',
+    'apps/api/README.md', 'apps/device/README.md', 'apps/device/requirements.txt',
+    'apps/device/cv/code/gateway/requirements.txt', 'apps/lock_sim/README.md',
+    'packages/smartlock_protocol/README.md',
 )
 TREES = {
     'apps/api/app': {'.py'},
-    'apps/api/tests': {'.py'},
+    'apps/api/tests': {'.py', '.md', '.sh', '.ps1', '.json'},
     'apps/web/src': {'.js', '.ts', '.vue', '.css', '.webp'},
+    'apps/web/public': {'.ico', '.svg', '.webp'},
     'packages/smartlock_protocol/smartlock_protocol': {'.py'},
     'apps/device/tests': {'.py'},
     'apps/lock_sim': {'.py'},
     'apps/web/tests': {'.cjs'},
-    'docs': {'.md'},
-    '.github/workflows': {'.yml', '.yaml'},
+    'docs': {'.md', '.mmd'},
+    '.github': {'.yml', '.yaml', '.md'},
     'apps/android/app/src': {'.java', '.xml'},
-    'apps/android/tests': {'.java', '.py'},
+    'examples/android_audio': {'.java', '.py', '.md'},
+    'examples/audio_lab': {'.cmd', '.md'},
     'deploy/device_console': {'.html', '.css', '.js'},
 }
 
@@ -46,7 +52,8 @@ def collect_files():
     files = {ROOT / name for name in FILES}
     for directory, extensions in TREES.items():
         files.update(path for path in (ROOT / directory).rglob('*')
-                     if path.is_file() and path.suffix in extensions)
+                     if path.is_file() and path.suffix in extensions
+                     and not {'build', '__pycache__', 'results'} & set(path.relative_to(ROOT / directory).parts))
     for directory in ('apps/device', 'apps/device/cv/code', 'apps/device/cv/code/gateway'):
         files.update((ROOT / directory).glob('*.py'))
     files.update(path for path in (ROOT / 'deploy').iterdir()
@@ -61,7 +68,7 @@ def collect_files():
 
 def source_hashes():
     return {path.relative_to(ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in collect_files() if path.suffix != '.md'}
+            for path in collect_files()}
 
 
 def package(archive, evidence=None):
@@ -79,7 +86,7 @@ def package(archive, evidence=None):
             name = path.relative_to(ROOT).as_posix()
             content = path.read_bytes()
             manifest['files'][name] = hashlib.sha256(content).hexdigest()
-            if path.suffix != '.md' and manifest['files'][name] != report['source_hashes'].get(name):
+            if manifest['files'][name] != report['source_hashes'].get(name):
                 raise ValueError(f'Source changed during packaging: {name}')
             bundle.writestr(name, content)
         for path in sorted(evidence.iterdir()):

@@ -2,7 +2,7 @@
 
 # 课程综合设计最终交付与答辩手册
 
-日期：2026-10-11。本手册记录智能门锁软件交付范围。收到综合设计 I/III 任务书和教学大纲后，确认原范围不能代表全部课程要求。用户最新指定先推进 Windows 代码和树莓派摄像头联调，最新范围排除 Android 与实体锁，音频软件已纳入；密码算法、KDC/公钥分发对照和 CPU 性能代码见 [实验说明](../COURSE_CRYPTO_LAB.md)。这些隔离实验不提供生产 KDC 身份注册、证书吊销或持久化重放服务。直播、完整 OTA、多家庭和 Passkey 不属于课程核心功能。本轮已接入被动 PAD 与生产拒绝策略，算法及未完成的真实攻击评测见 [防伪与音频验收](../PAD_AUDIO_ACCEPTANCE.md)。
+日期：2026-10-11。本手册记录智能门锁软件交付范围。收到综合设计 I/III 任务书和教学大纲后，确认原范围不能代表全部课程要求。用户最新指定先推进 Windows 代码和树莓派摄像头联调，最新范围排除 Android 与实体锁，音频软件已纳入；密码算法、KDC/公钥分发对照和 CPU 性能代码见 [实验说明](COURSE_CRYPTO_LAB.md)。这些隔离实验不提供生产 KDC 身份注册、证书吊销或持久化重放服务。直播、完整 OTA、多家庭和 Passkey 不属于课程核心功能。本轮已接入被动 PAD 与生产拒绝策略，算法及未完成的真实攻击评测见 [防伪与音频验收](PAD_AUDIO_ACCEPTANCE.md)。
 
 ## 完成条件
 
@@ -76,11 +76,11 @@
 
 ## 交付物索引
 
-- 需求、产品比较与范围：[设计方案](../COURSE_PROJECT_DESIGN_PLAN.md)。
-- 架构、需求映射、威胁模型与协议决策：[架构说明](../COURSE_ARCHITECTURE.md)。
-- 数据和接口：[API 文档](../../API_DOCUMENTATION.md)。
+- 需求、产品比较与范围：[设计方案](COURSE_PROJECT_DESIGN_PLAN.md)。
+- 架构、需求映射、威胁模型与协议决策：[架构说明](../architecture.md)。
+- 数据和接口：[API 文档](../reference/api.md)。
 - 部署、密钥、备份恢复、模板维护：[部署手册](../../deploy/README.md)。
-- 指令执行与恢复：[设备执行说明](../DEVICE_EXECUTION.md)。
+- 指令执行与恢复：[设备执行说明](../reference/device-protocol.md)。
 - 实机版本与证据：[Pi 接入记录](PI_INTEGRATION_20261010.md)。
 - 软件复核与历史限制：[软件验收复核](SOFTWARE_ACCEPTANCE_20261009.md)。
 - 当前软件检查保存于 `releases/verification`；原始图像、密钥、数据库和备份保持本机忽略，不上传 Git。

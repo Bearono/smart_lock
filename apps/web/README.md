@@ -23,7 +23,7 @@ npm run build
 - `shared/lib/useResource.ts`：带类型的请求代次控制，旧响应与卸载后响应不会覆盖界面。
 - `features/camera/usePrivateImage.js`：私有图片获取、代次控制及对象 URL 回收。
 - `shared/ui/`：语义化状态、通知、空状态、标题、原生模态对话框、分页与原创家门插画。
-- `shared/styles/`：燕麦白/陶土色设计变量、布局、响应式和减少动态效果规则。
+- `shared/styles/`：蓝白界面与玻璃材质设计变量、布局、响应式和减少动态效果规则。
 - `shared/api/`：TypeScript 传输接口、领域数据类型和设备/快照运行时校验。
 
 所有权限由后端执行。客户端的导航与路由角色控制只改善体验，不能作为授权依据。生产页面不连接测试数据。
