@@ -285,6 +285,9 @@ onScopeDispose(() => {
           </div>
           <div class="panel-body">
             <p class="subtext">门锁最近状态</p>
+            <InlineNotice v-if="selected.execution_mode === 'SIMULATED'">
+              模拟门锁 · 操作结果代表模拟服务中的锁状态。
+            </InlineNotice>
             <div class="lock-hero" :data-state="selected.reported_status">
               <span class="lock-emblem"><AppIcon name="lock" :size="34" /></span>
               <div>

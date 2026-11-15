@@ -169,15 +169,16 @@ class HTTPDeliveryTests(unittest.TestCase):
                 reply.raise_for_status()
                 return SecureResponse.verify(fixture.device_session, packet['header'], '/api/lock/sync', reply.json())
 
-            def acknowledge_command(self, command_id, status, reported_status, failure_reason=None):
+            def acknowledge_command(self, command_id, status, reported_status, failure_reason=None, execution_mode='UNKNOWN'):
                 packet = SecureEnvelope.seal(fixture.device_session, dict(
                     device_id='http_door', command_id=command_id, status=status, reported_status=reported_status,
-                    failure_reason=failure_reason), endpoint='/api/lock/ack')
+                    failure_reason=failure_reason, execution_mode=execution_mode), endpoint='/api/lock/ack')
                 reply = fixture.api('POST', '/api/lock/ack', json=packet)
                 reply.raise_for_status()
                 return reply.json()
 
         class SoftwareActuator:
+            execution_mode = 'SIMULATED'
             state = 'LOCKED'
             calls = 0
 
@@ -195,7 +196,9 @@ class HTTPDeliveryTests(unittest.TestCase):
         self.assertEqual(actuator.calls, 1)
         outcome = self.api('POST', '/api/lock/command-status', json=credential).json()
         self.assertEqual(outcome['status'], 'executed')
-        self.assertTrue(outcome['hardware_confirmed'])
+        self.assertFalse(outcome['hardware_confirmed'])
+        self.assertTrue(outcome['execution_confirmed'])
+        self.assertTrue(outcome['simulation_confirmed'])
         self.assertEqual(self.api('POST', '/api/lock/unlock-token/verify', json=credential).status_code, 401)
 
     def test_web_grant_revocation_reaches_guest_command(self):

@@ -153,6 +153,7 @@ class NetworkTransmitter:
     def sync_lock(self):
         return self._send_secure('/api/lock/sync', {'device_id': self.device_id})
 
-    def acknowledge_command(self, command_id, status, reported_status=None, failure_reason=None):
+    def acknowledge_command(self, command_id, status, reported_status=None, failure_reason=None, execution_mode='UNKNOWN'):
         return self._send_secure('/api/lock/ack', dict(device_id=self.device_id,
-            command_id=command_id, status=status, reported_status=reported_status, failure_reason=failure_reason))
+            command_id=command_id, status=status, reported_status=reported_status, failure_reason=failure_reason,
+            execution_mode=execution_mode))

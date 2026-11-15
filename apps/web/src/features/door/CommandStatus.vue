@@ -7,7 +7,14 @@
   >
     <div v-if="status === 'pending'" class="loading-line" />
     <div class="command-result">
-      <p>{{ labels[status] }}</p>
+      <p>
+        {{
+          status === 'executed' && executionMode === 'SIMULATED'
+            ? '模拟门锁已确认本次命令执行'
+            : labels[status]
+        }}
+      </p>
+      <span v-if="executionMode === 'SIMULATED'">当前回执来自门锁模拟服务。</span>
       <span v-if="failureMessage">{{ failureMessage }}</span>
       <small class="mono">命令 ID：{{ commandId }}</small>
       <button v-if="status === 'unknown'" class="button button--small" type="button" @click="start">
@@ -31,6 +38,7 @@ export default {
   data: () => ({
     status: 'pending',
     failureMessage: '',
+    executionMode: 'UNKNOWN',
     labels: commandLabels,
     timer: null,
     generation: 0
@@ -50,15 +58,18 @@ export default {
       const deadline = Date.now() + 45000
       this.status = 'pending'
       this.failureMessage = ''
+      this.executionMode = 'UNKNOWN'
       const poll = async () => {
         let status = 'unknown'
         let failureMessage = ''
+        let executionMode = 'UNKNOWN'
         try {
           const response = this.credential
             ? await lock.getTokenCommand(this.credential.unlock_token, this.credential.device_id)
             : await lock.getCommand(this.commandId)
           status = normalizeCommandStatus(response.data)
           failureMessage = commandFailureMessage(response.data)
+          executionMode = response.data.execution_mode || 'UNKNOWN'
         } catch {
           /* Keep querying until the bounded observation window ends. */
         }
@@ -72,6 +83,7 @@ export default {
         }
         this.status = status
         this.failureMessage = failureMessage
+        this.executionMode = executionMode
         this.$emit('settled', status)
       }
       poll()

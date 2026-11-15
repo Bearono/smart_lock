@@ -11,7 +11,15 @@ export const commandLabels = Object.freeze({
 export function normalizeCommandStatus(data) {
   const status = data?.status
   if (!Object.hasOwn(commandLabels, status)) return 'unknown'
-  if (status === 'executed' && data.hardware_confirmed !== true) return 'unknown'
+  if (status === 'executed') {
+    const simulated =
+      data.execution_mode === 'SIMULATED' &&
+      data.execution_confirmed === true &&
+      data.simulation_confirmed === true &&
+      data.hardware_confirmed === false
+    const physical = data.execution_mode !== 'SIMULATED' && data.hardware_confirmed === true
+    if (!simulated && !physical) return 'unknown'
+  }
   return status
 }
 

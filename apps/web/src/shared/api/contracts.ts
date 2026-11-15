@@ -5,6 +5,7 @@ export interface Device {
   reported_status: 'LOCKED' | 'UNLOCKED' | 'UNKNOWN'
   camera_status: 'ONLINE' | 'OFFLINE' | 'ERROR' | 'UNKNOWN'
   actuator_status: 'AVAILABLE' | 'UNAVAILABLE' | 'ERROR' | 'UNKNOWN'
+  execution_mode: 'PHYSICAL' | 'SIMULATED' | 'UNKNOWN'
   is_online: boolean
   battery: number | null
   last_update: string | null
@@ -44,6 +45,9 @@ export function parseDevice(value: unknown): Device {
     )
       ? item.actuator_status
       : 'UNKNOWN') as Device['actuator_status'],
+    execution_mode: (['PHYSICAL', 'SIMULATED', 'UNKNOWN'].includes(String(item.execution_mode))
+      ? item.execution_mode
+      : 'UNKNOWN') as Device['execution_mode'],
     is_online: item.is_online,
     battery:
       typeof item.battery === 'number' &&

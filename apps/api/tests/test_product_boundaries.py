@@ -361,7 +361,7 @@ class ProductBoundaryTests(unittest.TestCase):
             db.session.commit()
             command_id = command.id
         def ack(state):
-            packet = SecureEnvelope.seal(session, dict(device_id='door_a', command_id=command_id, status='executed', reported_status=state))
+            packet = SecureEnvelope.seal(session, dict(device_id='door_a', command_id=command_id, status='executed', reported_status=state, execution_mode='PHYSICAL'))
             return self.client.post('/api/lock/ack', json=packet)
         self.assertEqual(ack('UNLOCKED').status_code, 400)
         self.assertEqual(ack('LOCKED').status_code, 200)
@@ -665,11 +665,11 @@ class ProductBoundaryTests(unittest.TestCase):
         for frame, expected in ((object(), 'ONLINE'), (None, 'OFFLINE')):
             camera.capture_frame.return_value = frame
             worker.report_once()
-            transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status=expected, actuator_status='UNAVAILABLE')
+            transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status=expected, actuator_status='UNAVAILABLE', execution_mode='UNKNOWN')
         camera.capture_frame.side_effect = OSError('fixture camera failure')
         with self.assertLogs('device_runtime_test', level='ERROR'):
             worker.report_once()
-        transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status='ERROR', actuator_status='UNAVAILABLE')
+        transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status='ERROR', actuator_status='UNAVAILABLE', execution_mode='UNKNOWN')
         transmitter.acknowledge_command.assert_not_called()
 
     def test_backup_restore_checks_content_and_never_overwrites_live_data(self):

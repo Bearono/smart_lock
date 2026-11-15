@@ -173,10 +173,20 @@ test('explicit authorization failure clears recoverable capability', async () =>
   assert.equal(current.credential, null)
   assert.equal(current.stage, 'idle')
 })
-test('execution success requires explicit hardware confirmation', async () => {
+test('execution success requires explicit physical or simulated confirmation', async () => {
   const { normalizeCommandStatus } = await modules()
   assert.equal(normalizeCommandStatus({ status: 'executed', hardware_confirmed: true }), 'executed')
   assert.equal(normalizeCommandStatus({ status: 'executed', hardware_confirmed: false }), 'unknown')
+  const simulated = {
+    status: 'executed',
+    execution_mode: 'SIMULATED',
+    execution_confirmed: true,
+    simulation_confirmed: true,
+    hardware_confirmed: false
+  }
+  assert.equal(normalizeCommandStatus(simulated), 'executed')
+  assert.equal(normalizeCommandStatus({ ...simulated, simulation_confirmed: false }), 'unknown')
+  assert.equal(normalizeCommandStatus({ ...simulated, hardware_confirmed: true }), 'unknown')
   for (const status of ['pending', 'failed', 'expired', 'revoked', 'superseded'])
     assert.equal(normalizeCommandStatus({ status }), status)
   assert.equal(normalizeCommandStatus({ status: 'unrecognized' }), 'unknown')

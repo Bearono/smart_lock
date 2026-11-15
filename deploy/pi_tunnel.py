@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--identity', type=Path, required=True)
     parser.add_argument('--host-key-alias', default='smartlock.local')
     parser.add_argument('--bind-address', help='Local LAN IP to use when a VPN/proxy selects the wrong route')
+    parser.add_argument('--lock-simulator', action='store_true', help='Also forward the explicit ARM simulator over loopback')
     args = parser.parse_args()
     if any(value.startswith('-') or any(c.isspace() for c in value) for value in (args.host, args.user, args.host_key_alias)):
         parser.error('Invalid SSH host, user or host-key alias')
@@ -34,6 +35,8 @@ def main():
         '-o', 'ServerAliveCountMax=3', '-o', 'HostKeyAlias=' + args.host_key_alias,
         '-L', '127.0.0.1:15443:127.0.0.1:5443',
         '-R', '127.0.0.1:18443:127.0.0.1:8443']
+    if args.lock_simulator:
+        command.extend(['-R', '127.0.0.1:19443:127.0.0.1:19443'])
     if args.bind_address:
         command.extend(['-b', str(address)])
     command.append(args.user + '@' + args.host)

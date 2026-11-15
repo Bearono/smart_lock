@@ -33,7 +33,11 @@ class HeartbeatWorker:
             except Exception:
                 logger.exception('Lock feedback unavailable')
                 actuator_status = 'ERROR'
-        return self.transmitter.heartbeat(lock_status, camera_status=camera_status, actuator_status=actuator_status)
+        mode = getattr(self.actuator, 'execution_mode', 'UNKNOWN')
+        if mode not in ('PHYSICAL', 'SIMULATED'):
+            mode = 'UNKNOWN'
+        return self.transmitter.heartbeat(lock_status, camera_status=camera_status, actuator_status=actuator_status,
+                                          execution_mode=mode)
 
     def _run(self):
         while not self.stop_event.is_set():

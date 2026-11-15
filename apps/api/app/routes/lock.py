@@ -37,6 +37,7 @@ def get_status():
         "device_id": device.device_id,
         "status": device.status,
         "reported_status": device.reported_status,
+        "execution_mode": device.execution_mode,
         "battery": device.battery,
         "last_update": serialize_time(device.last_update) if device.last_update else None,
     }), 200
@@ -174,7 +175,8 @@ def acknowledge_command():
     command = db.session.get(DoorCommand, command_id)
     if not command or command.device_id != data.get('device_id'):
         return jsonify(msg='Command not found'), 404
-    result = acknowledge(command, data.get('status'), data.get('reported_status'), data.get('failure_reason'))
+    result = acknowledge(command, data.get('status'), data.get('reported_status'), data.get('failure_reason'),
+                         data.get('execution_mode', 'UNKNOWN'))
     db.session.commit()
     return jsonify(msg=result.message), result.status_code
 
@@ -188,7 +190,10 @@ def command_status(command_id):
     require_device(command.device_id)
     status = refresh(command).status
     db.session.commit()
-    return jsonify(id=command.id, status=status, hardware_confirmed=status == 'executed',
+    return jsonify(id=command.id, status=status, execution_mode=command.execution_mode,
+                   execution_confirmed=status == 'executed',
+                   hardware_confirmed=status == 'executed' and command.execution_mode == 'PHYSICAL',
+                   simulation_confirmed=status == 'executed' and command.execution_mode == 'SIMULATED',
                    expires_at=command.expires_at, failure_reason=command.failure_reason), 200
 
 
@@ -207,7 +212,10 @@ def capability_command_status():
     status = refresh(command).status
     db.session.commit()
     return jsonify(id=command.id, status=status, expires_at=command.expires_at,
-                   hardware_confirmed=status == 'executed', failure_reason=command.failure_reason), 200
+                   execution_mode=command.execution_mode, execution_confirmed=status == 'executed',
+                   hardware_confirmed=status == 'executed' and command.execution_mode == 'PHYSICAL',
+                   simulation_confirmed=status == 'executed' and command.execution_mode == 'SIMULATED',
+                   failure_reason=command.failure_reason), 200
 
 
 @lock_bp.route('/history', methods=['GET'])

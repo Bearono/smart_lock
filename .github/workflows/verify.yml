@@ -107,3 +107,21 @@ jobs:
         run: test "$(docker image inspect smart-lock-device:ci --format '{{.Architecture}}')" = "$EXPECTED_ARCH"
       - run: docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:ci python /app/device_smoke.py
       - run: docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:ci python -B -m unittest discover -s /app/tests -v
+  lock-simulator:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: pip install cryptography==50.0.1 requests==2.34.2
+      - run: pip install --no-deps ./packages/smartlock_protocol
+      - run: python deploy/init_local_tls.py
+      - run: python deploy/simulated_lock.py init
+      - run: docker compose -f compose.lock-sim.yaml up -d --build --wait
+      - run: python deploy/verify_lock_sim.py --output /tmp/arm-lock-verification.json
+      - if: always()
+        run: docker compose -f compose.lock-sim.yaml logs --tail=50
+      - if: always()
+        run: docker compose -f compose.lock-sim.yaml down --volumes

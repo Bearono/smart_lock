@@ -24,6 +24,7 @@ FILES = (
     'apps/android/.gitignore', 'apps/android/settings.gradle', 'apps/android/build.gradle',
     'apps/android/gradle.properties', 'apps/android/app/build.gradle',
     'apps/android/build_sdk.py', 'apps/android/test_jvm.py',
+    'compose.lock-sim.yaml', 'apps/lock_sim/requirements.txt',
 )
 TREES = {
     'apps/api/app': {'.py'},
@@ -31,6 +32,7 @@ TREES = {
     'apps/web/src': {'.js', '.ts', '.vue', '.css', '.webp'},
     'packages/smartlock_protocol/smartlock_protocol': {'.py'},
     'apps/device/tests': {'.py'},
+    'apps/lock_sim': {'.py'},
     'apps/web/tests': {'.cjs'},
     'docs': {'.md'},
     '.github/workflows': {'.yml', '.yaml'},

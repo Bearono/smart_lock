@@ -20,6 +20,11 @@ path = "apps/device"
 entrypoint = "app.py"
 dependencies = "requirements.pi.txt"
 
+[applications.lock_sim]
+path = "apps/lock_sim"
+entrypoint = "service.py"
+dependencies = "requirements.txt"
+
 [libraries.protocol]
 path = "packages/smartlock_protocol"
 entrypoint = "pyproject.toml"

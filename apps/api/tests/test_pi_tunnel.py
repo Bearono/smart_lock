@@ -44,3 +44,10 @@ class PiTunnelTests(unittest.TestCase):
                     tunnel.main()
                 self.assertEqual(error.exception.code, 2)
                 call.assert_not_called()
+
+    def test_simulator_forwarding_requires_explicit_option_and_stays_on_loopback(self):
+        for option in ([], ['--lock-simulator']):
+            with patch('sys.argv', self.args + option), patch.object(tunnel.subprocess, 'call', return_value=0) as call:
+                with self.assertRaises(SystemExit):
+                    tunnel.main()
+            self.assertEqual('127.0.0.1:19443:127.0.0.1:19443' in call.call_args.args[0], bool(option))

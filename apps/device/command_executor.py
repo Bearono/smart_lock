@@ -30,6 +30,7 @@ class ActuatorUnavailableError(RuntimeError):
 
 class UnavailableActuator:
     configured = False
+    execution_mode = 'UNKNOWN'
 
     def set_state(self, target):
         raise ActuatorUnavailableError('No actuator driver configured')
@@ -54,6 +55,8 @@ class CommandExecutor:
             columns = {row[1] for row in connection.execute('PRAGMA table_info(executions)')}
             if 'failure_reason' not in columns:
                 connection.execute('ALTER TABLE executions ADD COLUMN failure_reason TEXT')
+            if 'execution_mode' not in columns:
+                connection.execute("ALTER TABLE executions ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'UNKNOWN'")
 
     def _connect(self):
         # Autocommit makes every journal transition durable before external I/O.
@@ -74,9 +77,12 @@ class CommandExecutor:
         if expires > now + 60:
             raise ValueError('Command lifetime exceeds allowed clock skew')
         with self._connect() as connection:
+            mode = getattr(self.actuator, 'execution_mode', 'UNKNOWN')
+            if mode not in ('PHYSICAL', 'SIMULATED'):
+                mode = 'UNKNOWN'
             inserted = connection.execute(
-                "INSERT OR IGNORE INTO executions(id,target,expires,status) VALUES(?,?,?,'executing')",
-                (command_id, target, expires)).rowcount
+                "INSERT OR IGNORE INTO executions(id,target,expires,status,execution_mode) VALUES(?,?,?,'executing',?)",
+                (command_id, target, expires, mode)).rowcount
             if not inserted:
                 previous = connection.execute('SELECT target,expires FROM executions WHERE id=?',
                                               (command_id,)).fetchone()
@@ -86,7 +92,11 @@ class CommandExecutor:
         status, observed, reason = 'failed', 'UNKNOWN', 'ACTUATION_FAILED'
         try:
             if self.clock() < expires:
-                self.actuator.set_state(target)
+                execute = getattr(type(self.actuator), 'execute_command', None)
+                if callable(execute):
+                    execute(self.actuator, command)
+                else:
+                    self.actuator.set_state(target)
                 reading = self.actuator.read_state()
                 observed = reading if isinstance(reading, str) and reading in STATES else 'UNKNOWN'
                 if observed == target and self.clock() < expires:
@@ -110,10 +120,11 @@ class CommandExecutor:
             connection.execute("UPDATE executions SET status='failed',failure_reason='COMMAND_INTERRUPTED' WHERE status='executing' AND expires<=?", (now,))
             connection.execute('DELETE FROM executions WHERE expires<?', (now - RETENTION_SECONDS,))
             receipts = connection.execute(
-                "SELECT id,status,observed,failure_reason FROM executions WHERE delivered=0 AND status!='executing' ORDER BY expires DESC LIMIT 1").fetchall()
-        for command_id, status, observed, reason in receipts:
+                "SELECT id,status,observed,failure_reason,execution_mode FROM executions WHERE delivered=0 AND status!='executing' ORDER BY expires DESC LIMIT 1").fetchall()
+        for command_id, status, observed, reason, mode in receipts:
             try:
-                self.transmitter.acknowledge_command(command_id, status, observed, failure_reason=reason)
+                self.transmitter.acknowledge_command(command_id, status, observed, failure_reason=reason,
+                                                    execution_mode=mode)
             except Exception as exc:
                 response = getattr(exc, 'response', None)
                 if response is None or response.status_code not in (404, 409):

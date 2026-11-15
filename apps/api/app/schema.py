@@ -14,7 +14,8 @@ def upgrade_schema():
             'protocol_version': "VARCHAR(20) NOT NULL DEFAULT 'SL-SEC-v2'",
             'confirmed': 'BOOLEAN NOT NULL DEFAULT 1', 'transcript': 'BLOB',
         },
-        'door_commands': {'user_id': 'INTEGER', 'guest_pass_id': 'INTEGER', 'failure_reason': 'VARCHAR(40)'},
+        'door_commands': {'user_id': 'INTEGER', 'guest_pass_id': 'INTEGER', 'failure_reason': 'VARCHAR(40)',
+                          'execution_mode': "VARCHAR(20) NOT NULL DEFAULT 'UNKNOWN'"},
         # Existing unbound sessions/tokens/passes remain unusable after migration.
         'auth_sessions': {
             'device_id': 'VARCHAR(50)',
@@ -27,6 +28,7 @@ def upgrade_schema():
             'reported_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
             'camera_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
             'actuator_status': "VARCHAR(20) DEFAULT 'UNKNOWN'",
+            'execution_mode': "VARCHAR(20) NOT NULL DEFAULT 'UNKNOWN'",
             'ip_address': "VARCHAR(45)",
             'is_online': "BOOLEAN DEFAULT 0",
         },

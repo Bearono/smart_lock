@@ -185,7 +185,10 @@ async function fixture(page) {
       return respond({
         id: endpoint.includes('lock-1') ? 'lock-1' : 'command-1',
         status: commandConfirmed ? 'executed' : 'pending',
-        hardware_confirmed: commandConfirmed
+        execution_mode: devices[0].execution_mode || 'PHYSICAL',
+        execution_confirmed: commandConfirmed,
+        simulation_confirmed: commandConfirmed && devices[0].execution_mode === 'SIMULATED',
+        hardware_confirmed: commandConfirmed && devices[0].execution_mode !== 'SIMULATED'
       })
     if (endpoint === '/api/lock/history') {
       const history = logs.filter(
@@ -508,6 +511,15 @@ async function run() {
   assert.equal(await page.getByRole('button', { name: '刷新快照' }).isEnabled(), true)
   assert.equal(await page.getByRole('button', { name: '上锁', exact: true }).isEnabled(), true)
   devices[0].camera_status = 'ONLINE'
+  devices[0].execution_mode = 'SIMULATED'
+  commandConfirmed = true
+  await page.goto(base + '/dashboard')
+  await page.getByText('模拟门锁 · 操作结果代表模拟服务中的锁状态。', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '上锁', exact: true }).click()
+  await page.getByText('模拟门锁已确认本次命令执行', { exact: true }).waitFor()
+  await noOverflow(page, 'simulated lock mobile')
+  await page.screenshot({ path: path.join(artifacts, 'simulated-lock-mobile.png'), fullPage: true })
+  delete devices[0].execution_mode
   await page.goto(base + '/dashboard/security')
   await page.getByRole('button', { name: '修改密码', exact: true }).waitFor()
 

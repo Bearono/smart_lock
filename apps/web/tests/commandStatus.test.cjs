@@ -71,6 +71,22 @@ function tracker(getCommand) {
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
 
+test('simulated receipt is retained as simulation instead of physical confirmation', async () => {
+  const state = tracker(async () => ({
+    data: {
+      status: 'executed',
+      execution_mode: 'SIMULATED',
+      execution_confirmed: true,
+      simulation_confirmed: true,
+      hardware_confirmed: false
+    }
+  }))
+  state.instance.start()
+  await flush()
+  assert.equal(state.instance.status, 'executed')
+  assert.equal(state.instance.executionMode, 'SIMULATED')
+})
+
 test('tracker observes pending then confirmed execution', async () => {
   let calls = 0
   const state = tracker(async () => ({

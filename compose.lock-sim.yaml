@@ -1,0 +1,40 @@
+name: smart-lock-arm-simulator
+services:
+  lock-sim:
+    image: smart-lock-arm-simulator:local
+    platform: linux/arm64
+    build:
+      context: .
+      dockerfile: deploy/lock-sim.Dockerfile
+    environment:
+      SMART_LOCK_SIMULATION: 'true'
+      SIMULATOR_SECRET_FILE: /run/secrets/simulator_key
+      SIMULATOR_ALLOW_FAULTS: 'true'
+      DEVICE_STATE_DIR: /data
+    secrets: [simulator_key]
+    volumes:
+      - ./deploy/tls/server.crt:/run/tls/server.crt:ro
+      - ./deploy/tls/server.key:/run/tls/server.key:ro
+      - ./deploy/tls/ca.crt:/run/tls/ca.crt:ro
+      - lock_state:/data
+    ports: ['127.0.0.1:19443:5444']
+    mem_limit: 192m
+    pids_limit: 32
+    cpus: 1
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request,ssl; urllib.request.urlopen('https://localhost:5444/health/ready', context=ssl.create_default_context(cafile='/run/tls/ca.crt'), timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}
+volumes:
+  lock_state:
+secrets:
+  simulator_key: {file: ./instance/lock-sim/simulator_key}

@@ -6,9 +6,10 @@ def post_worker_init(worker):
     import os
     from pathlib import Path
     from app import camera, transmitter
-    from command_executor import CommandExecutor, UnavailableActuator
+    from command_executor import CommandExecutor
+    from remote_actuator import configured_actuator
     from runtime import CommandWorker, HeartbeatWorker
-    actuator = UnavailableActuator()
+    actuator = configured_actuator(os.environ)
     state = Path(os.environ.get('DEVICE_STATE_DIR', str(Path(__file__).parent / 'instance')))
     worker.device_commands = CommandWorker(CommandExecutor(transmitter, actuator, state / 'executions.db'))
     worker.device_heartbeat = HeartbeatWorker(transmitter, camera, actuator=actuator)

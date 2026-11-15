@@ -29,6 +29,8 @@ def heartbeat():
         return jsonify(msg='Invalid camera status'), 400
     if data.get('actuator_status') not in (None, 'AVAILABLE', 'UNAVAILABLE', 'ERROR', 'UNKNOWN'):
         return jsonify(msg='Invalid actuator status'), 400
+    if data.get('execution_mode') not in (None, 'PHYSICAL', 'SIMULATED', 'UNKNOWN'):
+        return jsonify(msg='Invalid execution mode'), 400
     if data.get('actuator_status') == 'UNAVAILABLE' and data.get('lock_status') in ('LOCKED', 'UNLOCKED'):
         return jsonify(msg='Unavailable actuator cannot confirm a lock state'), 400
     try:
@@ -48,6 +50,7 @@ def heartbeat():
     if data.get('camera_status'):
         device.camera_status = data['camera_status']
     device.actuator_status = data.get('actuator_status') or 'UNKNOWN'
+    device.execution_mode = data.get('execution_mode') or 'UNKNOWN'
     if device.actuator_status == 'UNAVAILABLE':
         device.reported_status = 'UNKNOWN'
 
