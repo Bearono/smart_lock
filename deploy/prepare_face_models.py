@@ -7,7 +7,7 @@ import sys
 import tempfile
 import urllib.request
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'paspberry_pi/cv/code'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'apps/device/cv/code'))
 from model_manifest import MODELS, verify_models
 
 

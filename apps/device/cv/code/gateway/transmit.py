@@ -1,0 +1,7 @@
+"""Compatibility entry point; implementation lives in apps/device/transmit.py."""
+try:
+    from ._compat import export_module
+except ImportError:
+    from _compat import export_module
+
+export_module('transmit', globals())

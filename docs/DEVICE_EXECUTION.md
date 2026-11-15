@@ -4,7 +4,7 @@
 
 ## 驱动边界
 
-`paspberry_pi/command_executor.py` 的 `Actuator` 约定两个方法：`set_state(target)` 执行动作，`read_state()` 返回实测的 `LOCKED`、`UNLOCKED` 或 `UNKNOWN`。驱动必须限制 I/O 时间，支持心跳与执行线程同时读取，并在自身内部协调读写。动作返回不代表成功，只有随后读取与目标一致且未过期，才生成 executed 回执。
+`apps/device/command_executor.py` 的 `Actuator` 约定两个方法：`set_state(target)` 执行动作，`read_state()` 返回实测的 `LOCKED`、`UNLOCKED` 或 `UNKNOWN`。驱动必须限制 I/O 时间，支持心跳与执行线程同时读取，并在自身内部协调读写。动作返回不代表成功，只有随后读取与目标一致且未过期，才生成 executed 回执。
 
 当前启动配置使用 `UnavailableActuator`：读取为 UNKNOWN，动作明确失败。没有配置实物驱动时，网页命令会显示失败，不会假报已开锁。未来驱动在 `gunicorn.conf.py` 的初始化位置接入；当前软件验收只注入合成测试驱动，不访问 GPIO。
 

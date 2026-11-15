@@ -1,0 +1,183 @@
+.auth-page {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  padding: clamp(16px, 5vh, 56px) 16px;
+  background:
+    radial-gradient(ellipse at 94% 8%, #d9e4f3 0%, transparent 58%),
+    radial-gradient(ellipse at 4% 94%, #eddbc8 0%, transparent 56%),
+    linear-gradient(135deg, #f4f6fa 28%, #faf6f0 76%);
+}
+.auth-page::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.45;
+  background:
+    repeating-radial-gradient(
+        ellipse at 6% 110%,
+        transparent 0 22px,
+        #9c603a29 23px 24px,
+        transparent 25px 36px
+      )
+      left bottom / 65% 80% no-repeat,
+    repeating-radial-gradient(
+        ellipse at 95% -12%,
+        transparent 0 24px,
+        #71619428 25px 26px,
+        transparent 27px 40px
+      )
+      right top / 65% 76% no-repeat;
+  mask-image:
+    radial-gradient(ellipse at left bottom, #000 5%, transparent 57%),
+    radial-gradient(ellipse at right top, #000 4%, transparent 58%);
+}
+@media (max-width: 600px) {
+  .auth-page::before {
+    opacity: 0.72;
+  }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  .auth-page {
+    background: var(--canvas);
+  }
+  .auth-page::before {
+    display: none;
+  }
+}
+.auth-main {
+  position: relative;
+  width: min(440px, 100%);
+  min-width: 0;
+  padding: clamp(22px, 5vw, 42px);
+  border: 1px solid var(--glass-border);
+  border-radius: 34px;
+  background: var(--surface);
+  box-shadow:
+    0 24px 64px #343b4a0b,
+    0 2px 8px #343b4a06;
+}
+.auth-identity {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 18px;
+  border-radius: 19px;
+  background: var(--home-accent-soft);
+  color: var(--home-accent);
+}
+.auth-card h1 {
+  font-size: clamp(24px, 5vw, 30px);
+  text-align: center;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.auth-card > .auth-intro {
+  text-align: center;
+  margin: 10px 0 24px;
+}
+.auth-card .field input {
+  background: #ffffffd9;
+  min-height: 50px;
+  border-radius: 14px;
+}
+.auth-card .button {
+  min-height: 50px;
+}
+.auth-password {
+  position: relative;
+}
+.auth-password input {
+  padding-inline-end: 88px;
+}
+.auth-password input::-ms-reveal {
+  display: none;
+}
+.auth-password button {
+  position: absolute;
+  inset-block: 3px;
+  inset-inline-end: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  padding: 0 4px;
+  font-size: 14px;
+}
+.auth-links {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 18px;
+  gap: 8px 14px;
+  font-size: 14px;
+  flex-wrap: wrap;
+  padding: 3px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 22px;
+  background: var(--glass-toolbar);
+  -webkit-backdrop-filter: var(--glass-filter, var(--glass-blur));
+  backdrop-filter: var(--glass-filter, var(--glass-blur));
+}
+.auth-links button,
+.auth-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  padding: 4px 0;
+}
+.auth-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+}
+.auth-qr img {
+  border: 8px solid white;
+}
+.guest-page {
+  min-height: 100dvh;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: transparent;
+}
+.guest-page > .brand {
+  margin-bottom: 44px;
+}
+.guest-card {
+  width: min(100%, 480px);
+  padding: 32px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+.guest-card h1 {
+  font-size: 28px;
+  margin-bottom: 10px;
+}
+.guest-card > .subtext {
+  margin-bottom: 26px;
+}
+.guest-footnote {
+  max-width: 440px;
+  text-align: center;
+  margin-top: 24px;
+  font-size: 12px;
+  color: var(--muted);
+}

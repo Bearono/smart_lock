@@ -60,7 +60,8 @@ def encode(payload):
     return (output * (0.8 / np.max(np.abs(output)))).astype(np.float32)
 
 
-def decode(samples):
+def analyze(samples):
+    """Recover an untrusted frame and channel measurements for explicit lab analysis."""
     values = np.asarray(samples, dtype=np.float64)
     if values.ndim != 1 or not 3 * SYMBOL <= len(values) <= RATE * 10 or not np.all(np.isfinite(values)):
         raise ValueError('Invalid or oversized audio recording')
@@ -91,7 +92,12 @@ def decode(samples):
     end = length + 6
     if zlib.crc32(frame[:end]) != struct.unpack('!I', frame[end:end+4])[0]:
         raise ValueError('Damaged OFDM payload')
-    return frame[6:end]
+    return {'payload': frame[6:end], 'start_sample': offset,
+            'sync_score': float(score[offset]), 'channel': channel.copy()}
+
+
+def decode(samples):
+    return analyze(samples)['payload']
 
 
 def wav_bytes(samples):

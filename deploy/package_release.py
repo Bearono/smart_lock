@@ -9,26 +9,33 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = (
+    '.gitignore', '.gitattributes', '.editorconfig', 'workspace.toml', 'manage.py',
     'README.md', 'API_DOCUMENTATION.md', 'compose.yaml', 'compose.device.yaml', 'compose.tls.yaml', '.dockerignore',
-    'BE_smart_lock/smart_lock/config.py', 'BE_smart_lock/smart_lock/run.py',
-    'BE_smart_lock/smart_lock/requirements.txt', 'BE_smart_lock/smart_lock/requirements.lock',
-    'FE_smart_lock/smartlock/package.json', 'FE_smart_lock/smartlock/package-lock.json',
-    'FE_smart_lock/smartlock/index.html', 'FE_smart_lock/smartlock/vite.config.mjs',
-    'FE_smart_lock/smartlock/eslint.config.mjs', 'FE_smart_lock/smartlock/README.md',
-    'FE_smart_lock/smartlock/tsconfig.json',
-    'FE_smart_lock/smartlock/.prettierrc.json',
-    'compose.device.tls.yaml', 'paspberry_pi/requirements.pi.txt',
+    'apps/api/config.py', 'apps/api/run.py',
+    'apps/api/requirements.txt', 'apps/api/requirements.lock',
+    'apps/web/package.json', 'apps/web/package-lock.json',
+    'apps/web/index.html', 'apps/web/vite.config.mjs',
+    'apps/web/eslint.config.mjs', 'apps/web/README.md',
+    'apps/web/tsconfig.json',
+    'apps/web/.prettierrc.json',
+    'compose.device.tls.yaml', 'apps/device/requirements.pi.txt',
     'packages/smartlock_protocol/pyproject.toml',
+    'Start-CourseAudio.cmd',
+    'apps/android/.gitignore', 'apps/android/settings.gradle', 'apps/android/build.gradle',
+    'apps/android/gradle.properties', 'apps/android/app/build.gradle',
+    'apps/android/build_sdk.py', 'apps/android/test_jvm.py',
 )
 TREES = {
-    'BE_smart_lock/smart_lock/app': {'.py'},
-    'BE_smart_lock/smart_lock/tests': {'.py'},
-    'FE_smart_lock/smartlock/src': {'.js', '.ts', '.vue', '.css', '.webp'},
+    'apps/api/app': {'.py'},
+    'apps/api/tests': {'.py'},
+    'apps/web/src': {'.js', '.ts', '.vue', '.css', '.webp'},
     'packages/smartlock_protocol/smartlock_protocol': {'.py'},
-    'paspberry_pi/tests': {'.py'},
-    'FE_smart_lock/smartlock/tests': {'.cjs'},
+    'apps/device/tests': {'.py'},
+    'apps/web/tests': {'.cjs'},
     'docs': {'.md'},
     '.github/workflows': {'.yml', '.yaml'},
+    'apps/android/app/src': {'.java', '.xml'},
+    'apps/android/tests': {'.java'},
 }
 
 
@@ -37,7 +44,7 @@ def collect_files():
     for directory, extensions in TREES.items():
         files.update(path for path in (ROOT / directory).rglob('*')
                      if path.is_file() and path.suffix in extensions)
-    for directory in ('paspberry_pi', 'paspberry_pi/cv/code', 'paspberry_pi/cv/code/gateway'):
+    for directory in ('apps/device', 'apps/device/cv/code', 'apps/device/cv/code/gateway'):
         files.update((ROOT / directory).glob('*.py'))
     files.update(path for path in (ROOT / 'deploy').iterdir()
                  if path.is_file() and path.suffix in {'.py', '.md', '.conf', '.Dockerfile'})
@@ -54,9 +61,9 @@ def source_hashes():
             for path in collect_files() if path.suffix != '.md'}
 
 
-def package(archive):
+def package(archive, evidence=None):
     files = collect_files()
-    evidence = ROOT / 'releases/verification'
+    evidence = Path(evidence).resolve() if evidence is not None else ROOT / 'releases/verification'
     report = json.loads((evidence / 'verification.json').read_text(encoding='utf-8'))
     if report.get('passed') is not True or report.get('source_hashes') != source_hashes():
         raise ValueError('Run deploy/verify.py after the last source change before packaging')
@@ -93,4 +100,7 @@ def package(archive):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path)
-    package(parser.parse_args().archive.resolve())
+    parser.add_argument('--verification', type=Path, default=ROOT / 'releases/verification',
+                        help='Evidence directory from the matching verify.py run')
+    args = parser.parse_args()
+    package(args.archive.resolve(), args.verification)

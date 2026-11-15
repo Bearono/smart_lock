@@ -16,7 +16,7 @@ def check_runtime():
     from packaging.requirements import Requirement
     from packaging.utils import canonicalize_name
     pending = [Requirement(line.strip()) for line in
-               (ROOT / 'paspberry_pi/requirements.pi.txt').read_text().splitlines()
+               (ROOT / 'apps/device/requirements.pi.txt').read_text().splitlines()
                if line.strip() and not line.lstrip().startswith('#')]
     pending.extend(Requirement(name) for name in ('smartlock-protocol', 'picamera2', 'numpy', 'Pillow'))
     visited = set()
@@ -45,10 +45,10 @@ After=network-online.target
 Wants=network-online.target
 [Service]
 Type=simple
-WorkingDirectory={root}/paspberry_pi
+WorkingDirectory={root}/apps/device
 EnvironmentFile={root}/deploy/.env
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
-ExecStart={root}/.venv-pi/bin/gunicorn --config {root}/paspberry_pi/gunicorn.conf.py --bind 127.0.0.1:5443 --certfile {root}/deploy/tls/pi-native.crt --keyfile {root}/deploy/tls/pi-native.key --workers 1 --threads 2 --timeout 60 --access-logfile - --error-logfile - app:app
+ExecStart={root}/.venv-pi/bin/gunicorn --config {root}/apps/device/gunicorn.conf.py --bind 127.0.0.1:5443 --certfile {root}/deploy/tls/pi-native.crt --keyfile {root}/deploy/tls/pi-native.key --workers 1 --threads 2 --timeout 60 --access-logfile - --error-logfile - app:app
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
@@ -68,8 +68,8 @@ def prepare():
     subprocess.run([sys.executable, '-m', 'venv', '--system-site-packages', str(ROOT / '.venv-pi')], check=True)
     python = str(ROOT / '.venv-pi/bin/python')
     env = dict(os.environ, CMAKE_BUILD_PARALLEL_LEVEL='1', DLIB_NO_GUI_SUPPORT='ON', DLIB_USE_CUDA='OFF', OPENBLAS_NUM_THREADS='1')
-    subprocess.run([python, '-m', 'pip', '--isolated', 'install', '--index-url', 'https://pypi.org/simple', '--extra-index-url', 'https://pypi.org/simple', 'setuptools==80.9.0', 'wheel==0.45.1', 'packaging==25.0'], check=True, env=env)
-    subprocess.run([python, '-m', 'pip', '--isolated', 'install', '--index-url', 'https://pypi.org/simple', '--extra-index-url', 'https://pypi.org/simple', '--no-build-isolation', '-r', str(ROOT / 'paspberry_pi/requirements.pi.txt')], check=True, env=env)
+    subprocess.run([python, '-m', 'pip', '--isolated', 'install', '--index-url', 'https://pypi.org/simple', '--extra-index-url', 'https://pypi.org/simple', 'setuptools==84.2.1', 'wheel==0.46.2', 'packaging==25.0'], check=True, env=env)
+    subprocess.run([python, '-m', 'pip', '--isolated', 'install', '--index-url', 'https://pypi.org/simple', '--extra-index-url', 'https://pypi.org/simple', '--no-build-isolation', '-r', str(ROOT / 'apps/device/requirements.pi.txt')], check=True, env=env)
     subprocess.run([python, '-m', 'pip', 'install', '--no-deps', str(ROOT / 'packages/smartlock_protocol')], check=True)
     subprocess.run([python, str(Path(__file__).resolve()), 'check-runtime'], check=True)
     (ROOT / 'instance/pi-native').mkdir(parents=True, exist_ok=True, mode=0o700)

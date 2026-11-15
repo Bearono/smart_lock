@@ -47,7 +47,7 @@
 
 新增 `DeviceGrant`，明确区分“管理员授予设备访问权”和“用户绑定设备认证”。知道设备 ID 不能自行取得设备权限。新增账号版本与集中撤权逻辑，改密码、驳回账号、解绑、撤销设备授权等操作会使关联能力失效；重新批准或绑定不会复活旧授权。
 
-关键代码：[auth.py](../BE_smart_lock/smart_lock/app/routes/auth.py)、[authenticators.py](../BE_smart_lock/smart_lock/app/authenticators.py)、[access_management.py](../BE_smart_lock/smart_lock/app/access_management.py)、[authorization.py](../BE_smart_lock/smart_lock/app/authorization.py)。
+关键代码：[auth.py](../apps/api/app/routes/auth.py)、[authenticators.py](../apps/api/app/authenticators.py)、[access_management.py](../apps/api/app/access_management.py)、[authorization.py](../apps/api/app/authorization.py)。
 
 ### 3.2 密钥交换与消息保护：从 v2 扩展到有上下文的 v3
 
@@ -63,7 +63,7 @@
 6. 生产 Compose 关闭 v2，历史 ECC 上传默认关闭；超时不会自动重发业务，也不会自动退回旧协议。仅明确的“会话失效”允许重新握手一次。
 7. 设备端收到的后端挑战/拍摄指令也校验 HMAC、时间及持久化 nonce；命令同步响应绑定原请求并校验认证。
 
-关键代码：[v3.py](../packages/smartlock_protocol/smartlock_protocol/v3.py)、[security.py](../BE_smart_lock/smart_lock/app/routes/security.py)、[security_store.py](../BE_smart_lock/smart_lock/app/security_store.py)、[secure_payload.py](../BE_smart_lock/smart_lock/app/routes/secure_payload.py)、[command_guard.py](../paspberry_pi/command_guard.py)。
+关键代码：[v3.py](../packages/smartlock_protocol/smartlock_protocol/v3.py)、[security.py](../apps/api/app/routes/security.py)、[security_store.py](../apps/api/app/security_store.py)、[secure_payload.py](../apps/api/app/routes/secure_payload.py)、[command_guard.py](../apps/device/command_guard.py)。
 
 这里应准确表述为“SPAKE2 协商共享会话密钥”，不是把会话密钥以明文发送，也不是双方凭空获得首次信任。首次设备秘密仍由维护者安全注入两端。项目使用 python-spake2 和自定义应用层 v3，不能据此声称完整通过标准兼容性或第三方安全认证。
 
@@ -73,7 +73,7 @@
 
 设备通过独立工作线程轮询，执行前持久化预约，避免重复/并发投递重复动作；崩溃后不盲目重做，回执可以独立重试。只有执行结果和反馈状态与目标匹配，才接受 executed。用户与访客页面会查询原命令，响应丢失时恢复原操作，避免重复消耗访客次数或重复开门。
 
-关键代码：[lock.py](../BE_smart_lock/smart_lock/app/routes/lock.py)、[door_commands.py](../BE_smart_lock/smart_lock/app/door_commands.py)、[command_executor.py](../paspberry_pi/command_executor.py)、[useDoorSession.ts](../FE_smart_lock/smartlock/src/features/door/useDoorSession.ts)。
+关键代码：[lock.py](../apps/api/app/routes/lock.py)、[door_commands.py](../apps/api/app/door_commands.py)、[command_executor.py](../apps/device/command_executor.py)、[useDoorSession.ts](../apps/web/src/features/door/useDoorSession.ts)。
 
 这是本学期很值得展示的工程改进：后台收到令牌、设备在线、HTTP 200，都不能作为实体门已经打开的证据。
 
@@ -85,7 +85,7 @@
 
 新增同帧 MiniFASNetV2 被动呈现攻击检测（PAD），生产后端要求身份相似度至少 0.90、防伪分数至少 0.80，并绑定设备、认证请求及 nonce。两个阈值是当前策略点，不代表 90%/80% 准确率，也不代表防照片攻击已验证。
 
-关键代码：[camera_core.py](../paspberry_pi/camera_core.py)、[manage_templates.py](../paspberry_pi/manage_templates.py)、[anti_spoof.py](../paspberry_pi/cv/code/anti_spoof.py)、[mfa.py](../BE_smart_lock/smart_lock/app/routes/mfa.py)。
+关键代码：[camera_core.py](../apps/device/camera_core.py)、[manage_templates.py](../apps/device/manage_templates.py)、[anti_spoof.py](../apps/device/cv/code/anti_spoof.py)、[mfa.py](../apps/api/app/routes/mfa.py)。
 
 ### 3.5 隐私与产品界面
 
@@ -162,7 +162,7 @@ flowchart LR
 
 旧 `main` 的 CameraManager 以 Picamera2 `RGB888` 采集，然后额外执行 `COLOR_RGB2BGR`；新版主服务已去掉转换。官方手册说明该格式的数组实际是 B、G、R 顺序，直接交给 OpenCV 才符合其预期。
 
-但旧录入工具 `paspberry_pi/cv/code/enroll_face.py` 的 `_Picamera2Camera.read()` 仍保留相同转换。如果继续用该脚本现场录脸，可能出现登记图像与主服务验证图像颜色不一致。新版运维说明主推 `manage_templates.py` 导入已采集图像，因此不能假定当前生产登记一定触发此问题。
+但旧录入工具 `apps/device/cv/code/enroll_face.py` 的 `_Picamera2Camera.read()` 仍保留相同转换。如果继续用该脚本现场录脸，可能出现登记图像与主服务验证图像颜色不一致。新版运维说明主推 `manage_templates.py` 导入已采集图像，因此不能假定当前生产登记一定触发此问题。
 
 建议一次排查任务在同一光线下拍白纸、红色物体和人脸，比较三个阶段：系统相机工具原图、项目采集保存图、网页显示图。记录传感器型号、相机库版本、像素格式、白平衡和实际运行的代码版本。
 
@@ -185,7 +185,7 @@ flowchart LR
 
 ### 6.3 版本库仍带有历史敏感材料和环境
 
-本次确认 Git 仍跟踪 `BE_smart_lock/smart_lock/backend_priv.pem` 和历史 `instance/smart_lock.db`，另有 6,813 个虚拟环境文件、152 个 __pycache__ 文件。新增忽略规则和脱敏打包不会自动移除已经跟踪的历史内容。
+本次确认 Git 仍跟踪 `apps/api/backend_priv.pem` 和历史 `instance/smart_lock.db`，另有 6,813 个虚拟环境文件、152 个 __pycache__ 文件。新增忽略规则和脱敏打包不会自动移除已经跟踪的历史内容。
 
 应在单独的清理变更中确认这些文件是否为测试材料、是否含真实凭据/人员数据；实际使用过的泄露凭据需要轮换。清理跟踪的虚拟环境、缓存、实例库和私人图像/模板，建立可复现依赖与私有数据目录。历史重写影响协作者，需先制定协调方案，不能在今晚直接强制改写共享分支。本次未读取或输出私钥/业务库内容。
 
@@ -303,6 +303,6 @@ Pi GPIO 为 3.3V 逻辑，锁/继电器选择应核对输入阈值、负载与�
 - [SPAKE2：RFC 9382](https://www.rfc-editor.org/rfc/rfc9382.html)。
 - [SPAKE2+：RFC 9383](https://www.rfc-editor.org/rfc/rfc9383)。二者不同；原调研引用 SPAKE2+ 不能直接证明本项目实现 SPAKE2+。
 - [当前架构与威胁模型](COURSE_ARCHITECTURE.md)、[课程密码实验与边界](COURSE_CRYPTO_LAB.md)、[PAD/音频最新记录](PAD_AUDIO_ACCEPTANCE.md)。
-- [设备执行契约](DEVICE_EXECUTION.md)、[Pi 历史记录](PI_INTEGRATION_20261010.md)、[课程最终交付手册](COURSE_FINAL_DELIVERY.md)、[部署说明](../deploy/README.md)。
+- [设备执行契约](DEVICE_EXECUTION.md)、[Pi 历史记录](archive/PI_INTEGRATION_20261010.md)、[课程最终交付手册](COURSE_FINAL_DELIVERY.md)、[部署说明](../deploy/README.md)。
 
 外部硬件/标准资料在 2026-10-17 查询；具体产品库存与人民币成交价没有确认。本复盘按代码、历史文档及本次测试区分证据，没有替老师定义评分标准。

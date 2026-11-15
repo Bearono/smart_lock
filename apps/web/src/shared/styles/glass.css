@@ -1,0 +1,152 @@
+/* Optical layers are limited to navigation and transient controls. Content
+   cards retain a high-opacity fill; camera pixels are never filtered. */
+[data-glass] {
+  box-shadow:
+    inset 1px 1px 1px #ffffffde,
+    inset -1px -1px 1px #ffffff7a,
+    inset 0 0 0 2px #ffffff38,
+    0 12px 32px #25253814,
+    0 2px 6px #2525380a;
+}
+
+[data-glass]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  border: 2px solid transparent;
+  background: radial-gradient(
+      150px circle at var(--glass-x, 35%) var(--glass-y, 0%),
+      #fff,
+      transparent 80%
+    )
+    border-box;
+  mask:
+    linear-gradient(#fff 0 0) padding-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  opacity: var(--glass-light, 0.48);
+  transition: opacity 0.22s ease;
+}
+.button,
+.icon-button,
+.nav-link,
+.management-navigation a,
+.auth-links button,
+.tab {
+  position: relative;
+  transform: scale(var(--press-scale, 1));
+  transform-origin: center;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Keep the original hit target while the visible control compresses. A press
+   near the edge must still click the same control after its spring moves. */
+.button::before,
+.icon-button::before,
+.nav-link::before,
+.management-navigation a::before,
+.auth-links button::before,
+.tab::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  transform: scale(calc(1 / var(--press-scale, 1)));
+}
+[style*='--press-scale'] {
+  will-change: transform;
+}
+.home-navigation {
+  isolation: isolate;
+}
+.home-navigation[data-selection]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--selection-w);
+  height: var(--selection-h);
+  border-radius: 18px;
+  background: linear-gradient(155deg, #fffffff2, #ffffff8c);
+  box-shadow:
+    inset 0 1px 1px #fff,
+    inset 0 -1px 1px #ffffffa6,
+    0 2px 10px #202a3a12;
+  transform: translate(var(--selection-x), var(--selection-y));
+  opacity: var(--selection-opacity, 0);
+  pointer-events: none;
+}
+.home-navigation[data-selection] .nav-link {
+  z-index: 1;
+}
+.home-navigation[data-selection] .nav-link.router-link-active {
+  background: transparent;
+  box-shadow: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-glass] {
+    background: var(--canvas) !important;
+  }
+}
+:root[data-material='opaque'] [data-glass] {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:root[data-material='opaque'] [data-glass]::after {
+  display: none;
+}
+.appearance-value {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.appearance-panel input[type='range'] {
+  accent-color: var(--primary);
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  box-shadow: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.appearance-scale {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  body::before,
+  [data-glass]::after {
+    display: none;
+  }
+  [data-glass] {
+    background: var(--canvas) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-line::after {
+    animation: none;
+    left: 0;
+    width: 100%;
+  }
+  .button,
+  .icon-button,
+  .nav-link,
+  .management-navigation a,
+  .auth-links button,
+  .tab {
+    transform: none !important;
+    transition: none !important;
+  }
+  [data-glass]::after {
+    transition: none;
+    display: none;
+  }
+}

@@ -1,0 +1,43 @@
+:root {
+  --canvas: #f5f6f8;
+  --surface: #ffffff;
+  --ink: #1c1c1e;
+  --muted: #595963;
+  --line: #3c3c431a;
+  --primary: #005ecb;
+  --primary-hover: #004da8;
+  --accent-soft: #eaf2ff;
+  --accent-line: #c7daf9;
+  --surface-subtle: #f2f2f7;
+  --surface-hover: #e9eaf2;
+  --control-border: #d6d7df;
+  --placeholder: #6d6d78;
+  --home-accent: #b45a10;
+  --home-accent-soft: #fff0df;
+  --media-background: #18212b;
+  --environment-wash:
+    radial-gradient(ellipse at 90% 0%, #e5ebf6 0%, transparent 48%),
+    radial-gradient(ellipse at 0% 85%, #f4e9dd 0%, transparent 48%),
+    linear-gradient(145deg, #f5f6fa, #f6f5f2);
+  --material-min-opacity: 0.65;
+  --nav: rgb(255 255 255 / var(--material-opacity, 0.8425));
+  --glass-surface: #ffffffb8;
+  --glass-toolbar: rgb(255 255 255 / var(--material-opacity, 0.8425));
+  --glass-border: #ffffffe6;
+  --glass-blur: blur(24px) saturate(155%);
+  --glass-shadow:
+    inset 0 1px 1px #ffffff, inset 0 -1px 1px #ffffff70, 0 12px 36px #22223b0b, 0 2px 5px #22223b05;
+  --success: #356b54;
+  --danger: #b33e3b;
+  --warning: #886014;
+  --radius: 26px;
+  --shadow: 0 8px 28px #27273505, 0 1px 3px #27273504;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--ink);
+  background: var(--canvas);
+  font-size: 16px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,4 +1,8 @@
 .git
+.local
+**/.tools
+**/.gradle
+**/build
 .agents
 .codex
 releases
@@ -12,6 +16,11 @@ releases
 **/*.db
 **/*.sqlite*
 **/instance
+**/data/templates
+**/*.npy
+**/*.caffemodel
+examples
+examples/legacy_cv
 **/static/captures
 **/*.pem
 **/*.jpg

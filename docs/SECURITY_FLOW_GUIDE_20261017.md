@@ -346,14 +346,14 @@ SPAKE2+的增强注册材料减少服务端对原始口令的直接依赖，但�
 
 | 内容 | 代码 |
 | --- | --- |
-| SPAKE2群运算与完成哈希 | BE_smart_lock/smart_lock/spake2/spake2.py、groups.py、ed25519_group.py |
+| SPAKE2群运算与完成哈希 | apps/api/spake2/spake2.py、groups.py、ed25519_group.py |
 | 握手消息与基础派生 | packages/smartlock_protocol/smartlock_protocol/v2.py、后端routes/security.py |
 | v3确认、GCM、nonce | packages/smartlock_protocol/smartlock_protocol/v3.py |
 | 会话入库及原子重放登记 | app/security_store.py、app/routes/secure_payload.py |
-| 主动POST命令HMAC | app/device_commands.py、paspberry_pi/command_guard.py |
-| 网络建立与恢复 | paspberry_pi/transmit.py、deploy/pi_tunnel.py、deploy/nginx.tls.conf |
-| 人脸与授权 | app/routes/mfa.py、paspberry_pi/app.py |
-| 命令与反馈 | app/routes/lock.py、app/door_commands.py、paspberry_pi/command_executor.py |
+| 主动POST命令HMAC | app/device_commands.py、apps/device/command_guard.py |
+| 网络建立与恢复 | apps/device/transmit.py、deploy/pi_tunnel.py、deploy/nginx.tls.conf |
+| 人脸与授权 | app/routes/mfa.py、apps/device/app.py |
+| 命令与反馈 | app/routes/lock.py、app/door_commands.py、apps/device/command_executor.py |
 
 外部依据：[SPAKE2 RFC 9382](https://www.rfc-editor.org/rfc/rfc9382.html)、[SPAKE2+ RFC 9383](https://www.rfc-editor.org/rfc/rfc9383.html)、[TLS 1.3 RFC 8446](https://www.rfc-editor.org/rfc/rfc8446.html)。这些规范用于解释协议概念，不代表项目已获标准认证。
 

@@ -1,11 +1,27 @@
 __pycache__/
 .venv*/
+venv/
+test-artifacts/
+*.pem
+*.db
+*.sqlite*
+**/static/captures/
+apps/api/test.jpg
+**/data/templates/
+*.caffemodel
 *.py[cod]
 *$py.class
 
 node_modules/
 dist/
+build/
 outputs/
+.local/
+apps/device/cv/models/
+apps/device/cv/outputs/
+examples/legacy_cv/data/
+examples/legacy_cv/models/
+examples/legacy_cv/outputs/
 
 .idea/
 .vscode/

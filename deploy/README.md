@@ -1,3 +1,5 @@
+> 当前文档入口：[文档目录](../docs/README.md)。2026-10-18 升级会改变凭据和媒体存储格式，先阅读下方升级说明。
+
 # 部署、维护与验收
 
 ## 交付边界
@@ -25,6 +27,17 @@ docker compose exec backend flask --app run create-admin --username operator
 
 ## 用户与设备登记
 
+### 恢复现有 Windows 安装
+
+打开 Docker Desktop 后，如只需恢复本项目已经存在的容器，使用精确容器名：
+
+```powershell
+docker start smart-lock-backend-1 smart-lock-web-1 smart-lock-tls-1 smart-lock-notifications-1
+docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' smart-lock-backend-1 smart-lock-web-1 smart-lock-tls-1 smart-lock-notifications-1
+```
+
+本例容器名对应默认项目 `smart-lock`；自定义项目先核对容器名。这不创建容器、不运行 `init`、不修改 Windows 自启。后端和入口健康检查就绪后再访问页面。不要使用 `docker compose start` 来保证跳过初始化：Compose 可能遍历依赖并启动已退出的 `init`。首次安装、配置变更和升级继续按各自章节执行。
+
 1. 创建管理员，首次登录进行 TOTP 绑定。
 2. 用户注册（密码至少 12 字符、最多 72 字节），管理员审批。
 3. 为每台设备登记独立随机口令和固定服务地址：
@@ -45,7 +58,7 @@ docker compose exec backend flask --app run grant-device --username alice --devi
 1. 把登记口令保存为 `deploy/secrets/device_key`，只允许运维账号读取其父目录。
 2. 在维护主机执行 `python deploy/prepare_face_models.py --download`，把固定版本的模型放入 `deploy/device/models`。再次执行不带 `--download` 的命令校验模型。来源和 SHA-256 固定在 `model_manifest.py`；缺失或被改动的模型不通过设备就绪检查，生产进程不自动下载。
 3. 使用下方模板管理工具登记已批准账户，输出到 `deploy/device/templates`。模板用户名与后端账号一致，目录以只读方式挂载。
-4. 按 [家门交付说明](../docs/HOME_DELIVERY.md) 配置后端与设备 HTTPS：只传输设备服务证书、设备服务私钥和 CA 公钥，CA 私钥留在维护主机。设备服务证书 SAN 必须匹配后端登记地址。
+4. 按 [家门交付说明](../docs/archive/HOME_DELIVERY.md) 配置后端与设备 HTTPS：只传输设备服务证书、设备服务私钥和 CA 公钥，CA 私钥留在维护主机。设备服务证书 SAN 必须匹配后端登记地址。
 5. 设置变量并部署：
 
 ```sh
@@ -90,8 +103,8 @@ docker compose run --rm --no-deps -v "$PWD/deploy/backups:/backups" init python 
 固定应用提交和镜像 digest，保存依赖锁文件及测试报告；升级前备份，再重建镜像、执行初始化服务并启动。不要直接在正在运行的容器里安装依赖。
 
 ```sh
-python -B -m unittest discover -s BE_smart_lock/smart_lock/tests -p 'test_*.py' -v
-cd FE_smart_lock/smartlock
+python -B -m unittest discover -s apps/api/tests -p 'test_*.py' -v
+cd apps/web
 npm ci
 npm test
 npm run lint
@@ -182,12 +195,12 @@ docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local 
 这是受控运维流程，不是网页自助登记。先核实被登记者身份及后端账户审批、设备授权；在具备设备镜像视觉依赖的维护环境中处理 3–20 张不同的本人图像。每张只允许一张人脸，重复图片、无脸/多脸和损坏图片均拒绝。图像质量、是否同一人仍由登记者核查，不宣称自动活体校验。
 
 ```sh
-python paspberry_pi/manage_templates.py --directory deploy/device/templates enroll --username alice --images capture1.jpg capture2.jpg capture3.jpg
-python paspberry_pi/manage_templates.py --directory deploy/device/templates validate
-python paspberry_pi/manage_templates.py --directory deploy/device/templates list
+python apps/device/manage_templates.py --directory deploy/device/templates enroll --username alice --images capture1.jpg capture2.jpg capture3.jpg
+python apps/device/manage_templates.py --directory deploy/device/templates validate
+python apps/device/manage_templates.py --directory deploy/device/templates list
 # 替换必须显式指定 --replace；不会默认覆盖已有登记
-python paspberry_pi/manage_templates.py --directory deploy/device/templates install --username alice --vector approved-vector.npy --replace
-python paspberry_pi/manage_templates.py --directory deploy/device/templates remove --username alice
+python apps/device/manage_templates.py --directory deploy/device/templates install --username alice --vector approved-vector.npy --replace
+python apps/device/manage_templates.py --directory deploy/device/templates remove --username alice
 ```
 
 工具与推理共用 `SMART_LOCK_TEMPLATES_DIR`、`SMART_LOCK_MODELS_DIR`；默认路径分别是设备的 `cv/data/templates/templates` 和 `cv/models`。向量要求 128 维、有限非零数值，读取禁止 pickle，安装原子发布并拒绝符号链接。移除只删除指定账户模板。更新后验证并在维护窗口重启设备，使推理缓存刷新：`docker compose -f compose.device.yaml -f compose.device.tls.yaml restart device`。删除模板不能代替后端撤销设备授权，两者应一起执行。
@@ -204,7 +217,7 @@ python paspberry_pi/manage_templates.py --directory deploy/device/templates remo
 docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local python -B -m unittest discover -s /app/tests -v
 ```
 
-最新复核范围、证据和剩余能力见 [软件验收复核](../docs/SOFTWARE_ACCEPTANCE_20261009.md)。
+最新复核范围、证据和剩余能力见 [软件验收复核](../docs/archive/SOFTWARE_ACCEPTANCE_20261009.md)。
 
 ## CSI 摄像头原生部署
 
@@ -259,3 +272,24 @@ python deploy/export_pad.py --cache releases/pad-upstream --output deploy/device
 Docker 和隧道手动启动后，可执行 `python deploy/soak.py --seconds 1800 --interval 60 --output releases/soak.json`。只检查当前会话内就绪、在线和摄像头状态，最多运行两小时；不安装自动任务，也不会自动恢复隧道。报告中的失败采样保留，不可当成未发生。
 
 依据：[Picamera2 颜色映射](https://github.com/raspberrypi/picamera2/blob/main/picamera2/request.py)、[官方手册](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf)、[dlib 构建配置](https://github.com/davisking/dlib/blob/v20.0.1/setup.py)。
+
+
+## 2026-10-18 安全升级与回滚
+
+新前端使用 HttpOnly Cookie 和 CSRF，生产 Cookie 强制 Secure、SameSite=Strict。正式登录使用已受信的 HTTPS 地址，优先同源部署；http://localhost:8080 仅供回环预览。分离跨站前后端需要单独设计会话与跨站策略，不能简单关闭 SameSite 或 CSRF 来适配。
+
+升级前停止 backend、notifications 等写入者，保留数据库/媒体完整备份和当前密钥。用新镜像、原来的 SECRET_KEY/JWT_SECRET_KEY 执行 init-db：新增 OTP 消费计数与登录撤销表，将旧 MFA 凭据及已登记媒体认证加密。SQLite 已有隔离迁移回归；MySQL 字段扩容路径未作实机验收。媒体逐文件原子替换，可重跑迁移；中途失败应排查，不能启动旧版本强行读取混合格式。
+
+新密码默认 scrypt:131072:8:1；已有 bcrypt 在正确密码认证时升级，不需要知道或重置所有用户密码。首次绑定、登录、开门和密码验证共享 TOTP 一次性时间步，刚登录后再次验证需等待下一组代码。注销认证器也需要新 TOTP。
+
+升级后若回滚，必须恢复升级前的整份数据与匹配密钥，再启动旧镜像。**仅回滚代码不能读新密文。** 主密钥不能直接替换；当前没有在线重加密/多版本 KMS，需专门迁移流程。备份不因新版本落盘加密而自动变成加密备份，须限制读取权限。
+
+设备新环境升级 setuptools 83.0.0、wheel 0.46.2，避免已知公告；识别改为直接使用 dlib 与同一组固定模型，不再导入依赖 pkg_resources 的旧包装库。合成输入的旧新向量一致性不代表真人效果。原生 Pi 的系统库不能被通用 pip 依赖替换。
+
+所有容器保持 restart=no；本轮不会安装 Windows 自启或重连任务。树莓派服务自启遵循原有配置，现场部署和实测结果需单独记录。
+
+### 隔离 HTTPS 回归
+
+先构建 `smart-lock-backend:security-review` 与 `smart-lock-web:security-review`（分别使用 deploy/backend.Dockerfile、deploy/web.Dockerfile），确认本机已有 deploy/tls 的实验室证书，然后执行 `python deploy/test_tls_stack.py --output releases/verification`。脚本需要 requests 和 pyotp。
+
+脚本使用随机 Compose 项目名、独立随机应用密钥和独立数据卷，只占用回环端口 18080/18444，不读取正式业务数据。它验证证书、生产 Cookie、CSRF、退出与重启后撤销，最后移除自身容器和卷；失败时也清理。它不是实机摄像头测试。不要在这些端口已有其他程序时强行停止对方程序。

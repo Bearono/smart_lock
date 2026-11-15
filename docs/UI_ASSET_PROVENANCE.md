@@ -2,7 +2,7 @@
 
 生成日期：2026-10-09。使用 Codex 内置 `image_gen` 工具生成原创装饰图片；没有复制调研厂商的素材。
 
-最终资产：`FE_smart_lock/smartlock/src/shared/assets/entryway.webp`，177,298 字节。将生成 PNG 转换为 WebP 以降低网页下载体积；只用于登录品牌区域，不用于快照、认证证据或真实家门展示。
+最终资产：`apps/web/src/shared/assets/entryway.webp`，177,298 字节。将生成 PNG 转换为 WebP 以降低网页下载体积；只用于登录品牌区域，不用于快照、认证证据或真实家门展示。
 
 最终生成提示词：
 

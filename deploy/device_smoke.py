@@ -12,7 +12,6 @@ os.environ.pop('SMART_LOCK_DEVICE_PASSWORD_FILE', None)
 
 import cv2
 import dlib
-import face_recognition
 import numpy as np
 from app import app
 from command_executor import UnavailableActuator
@@ -20,7 +19,9 @@ from runtime import CommandWorker, HeartbeatWorker
 
 
 def main():
-    assert face_recognition.face_locations(np.zeros((64, 64, 3), dtype=np.uint8)) == []
+    assert len(dlib.get_frontal_face_detector()(np.zeros((64, 64, 3), dtype=np.uint8), 1)) == 0
+    from cv.code.face_embedding import load_models
+    assert len(load_models()) == 2
     assert UnavailableActuator().read_state() == 'UNKNOWN'
     client = app.test_client()
     assert client.get('/').status_code == 200

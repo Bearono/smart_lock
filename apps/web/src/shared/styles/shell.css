@@ -1,0 +1,309 @@
+.app-layout {
+  min-height: 100dvh;
+}
+.home-sidebar {
+  width: 220px;
+  position: fixed;
+  inset: 24px auto 24px 20px;
+  z-index: 20;
+  padding: 12px 8px 24px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  min-width: 0;
+}
+.brand:hover {
+  text-decoration: none;
+}
+.brand-symbol {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: var(--home-accent-soft);
+  color: var(--home-accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.brand-name {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+.brand-caption {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.home-sidebar > .navigation-label {
+  margin-top: 32px;
+}
+.navigation-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 1px;
+  margin: 0 12px 12px;
+}
+.home-navigation {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 36px;
+  padding: 8px;
+  background: var(--nav);
+  border: 1px solid var(--glass-border);
+  border-radius: 26px;
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter, var(--glass-blur));
+  backdrop-filter: var(--glass-filter, var(--glass-blur));
+}
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  min-height: 48px;
+  border-radius: 16px;
+  color: var(--ink);
+  font-size: 15px;
+}
+.nav-link:hover {
+  text-decoration: none;
+  background: var(--surface-hover);
+}
+.nav-link.router-link-active {
+  color: var(--primary);
+  font-weight: 650;
+  background: #ffffffd9;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 2px 8px #202a3a09;
+}
+.nav-indicator {
+  width: 5px;
+  height: 5px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: transparent;
+}
+.router-link-active .nav-indicator {
+  background: var(--primary);
+}
+.management-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 36px;
+}
+.mobile-management {
+  display: none;
+}
+.management-navigation a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.management-navigation a:hover,
+.management-navigation .router-link-active {
+  background: var(--surface-hover);
+  color: var(--primary);
+  text-decoration: none;
+}
+.workspace {
+  margin-left: 256px;
+  min-width: 0;
+}
+.home-header {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 44px;
+  padding: 24px 0 16px;
+  gap: 20px;
+  pointer-events: none;
+  flex-wrap: wrap;
+}
+.workspace-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.workspace-heading strong {
+  color: var(--ink);
+  font-weight: 550;
+}
+.topbar-actions {
+  pointer-events: auto;
+  position: relative;
+  border-radius: 999px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-toolbar);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter, var(--glass-blur));
+  backdrop-filter: var(--glass-filter, var(--glass-blur));
+}
+.topbar-actions,
+.account-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  min-width: 0;
+}
+.account-name {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.main-content {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 18px 44px 56px;
+  min-width: 0;
+}
+.command-tray {
+  margin-top: 24px;
+}
+@media (min-width: 768px) and (max-width: 1100px) {
+  .home-sidebar {
+    width: 192px;
+    padding: 28px 12px;
+  }
+  .workspace {
+    margin-left: 224px;
+  }
+  .main-content {
+    padding: 28px 24px;
+  }
+  .home-header {
+    padding: 18px 24px;
+  }
+  .brand-name {
+    font-size: 17px;
+  }
+  .brand-caption {
+    font-size: 10px;
+  }
+}
+@media (max-width: 767px) {
+  .home-sidebar {
+    position: static;
+    width: auto;
+    display: contents;
+  }
+  .home-sidebar > .brand,
+  .home-sidebar > .navigation-label {
+    display: none;
+  }
+  .home-navigation {
+    position: fixed;
+    inset: auto 12px max(12px, env(safe-area-inset-bottom));
+    z-index: 30;
+    background: var(--glass-toolbar);
+    border: 1px solid var(--glass-border);
+    border-radius: 28px;
+    box-shadow:
+      var(--glass-shadow),
+      0 8px 30px #202a3a14;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 6px;
+    gap: 0;
+    margin-top: 0;
+    -webkit-backdrop-filter: var(--glass-filter, var(--glass-blur));
+    backdrop-filter: var(--glass-filter, var(--glass-blur));
+  }
+  .nav-link {
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    min-height: 58px;
+    padding: 7px 3px;
+    color: var(--ink);
+  }
+  .nav-indicator {
+    display: none;
+  }
+  .management-navigation {
+    display: none;
+  }
+  .mobile-management {
+    display: block;
+  }
+  .mobile-management a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    min-height: 52px;
+    color: var(--ink);
+  }
+  .mobile-management a + a {
+    border-top: 1px solid var(--line);
+  }
+  .mobile-management a span {
+    flex: 1;
+  }
+  .management-navigation .navigation-label {
+    display: none;
+  }
+  .management-navigation a {
+    min-height: 36px;
+    font-size: 12px;
+    padding: 5px 8px;
+    gap: 6px;
+  }
+  .workspace {
+    margin-left: 0;
+  }
+  .home-header {
+    top: 0;
+    margin: 0 20px;
+    padding: 12px 0;
+    gap: 8px;
+  }
+  .workspace-heading {
+    font-size: 13px;
+    gap: 8px;
+  }
+  .workspace-heading > span {
+    display: none;
+  }
+  .account-name {
+    font-size: 12px;
+  }
+  .main-content {
+    padding: 16px 20px 128px;
+  }
+}

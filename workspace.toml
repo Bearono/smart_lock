@@ -1,0 +1,29 @@
+schema_version = 1
+
+[applications.api]
+path = "apps/api"
+entrypoint = "run.py"
+dependencies = "requirements.lock"
+
+[applications.web]
+path = "apps/web"
+entrypoint = "src/app/main.js"
+dependencies = "package-lock.json"
+
+[applications.android]
+path = "apps/android"
+entrypoint = "app/src/main/AndroidManifest.xml"
+dependencies = "app/build.gradle"
+
+[applications.device]
+path = "apps/device"
+entrypoint = "app.py"
+dependencies = "requirements.pi.txt"
+
+[libraries.protocol]
+path = "packages/smartlock_protocol"
+entrypoint = "pyproject.toml"
+
+[boundaries]
+historical = ["examples/legacy_crypto", "examples/legacy_cv", "docs/archive"]
+local_only = [".local", "outputs", "releases", "instance", "deploy/secrets", "deploy/tls"]

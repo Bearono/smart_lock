@@ -34,6 +34,9 @@ def main():
             .not_valid_before(now-timedelta(minutes=5)).not_valid_after(min(now+timedelta(days=90), ca.not_valid_after_utc))
             .add_extension(x509.SubjectAlternativeName([host]), critical=False)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+            .add_extension(x509.KeyUsage(True, False, False, False, False, False, False, False, False), critical=True)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca.public_key()), critical=False)
             .add_extension(x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
             .sign(ca_key, hashes.SHA256()))
     files = {'device.crt': cert.public_bytes(serialization.Encoding.PEM),

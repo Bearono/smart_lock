@@ -18,10 +18,11 @@ def verify(output):
     npm = shutil.which('npm.cmd' if sys.platform == 'win32' else 'npm')
     if npm is None:
         raise RuntimeError('Node/npm is required for software acceptance')
-    frontend = ROOT / 'FE_smart_lock/smartlock'
+    frontend = ROOT / 'apps/web'
     checks = [
+        ('repository', [sys.executable, 'deploy/check_repository.py'], ROOT),
         ('backend', [sys.executable, '-B', '-m', 'unittest', 'discover', '-s',
-                     'BE_smart_lock/smart_lock/tests', '-p', 'test_*.py', '-v'], ROOT),
+                     'apps/api/tests', '-p', 'test_*.py', '-v'], ROOT),
         ('frontend-tests', [npm, 'test'], frontend),
         ('frontend-lint', [npm, 'run', 'lint'], frontend),
         ('frontend-types', [npm, 'run', 'typecheck'], frontend),

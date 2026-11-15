@@ -1,0 +1,3 @@
+# Native Raspberry Pi profile; install OS camera libraries first.
+# For a portable isolated runtime use deploy/device.Dockerfile instead.
+-r requirements.pi.txt
