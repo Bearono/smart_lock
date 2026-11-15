@@ -4,7 +4,7 @@
 
 ## 环境
 
-- 后端及通用工具：Python 3.12；安装 `apps/api/requirements.txt`（约束来自同目录锁文件）。
+- 开发与验收：Python 3.12；统一安装根目录 `requirements-dev.txt`，包含 API 锁定依赖、实验测试及离线 wheel 检查工具。运行镜像仍只安装各组件运行依赖。
 - 前端：Node.js 24，使用 `npm ci`。
 - Android：JDK 17+、SDK Platform 36、Build Tools 36.0.0；命令行构建无需 Android Studio。
 - 原生 Pi：使用系统兼容的 Python、Picamera2/OpenCV 和 `requirements.pi.txt`，不要用通用 pip 包替换系统相机库。
@@ -13,7 +13,7 @@
 从仓库根目录创建并激活虚拟环境后：
 
 ```sh
-python -m pip install -r apps/api/requirements.txt
+python -m pip install -r requirements-dev.txt
 python -m pip install --no-deps ./packages/smartlock_protocol
 npm --prefix apps/web ci
 python manage.py check

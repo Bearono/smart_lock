@@ -12,7 +12,7 @@ SPEC.loader.exec_module(PACKAGE)
 class CoursePackagingTests(unittest.TestCase):
     def test_components_and_rebuild_resources_are_included(self):
         names = {path.relative_to(ROOT).as_posix() for path in PACKAGE.collect_files()}
-        for required in ('examples/audio_lab/Start-CourseAudio.cmd', 'deploy/audio_console.py', 'deploy/audio_peer.py',
+        for required in ('requirements-dev.txt', 'examples/audio_lab/Start-CourseAudio.cmd', 'deploy/audio_console.py', 'deploy/audio_peer.py',
                          'apps/android/build_sdk.py', 'apps/android/app/src/main/AndroidManifest.xml',
                          'apps/android/app/src/main/java/org/smartlock/course/OriginPolicy.java',
                          'apps/android/app/src/main/res/xml/network_security_config.xml',

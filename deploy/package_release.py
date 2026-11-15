@@ -9,7 +9,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = (
-    '.gitignore', '.gitattributes', '.editorconfig', 'workspace.toml', 'manage.py',
+    '.gitignore', '.gitattributes', '.editorconfig', 'workspace.toml', 'manage.py', 'requirements-dev.txt',
     'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'compose.yaml', 'compose.device.yaml', 'compose.tls.yaml', '.dockerignore',
     'apps/api/config.py', 'apps/api/run.py',
     'apps/api/requirements.txt', 'apps/api/requirements.lock',
