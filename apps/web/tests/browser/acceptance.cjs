@@ -143,7 +143,7 @@ async function fixture(page) {
       if (back) await new Promise((resolve) => setTimeout(resolve, 350))
       return route.fulfill({
         contentType: 'image/svg+xml',
-        body: `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="${back ? '#0000ff' : '#ff0000'}"/></svg>`
+        body: `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="${back ? '#0000ff' : '#ff0000'}"/></svg>`
       })
     }
     if (endpoint === '/api/mfa/status')
@@ -322,6 +322,21 @@ async function run() {
   await page.getByRole('button', { name: '拍照', exact: true }).click()
   await page.locator('.snapshot-button img').waitFor()
   assert.equal(calls.capture, 1)
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 })
+    const visible = await page.locator('.snapshot-button img').evaluate((image) => {
+      const frame = image.closest('.snapshot-surface').getBoundingClientRect()
+      const bounds = image.getBoundingClientRect()
+      return (
+        bounds.top >= frame.top - 1 &&
+        bounds.bottom <= frame.bottom + 1 &&
+        bounds.left >= frame.left - 1 &&
+        bounds.right <= frame.right + 1
+      )
+    })
+    assert.equal(visible, true, `Full camera image must fit preview at ${width}px`)
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 })
   await page.getByRole('button', { name: '刷新快照', exact: true }).click()
   await page.locator('.snapshot-button img').waitFor()
   const slowImage = page.waitForRequest((request) => request.url().includes('/api/media/bbbb'))
