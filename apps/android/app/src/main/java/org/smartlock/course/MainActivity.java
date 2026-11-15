@@ -1,140 +1,188 @@
 package org.smartlock.course;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.Intent;
-import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.media.AudioAttributes;
-import android.media.MediaPlayer;
-import android.net.Uri;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.http.SslError;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
+import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.security.MessageDigest;
-import java.nio.charset.StandardCharsets;
-import java.nio.charset.CodingErrorAction;
-import java.nio.ByteBuffer;
-import java.util.Base64;
-import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
+/** Mobile shell for the same authenticated door workflow as the web client. */
 public final class MainActivity extends Activity {
-    private static final int PICK_WAV = 1, PICK_PAYLOAD = 2, SAVE_FILE = 3, MIC_PERMISSION = 4, PICK_ISSUER = 5;
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private final PcmRecorder recorder = new PcmRecorder();
-    private final D2dCrypto crypto = new D2dCrypto();
+    private static final int BLUE = 0xff005ecb, INK = 0xff1c1c1e, MUTED = 0xff595963;
+    private final Handler handler = new Handler(Looper.getMainLooper());
     private FrameLayout content;
-    private LinearLayout connectPage, audioPage;
-    private ScrollView audioScroll, connectScroll;
-    private TextView connectionStatus, audioStatus;
+    private ScrollView connectionPage, errorPage;
+    private TextView connectionStatus, errorTitle, errorDetail;
     private EditText endpoint;
-    private EditText issuer, recipient, issuerPin, message;
-    private TextView pinFingerprint;
-    private CheckBox pinVerified;
+    private Button returnButton, connectButton;
+    private ProgressBar progress;
     private WebView web;
     private OriginPolicy policy;
-    private MediaPlayer player;
-    private byte[] wave, payload, exportBytes;
-    private byte[] recipientPublicDer;
-    private boolean busy, destroyed;
-    private String page = "connect";
+    private boolean settingsVisible = true, loadFailed, destroyed, clearing;
+    private final Runnable loadTimeout = () -> fail("连接超时", "请检查网络和服务是否运行，然后重试。");
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         LinearLayout root = column();
-        root.setBackgroundColor(Color.rgb(249, 246, 240));
+        root.setBackgroundColor(0xfff5f6f8);
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             root.setOnApplyWindowInsetsListener((view, insets) -> {
-                android.graphics.Insets edges = insets.getInsets(android.view.WindowInsets.Type.systemBars());
+                android.graphics.Insets edges = insets.getInsets(
+                        android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.ime());
                 view.setPadding(edges.left, edges.top, edges.right, edges.bottom);
                 return insets;
             });
         } else root.setFitsSystemWindows(true);
-        TextView title = text("SmartLock", 24);
-        title.setPadding(dp(18), dp(12), dp(18), dp(4));
-        root.addView(title);
-        LinearLayout navigation = new LinearLayout(this);
-        for (String[] item : new String[][] {{"门锁", "web"}, {"音频实验", "audio"}, {"连接", "connect"}}) {
-            Button button = button(item[0], () -> show(item[1]));
-            navigation.addView(button, new LinearLayout.LayoutParams(0, dp(52), 1));
-        }
-        root.addView(navigation);
-        connectionStatus = text("尚未连接服务", 13);
-        connectionStatus.setPadding(dp(18), dp(4), dp(18), dp(8));
-        root.addView(connectionStatus);
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        toolbar.setPadding(dp(18), dp(4), dp(12), dp(4));
+        toolbar.setBackgroundColor(Color.WHITE);
+        LinearLayout brand = column();
+        TextView title = text("安居 · SmartLock", 17, INK);
+        title.setTypeface(null, Typeface.BOLD);
+        brand.addView(title);
+        connectionStatus = text("连接你的家", 12, MUTED);
+        connectionStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        brand.addView(connectionStatus);
+        toolbar.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+        toolbar.addView(button("连接设置", false, () -> showSettings(true)),
+                new LinearLayout.LayoutParams(-2, dp(48)));
+        root.addView(toolbar);
+        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setProgressTintList(ColorStateList.valueOf(BLUE));
+        progress.setVisibility(View.INVISIBLE);
+        root.addView(progress, new LinearLayout.LayoutParams(-1, dp(3)));
         content = new FrameLayout(this);
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
-        buildConnectPage();
-        buildAudioPage();
+        buildConnectionPage();
+        buildErrorPage();
         setContentView(root);
         if (android.os.Build.VERSION.SDK_INT >= 33)
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::navigateBack);
-        show("connect");
+        String saved = getPreferences(MODE_PRIVATE).getString("endpoint", getString(R.string.default_service_url));
+        endpoint.setText(saved);
+        if (!saved.isEmpty()) connect(); else showSettings(true);
     }
 
-    private void buildConnectPage() {
-        connectPage = paddedColumn();
-        connectPage.addView(text("连接你的门锁服务", 22));
-        connectPage.addView(text("输入手机可以访问的 HTTPS 地址。电脑的 localhost 不能用于手机。首次登录按网页完成 TOTP 绑定。", 16));
+    private void buildConnectionPage() {
+        LinearLayout body = paddedColumn();
+        body.addView(text("⌂", 48, BLUE));
+        TextView title = text("把家，连在手心", 28, INK);
+        title.setTypeface(null, Typeface.BOLD);
+        body.addView(title);
+        body.addView(text("查看门前画面，验证身份，安心开门。", 16, MUTED));
+        LinearLayout card = paddedColumn();
+        card.setBackground(rounded(Color.WHITE, 24));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
+        cardParams.topMargin = dp(28);
+        body.addView(card, cardParams);
+        card.addView(text("服务地址", 16, INK));
         endpoint = new EditText(this);
+        endpoint.setContentDescription("门锁服务 HTTPS 地址");
         endpoint.setHint("https://lock.example.com:8443");
         endpoint.setSingleLine(true);
+        endpoint.setTextSize(16);
+        endpoint.setTextColor(INK);
+        endpoint.setHintTextColor(MUTED);
         endpoint.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        endpoint.setText(getPreferences(MODE_PRIVATE).getString("endpoint", ""));
         endpoint.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
-        connectPage.addView(endpoint, new LinearLayout.LayoutParams(-1, dp(56)));
-        connectPage.addView(button("保存地址并连接", this::connect));
-        connectPage.addView(button("清除本机网页会话", () -> new AlertDialog.Builder(this)
-                .setTitle("清除本机会话？").setMessage("这会清除本机登录状态。退出账户请先使用网页中的退出功能。").setNegativeButton("取消", null)
-                .setPositiveButton("清除", (dialog, which) -> clearWeb()).show()));
-        connectPage.addView(text("证书错误会停止连接。调试 APK 可使用你手动安装的课程 CA；正式 APK 仅信任系统 CA。地址变化后需重新登录。", 14));
-        connectScroll = scroll(connectPage);
-        content.addView(connectScroll);
+        endpoint.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(512)});
+        card.addView(endpoint, new LinearLayout.LayoutParams(-1, dp(60)));
+        card.addView(text("填写部署时提供的 HTTPS 地址，并保持手机与服务网络连通。", 14, MUTED));
+        connectButton = button("连接我的家", true, this::connect);
+        addAction(card, connectButton);
+        returnButton = button("返回门锁", false, () -> {
+            if (web == null) retry(); else showSettings(false);
+        });
+        addAction(card, returnButton);
+        addAction(body, button("清除本机登录状态", false, this::confirmClearSession));
+        body.addView(text("登录和开门均需身份验证。拍照由树莓派摄像头完成。", 14, MUTED));
+        body.addView(text("SmartLock 1.1 · 智能门锁", 12, MUTED));
+        connectionPage = scroll(body);
+        content.addView(connectionPage);
     }
 
-    @SuppressLint("SetJavaScriptEnabled") // Existing Vue application; exact HTTPS origin only, no native JS bridge.
+    private void buildErrorPage() {
+        LinearLayout body = paddedColumn();
+        body.setGravity(Gravity.CENTER_VERTICAL);
+        errorTitle = text("暂时无法连接", 26, INK);
+        errorTitle.setTypeface(null, Typeface.BOLD);
+        errorDetail = text("", 16, MUTED);
+        errorDetail.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        body.addView(errorTitle);
+        body.addView(errorDetail);
+        addAction(body, button("重新连接", true, this::retry));
+        addAction(body, button("检查连接设置", false, () -> showSettings(true)));
+        errorPage = scroll(body);
+        errorPage.setBackgroundColor(0xfff5f6f8);
+        errorPage.setVisibility(View.GONE);
+        content.addView(errorPage);
+    }
+
     private void connect() {
-        OriginPolicy selected;
+        if (clearing) return;
+        final OriginPolicy selected;
         try { selected = new OriginPolicy(endpoint.getText().toString()); }
-        catch (IllegalArgumentException error) { endpoint.setError(error.getMessage()); return; }
-        clearWeb();
+        catch (IllegalArgumentException invalid) { endpoint.setError(invalid.getMessage()); return; }
+        ((InputMethodManager) getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(endpoint.getWindowToken(), 0);
+        String previous = getPreferences(MODE_PRIVATE).getString("endpoint", "");
+        if (web != null && policy != null && policy.origin().equals(selected.origin())) {
+            if (loadFailed) retry(); else showSettings(false);
+            return;
+        }
+        destroyWeb();
         policy = selected;
-        getPreferences(MODE_PRIVATE).edit().putString("endpoint", selected.origin()).apply();
+        Runnable open = () -> {
+            if (destroyed) return;
+            getPreferences(MODE_PRIVATE).edit().putString("endpoint", selected.origin()).apply();
+            endpoint.setText(selected.origin());
+            createWeb();
+            retry();
+        };
+        if (!previous.isEmpty() && !previous.equals(selected.origin())) clearSession(open);
+        else open.run();
+    }
+
+    @SuppressLint("SetJavaScriptEnabled") // Same-origin Vue UI; no native JavaScript bridge.
+    private void createWeb() {
+        final OriginPolicy selected = policy;
         WebView created = new WebView(this);
         web = created;
         WebSettings settings = created.getSettings();
         settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(false);
+        settings.setDomStorageEnabled(true); // Appearance preferences only; authentication uses HttpOnly cookies.
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setAllowFileAccessFromFileURLs(false);
@@ -146,20 +194,25 @@ public final class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(true);
         settings.setSafeBrowsingEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        created.setBackgroundColor(0xfff5f6f8);
         created.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(created, false);
         created.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
+            @Override public void onProgressChanged(WebView view, int value) {
+                if (web == view && !loadFailed) progress.setProgress(value);
+            }
         });
         created.setWebViewClient(new WebViewClient() {
-            private boolean mainFailed;
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
-                mainFailed = false;
+                if (view != web) return;
+                if (!selected.allows(url)) { fail("地址已拦截", "请使用已配置的门锁服务。"); return; }
+                beginLoading();
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 boolean allowed = selected.allows(request.getUrl().toString());
-                if (!allowed) connectionStatus.setText("已阻止离开已配置的 HTTPS 服务");
+                if (!allowed) connectionStatus.setText("已拦截外部地址");
                 return !allowed;
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
@@ -169,342 +222,136 @@ public final class MainActivity extends Activity {
                 return png == null ? new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]))
                         : new WebResourceResponse("image/png", null, new ByteArrayInputStream(png));
             }
-            @Override public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                handler.cancel();
-                mainFailed = true;
-                connectionStatus.setText("证书验证失败：检查课程 CA、服务地址与证书有效期");
+            @Override public void onReceivedSslError(WebView view, SslErrorHandler handle, SslError error) {
+                handle.cancel();
+                if (view == web) fail("无法验证服务身份", "请核对服务地址、手机时间和部署证书，再重新连接。");
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) {
-                    mainFailed = true;
-                    connectionStatus.setText("连接失败，请检查 HTTPS 地址和网络");
-                }
+                if (view == web && request.isForMainFrame()) fail("暂时无法连接", "请确认网络畅通、门锁服务已启动，然后重试。");
+            }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (view == web && request.isForMainFrame()) fail("服务暂不可用", "服务返回 " + response.getStatusCode() + "，请稍后重试。");
             }
             @Override public void onPageFinished(WebView view, String url) {
-                if (!mainFailed && selected.allows(url)) connectionStatus.setText(selected.origin());
+                if (view != web || loadFailed || !selected.allows(url)) return;
+                handler.removeCallbacks(loadTimeout);
+                progress.setVisibility(View.INVISIBLE);
+                connectionStatus.setText("已连接 · 安全访问");
+                CookieManager.getInstance().flush();
+            }
+            @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                if (view == web) {
+                    destroyWeb();
+                    fail("页面需要重新加载", "页面进程已结束，重新连接即可继续。请先确认最近操作的执行结果。");
+                }
+                return true;
             }
         });
-        content.addView(created, new FrameLayout.LayoutParams(-1, -1));
-        connectionStatus.setText("正在连接 " + selected.origin());
+        content.addView(created, 0, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void beginLoading() {
+        handler.removeCallbacks(loadTimeout);
+        loadFailed = false;
+        errorPage.setVisibility(View.GONE);
+        connectionStatus.setText("正在连接…");
+        progress.setProgress(0);
+        progress.setVisibility(View.VISIBLE);
+        handler.postDelayed(loadTimeout, 20000);
+    }
+
+    private void retry() {
+        if (clearing) return;
+        if (policy == null) { showSettings(true); return; }
+        if (web == null) createWeb();
+        beginLoading();
+        showSettings(false);
+        // Always load the home GET. Never resubmit a POST or repeat a door command.
+        web.loadUrl(policy.origin() + "/");
+    }
+
+    private void fail(String title, String detail) {
+        if (destroyed) return;
+        handler.removeCallbacks(loadTimeout);
+        loadFailed = true;
+        if (web != null) web.stopLoading();
+        progress.setVisibility(View.INVISIBLE);
+        connectionStatus.setText("连接需要检查");
+        errorTitle.setText(title);
+        errorDetail.setText(detail);
+        errorPage.setVisibility(settingsVisible ? View.GONE : View.VISIBLE);
+    }
+
+    private void showSettings(boolean visible) {
+        settingsVisible = visible;
+        connectionPage.setVisibility(visible ? View.VISIBLE : View.GONE);
+        returnButton.setVisibility(policy != null ? View.VISIBLE : View.GONE);
+        errorPage.setVisibility(!visible && loadFailed ? View.VISIBLE : View.GONE);
+        if (web != null) web.setVisibility(visible ? View.GONE : View.VISIBLE);
+    }
+
+    private void confirmClearSession() {
+        new AlertDialog.Builder(this).setTitle("清除本机登录状态？")
+                .setMessage("清除后需要重新登录。只影响这部手机；账号退出请使用门锁页面里的退出登录。")
+                .setNegativeButton("取消", null).setPositiveButton("清除", (dialog, which) -> {
+                    destroyWeb();
+                    clearSession(() -> { connectionStatus.setText("已清除，请重新连接"); showSettings(true); });
+                }).show();
+    }
+
+    private void clearSession(Runnable complete) {
+        clearing = true;
+        connectButton.setEnabled(false);
+        WebStorage.getInstance().deleteAllData();
         CookieManager.getInstance().removeAllCookies(removed -> {
-            if (!destroyed && web == created) created.loadUrl(selected.origin() + "/");
-        });
-        show("web");
-    }
-
-    private void clearWeb() {
-        if (web != null) {
-            web.stopLoading(); web.clearHistory(); web.clearCache(true);
-            content.removeView(web); web.destroy(); web = null;
-        }
-        CookieManager.getInstance().removeAllCookies(null);
-        connectionStatus.setText("本机会话已清除");
-    }
-
-    private void buildAudioPage() {
-        audioPage = paddedColumn();
-        audioPage.addView(text("OFDM 音频实验", 22));
-        audioPage.addView(text("48 kHz · 单声道 · PCM16\n发送载荷最多 2048 字节，录音最多 10 秒。播放和录音均由你主动开始，离开应用立即停止。", 16));
-        audioStatus = text("选择载荷生成音频，或导入 / 录制 WAV 后解码。", 16);
-        audioStatus.setPadding(0, dp(14), 0, dp(14));
-        audioPage.addView(audioStatus);
-        audioPage.addView(button("选择载荷并生成 OFDM WAV", () -> pick(PICK_PAYLOAD)));
-        audioPage.addView(button("导入 WAV", () -> pick(PICK_WAV)));
-        audioPage.addView(button("播放当前 WAV", this::play));
-        audioPage.addView(button("停止播放 / 录音", this::stopAudio));
-        audioPage.addView(button("录音（最多 10 秒）", this::requestRecording));
-        audioPage.addView(button("解码当前 WAV", this::decode));
-        audioPage.addView(button("保存当前 WAV", () -> export(wave, "audio/wav", "smartlock-audio.wav")));
-        audioPage.addView(button("保存当前载荷", () -> export(payload, "application/octet-stream", "smartlock-payload.bin")));
-        audioPage.addView(button("分享当前 WAV", () -> share(wave, "wave.wav", "audio/wav")));
-        audioPage.addView(button("分享当前载荷", () -> share(payload, "payload.bin", "application/octet-stream")));
-        audioPage.addView(text("CRC 仅检测传输损坏。解码得到的载荷仍未认证，不会直接改变设备授权或开锁。真实声学效果与设备物理特征需另行采样验收。", 14));
-        audioPage.addView(text("认证密钥分发", 22));
-        audioPage.addView(text("先通过可信渠道核对发行端公钥，再生成本次接收请求。将请求 WAV 发送到发行端，接收回复 WAV 并解码后验证。会话最长 180 秒，仅保留在内存。", 16));
-        issuer = field("发行端 ID（例如 laptop）", false);
-        recipient = field("本机 ID（例如 iqoo）", false);
-        issuerPin = field("已核对的发行端公钥 · SPKI Base64", true);
-        audioPage.addView(issuer); audioPage.addView(recipient); audioPage.addView(issuerPin);
-        audioPage.addView(button("导入发行端公钥 DER", () -> pick(PICK_ISSUER)));
-        pinFingerprint = text("尚未选择发行端公钥", 14);
-        audioPage.addView(pinFingerprint);
-        pinVerified = new CheckBox(this);
-        pinVerified.setText("我已通过可信渠道核对上述公钥指纹");
-        audioPage.addView(pinVerified);
-        issuerPin.addTextChangedListener(new android.text.TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                pinVerified.setChecked(false);
-                try {
-                    byte[] key = Base64.getDecoder().decode(s.toString().trim());
-                    if (key.length == 0 || key.length > 256) throw new IllegalArgumentException();
-                    pinFingerprint.setText("发行端公钥 SHA-256：\n" + digest(key));
-                } catch (Exception invalid) { pinFingerprint.setText("请输入或导入有效的发行端 SPKI 公钥"); }
-            }
-            @Override public void afterTextChanged(android.text.Editable s) { }
-        });
-        audioPage.addView(button("生成接收请求 WAV", this::beginExchange));
-        audioPage.addView(button("导出本次接收公钥 DER", () -> export(recipientPublicDer, "application/octet-stream", "receiver-public.der")));
-        audioPage.addView(button("验证已解码的密钥包", this::acceptKeyPacket));
-        audioPage.addView(button("生成密钥确认 WAV", () -> work(() -> {
-            preparePacket(crypto.confirmationJson());
-            return "已生成密钥确认 WAV，请发送给发行端。";
-        })));
-        message = field("测试消息（最多 1024 字节）", true);
-        audioPage.addView(message);
-        audioPage.addView(button("加密消息并生成 WAV", () -> {
-            final String plaintext = message.getText().toString();
-            work(() -> {
-                preparePacket(crypto.encryptMessage(plaintext));
-                runOnUiThread(() -> message.setText(""));
-                return "已生成 AES-GCM 加密消息 WAV。接收端仍需验证会话和重放状态。";
-            });
-        }));
-        audioPage.addView(button("结束密钥会话", () -> work(() -> {
-            crypto.clear(); payload = null; recipientPublicDer = null;
-            return "密钥会话已结束，内存会话密钥已清除。";
-        })));
-        audioScroll = scroll(audioPage);
-        content.addView(audioScroll);
-    }
-
-    private void pick(int request) {
-        if (blocked()) return;
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-        startActivityForResult(intent, request);
-    }
-
-    @Override protected void onActivityResult(int request, int result, Intent data) {
-        super.onActivityResult(request, result, data);
-        if (result != RESULT_OK || data == null || data.getData() == null) return;
-        Uri uri = data.getData();
-        if (!"content".equals(uri.getScheme())) { status("仅支持系统文件选择器返回的文件"); return; }
-        if (request == SAVE_FILE) {
-            final byte[] bytes = exportBytes; exportBytes = null;
-            if (bytes == null) return;
-            work(() -> {
-                try (OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
-                    if (output == null) throw new IllegalStateException("无法写入选择的位置");
-                    output.write(bytes);
-                }
-                return "已保存 " + bytes.length + " 字节";
-            });
-        } else if (request == PICK_WAV || request == PICK_PAYLOAD || request == PICK_ISSUER) {
-            work(() -> {
-                byte[] bytes;
-                try (InputStream input = getContentResolver().openInputStream(uri)) {
-                    bytes = WaveFile.readBounded(input, request == PICK_WAV ? WaveFile.MAX_BYTES
-                            : request == PICK_ISSUER ? 256 : OfdmCodec.MAX_PAYLOAD);
-                }
-                if (request == PICK_ISSUER) {
-                    java.security.PublicKey key = java.security.KeyFactory.getInstance("EC")
-                            .generatePublic(new java.security.spec.X509EncodedKeySpec(bytes));
-                    if (!(key instanceof java.security.interfaces.ECPublicKey)) throw new IllegalArgumentException("需要 EC 发行端公钥");
-                    final String pin = Base64.getEncoder().encodeToString(bytes);
-                    runOnUiThread(() -> issuerPin.setText(pin));
-                    return "已导入发行端公钥。请通过可信渠道核对页面显示的 SHA-256 指纹。";
-                }
-                if (request == PICK_WAV) {
-                    double[] samples = WaveFile.decode(bytes);
-                    wave = bytes; payload = null;
-                    return String.format(Locale.ROOT, "已导入 %.2f 秒 WAV，可播放或解码", samples.length / 48000.0);
-                }
-                wave = WaveFile.encode(OfdmCodec.encode(bytes)); payload = null;
-                return "已生成 OFDM WAV\n载荷 " + bytes.length + " 字节 · SHA-256 " + digest(bytes);
-            });
-        }
-    }
-
-    private void decode() {
-        if (wave == null) { status("请先导入或录制 WAV"); return; }
-        final byte[] input = wave;
-        work(() -> {
-            byte[] decoded = OfdmCodec.decode(WaveFile.decode(input));
-            payload = decoded;
-            return "解码成功（尚未认证）\n" + decoded.length + " 字节 · SHA-256 " + digest(decoded);
+            clearing = false;
+            if (!destroyed) { connectButton.setEnabled(true); complete.run(); }
         });
     }
 
-    private void beginExchange() {
-        if (!pinVerified.isChecked()) { status("请先通过可信渠道核对发行端公钥指纹并勾选确认"); return; }
-        final String sender = issuer.getText().toString().trim();
-        final String receiver = recipient.getText().toString().trim();
-        final String pin = issuerPin.getText().toString().trim();
-        work(() -> {
-            String request = crypto.beginRequest(sender, receiver, pin);
-            recipientPublicDer = Base64.getDecoder().decode(crypto.recipientPublicKeyBase64());
-            preparePacket(request);
-            return "已生成 180 秒有效的接收请求 WAV\n发行端公钥 SHA-256：" + digest(Base64.getDecoder().decode(pin))
-                    + "\n本次接收方公钥 SHA-256：" + digest(recipientPublicDer)
-                    + "\n请将接收公钥 DER 带外交给发行端并核对指纹。"
-                    + "\n发送请求后，导入或录制回复 WAV → 解码 → 验证密钥包。";
-        });
+    private void destroyWeb() {
+        handler.removeCallbacks(loadTimeout);
+        progress.setVisibility(View.INVISIBLE);
+        if (web == null) return;
+        WebView old = web;
+        web = null;
+        content.removeView(old);
+        old.destroy();
     }
 
-    private void acceptKeyPacket() {
-        if (payload == null) { status("先解码发行端回复 WAV"); return; }
-        final byte[] received = payload.clone();
-        work(() -> {
-            String packet = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(received)).toString();
-            crypto.acceptPacket(packet);
-            return "发行端签名、请求绑定及有效期验证通过，已接收会话密钥。\n请生成密钥确认 WAV；此操作不产生开锁授权。";
-        });
-    }
-
-    private void preparePacket(String packet) {
-        byte[] bytes = packet.getBytes(StandardCharsets.UTF_8);
-        wave = WaveFile.encode(OfdmCodec.encode(bytes));
-        payload = bytes;
-    }
-
-    private void export(byte[] bytes, String type, String name) {
-        if (blocked()) return;
-        if (bytes == null) { status("没有可保存的数据"); return; }
-        exportBytes = bytes.clone();
-        startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                .setType(type).putExtra(Intent.EXTRA_TITLE, name), SAVE_FILE);
-    }
-
-    private void share(byte[] bytes, String name, String type) {
-        if (blocked()) return;
-        if (bytes == null) { status("没有可分享的数据"); return; }
-        try {
-            try (FileOutputStream output = new FileOutputStream(new File(getCacheDir(), "share-" + name))) {
-                output.write(bytes);
-            }
-            Uri uri = Uri.parse("content://org.smartlock.course.exports/" + name);
-            Intent intent = new Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            intent.setClipData(android.content.ClipData.newRawUri("音频实验导出", uri));
-            startActivity(Intent.createChooser(intent, "选择分享位置"));
-        } catch (Exception error) { status("分享失败：" + error.getMessage()); }
-    }
-
-    private void play() {
-        if (blocked()) return;
-        if (wave == null) { status("请先选择或生成 WAV"); return; }
-        stopAudio();
-        try {
-            File file = new File(getCacheDir(), "playback.wav");
-            try (FileOutputStream output = new FileOutputStream(file)) { output.write(wave); }
-            MediaPlayer current = new MediaPlayer();
-            player = current;
-            current.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
-            current.setDataSource(file.getAbsolutePath());
-            current.setOnPreparedListener(prepared -> { if (player == prepared) { prepared.start(); status("正在播放 WAV，请保持适当音量"); } });
-            current.setOnCompletionListener(completed -> { stopPlayer(); status("播放结束"); });
-            current.setOnErrorListener((failed, what, extra) -> { stopPlayer(); status("音频播放失败"); return true; });
-            current.prepareAsync();
-        } catch (Exception error) { stopPlayer(); status("无法播放：" + error.getMessage()); }
-    }
-
-    private void requestRecording() {
-        if (blocked()) return;
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            new AlertDialog.Builder(this).setTitle("使用麦克风进行音频实验")
-                    .setMessage("仅在点击录音后采集，最多 10 秒。录音留在本机，只有你选择保存时才导出。")
-                    .setNegativeButton("取消", null).setPositiveButton("继续", (d,w) ->
-                        requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, MIC_PERMISSION)).show();
-        } else startRecording();
-    }
-
-    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
-        super.onRequestPermissionsResult(request, permissions, grants);
-        if (request == MIC_PERMISSION) {
-            if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED)
-                status("麦克风已授权。点击录音即可开始采集。");
-            else status("未授予麦克风权限；仍可导入 WAV 进行实验");
-        }
-    }
-
-    private void startRecording() {
-        if (blocked()) return;
-        stopPlayer();
-        try {
-            recorder.start(this, new PcmRecorder.Listener() {
-                @Override public void finished(double[] samples, String source) {
-                    byte[] recorded = WaveFile.encode(samples);
-                    runOnUiThread(() -> {
-                        if (destroyed) return;
-                        wave = recorded; payload = null;
-                        status(String.format(Locale.ROOT, "录音完成：%.2f 秒\n%s\n可解码或保存 WAV", samples.length / 48000.0, source));
-                    });
-                }
-                @Override public void failed(String message) { runOnUiThread(() -> status("录音失败：" + message)); }
-            });
-            status("正在录音，10 秒后自动停止；也可点击停止");
-        } catch (RuntimeException error) { status("无法录音：" + error.getMessage()); }
-    }
-
-    private boolean blocked() {
-        if (busy || recorder.isRunning()) { status("请等待当前处理完成，或先停止录音"); return true; }
-        return false;
-    }
-    private interface Job { String run() throws Exception; }
-    private void work(Job task) {
-        if (blocked()) return;
-        stopPlayer(); busy = true; status("正在处理…");
-        worker.execute(() -> {
-            String message;
-            try { message = task.run(); }
-            catch (Exception error) { message = "操作失败：" + error.getMessage(); }
-            final String result = message;
-            runOnUiThread(() -> { busy = false; status(result); });
-        });
-    }
-
-    private void show(String selected) {
-        if ("web".equals(selected) && web == null) selected = "connect";
-        if (!"audio".equals(selected)) stopAudio();
-        page = selected;
-        audioScroll.setVisibility("audio".equals(selected) ? View.VISIBLE : View.GONE);
-        connectScroll.setVisibility("connect".equals(selected) ? View.VISIBLE : View.GONE);
-        if (web != null) web.setVisibility("web".equals(selected) ? View.VISIBLE : View.GONE);
-    }
-    private void stopPlayer() { if (player != null) { player.release(); player = null; } }
-    private void stopAudio() { stopPlayer(); recorder.stop(); }
-    private void status(String message) { if (!destroyed) audioStatus.setText(message); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-    private LinearLayout column() { LinearLayout result = new LinearLayout(this); result.setOrientation(LinearLayout.VERTICAL); return result; }
-    private LinearLayout paddedColumn() { LinearLayout result = column(); result.setPadding(dp(20), dp(20), dp(20), dp(30)); return result; }
-    private ScrollView scroll(View child) { ScrollView result = new ScrollView(this); result.setFillViewport(true); result.addView(child); return result; }
-    private TextView text(String value, int size) { TextView result = new TextView(this); result.setText(value); result.setTextSize(size); result.setTextColor(Color.rgb(48, 40, 34)); result.setPadding(0, dp(6), 0, dp(6)); return result; }
-    private Button button(String label, Runnable click) { Button result = new Button(this); result.setText(label); result.setAllCaps(false); result.setMinHeight(dp(48)); result.setOnClickListener(view -> click.run()); return result; }
-    private EditText field(String hint, boolean multiline) {
-        EditText value = new EditText(this); value.setHint(hint); value.setSingleLine(!multiline);
-        value.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
-        value.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                | (multiline ? android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE : 0));
-        value.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(multiline ? 4096 : 50)});
-        return value;
+    private LinearLayout column() { LinearLayout view = new LinearLayout(this); view.setOrientation(LinearLayout.VERTICAL); return view; }
+    private LinearLayout paddedColumn() { LinearLayout view = column(); view.setPadding(dp(24), dp(24), dp(24), dp(24)); return view; }
+    private ScrollView scroll(View child) { ScrollView view = new ScrollView(this); view.setFillViewport(true); view.addView(child); return view; }
+    private TextView text(String label, int size, int color) {
+        TextView view = new TextView(this); view.setText(label); view.setTextSize(size); view.setTextColor(color);
+        view.setPadding(0, dp(4), 0, dp(4)); return view;
     }
-    private static String digest(byte[] bytes) throws Exception {
-        byte[] hash = MessageDigest.getInstance("SHA-256").digest(bytes);
-        StringBuilder result = new StringBuilder();
-        for (byte value : hash) result.append(String.format(Locale.ROOT, "%02x", value & 255));
-        return result.toString();
+    private GradientDrawable rounded(int color, int radius) {
+        GradientDrawable drawable = new GradientDrawable(); drawable.setColor(color); drawable.setCornerRadius(dp(radius)); return drawable;
     }
-    @Override public void onConfigurationChanged(android.content.res.Configuration configuration) {
-        super.onConfigurationChanged(configuration);
-        // Resizing keeps the active experiment and WebView in memory; no keys enter saved state.
-        content.requestLayout();
-        if (web != null) web.invalidate();
+    private Button button(String label, boolean primary, Runnable action) {
+        Button view = new Button(this); view.setText(label); view.setTextSize(15); view.setAllCaps(false);
+        view.setMinHeight(dp(48)); view.setPadding(dp(16), dp(8), dp(16), dp(8));
+        view.setTextColor(primary ? Color.WHITE : BLUE);
+        view.setBackground(new android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x22005ecb),
+                rounded(primary ? BLUE : 0xffeaf2ff, 16), null));
+        view.setOnClickListener(v -> action.run()); return view;
     }
-    @Override protected void onStop() { stopAudio(); if (web != null) web.onPause(); super.onStop(); }
+    private void addAction(LinearLayout parent, Button button) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(14); parent.addView(button, params);
+    }
+    @Override public void onConfigurationChanged(android.content.res.Configuration config) {
+        super.onConfigurationChanged(config); content.requestLayout(); if (web != null) web.invalidate();
+    }
+    @Override protected void onStop() { if (web != null) web.onPause(); CookieManager.getInstance().flush(); super.onStop(); }
     @Override protected void onResume() { super.onResume(); if (web != null) web.onResume(); }
-    @Override protected void onDestroy() {
-        destroyed = true; stopAudio(); worker.shutdownNow(); clearWeb(); crypto.clear();
-        wave = null; payload = null; exportBytes = null; recipientPublicDer = null; super.onDestroy();
-    }
-    @Override public void onBackPressed() {
-        navigateBack();
-    }
+    @Override protected void onDestroy() { destroyed = true; destroyWeb(); super.onDestroy(); }
+    @Override public void onBackPressed() { navigateBack(); }
     private void navigateBack() {
-        if ("web".equals(page) && web != null && web.canGoBack()) web.goBack();
-        else if (!"connect".equals(page)) show("connect");
-        else finish();
+        if (settingsVisible && policy != null) { showSettings(false); if (web == null) retry(); }
+        else if (!settingsVisible && !loadFailed && web != null && web.canGoBack()) web.goBack();
+        else moveTaskToBack(true);
     }
 }

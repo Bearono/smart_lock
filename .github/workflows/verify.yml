@@ -73,6 +73,13 @@ jobs:
       - run: python apps/android/tests/test_codec_interop.py --java "$JAVA_HOME_17_X64/bin/java"
       - name: Build and verify debug APK
         run: python apps/android/build_sdk.py --jdk "$JAVA_HOME_17_X64" --sdk "$ANDROID_HOME"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smartlock-android-debug
+          path: |
+            apps/android/app/build/outputs/apk/debug/app-debug.apk
+            apps/android/app/build/outputs/apk/debug/build-evidence.json
+          if-no-files-found: error
   docker:
     runs-on: ubuntu-latest
     steps:

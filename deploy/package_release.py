@@ -23,7 +23,7 @@ FILES = (
     'Start-CourseAudio.cmd',
     'apps/android/.gitignore', 'apps/android/settings.gradle', 'apps/android/build.gradle',
     'apps/android/gradle.properties', 'apps/android/app/build.gradle',
-    'apps/android/build_sdk.py', 'apps/android/test_jvm.py',
+    'apps/android/build_sdk.py', 'apps/android/test_jvm.py', 'apps/android/README.md',
     'compose.lock-sim.yaml', 'apps/lock_sim/requirements.txt',
 )
 TREES = {

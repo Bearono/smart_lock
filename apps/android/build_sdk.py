@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import subprocess
 import shutil
+import ssl
+from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -18,7 +20,25 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jdk', type=Path, required=True)
     parser.add_argument('--sdk', type=Path, default=ROOT / '.tools/sdk')
+    parser.add_argument('--ca-cert', type=Path, help='Public course CA for this debug APK only; no OS trust change')
+    parser.add_argument('--endpoint', default='', help='Optional initial HTTPS service origin')
     args = parser.parse_args()
+    if args.endpoint:
+        origin = urlsplit(args.endpoint)
+        if (origin.scheme != 'https' or not origin.hostname or origin.username or origin.password
+                or origin.query or origin.fragment or origin.path not in ('', '/')
+                or '\\' in args.endpoint or origin.port == 0):
+            raise ValueError('Endpoint must be a credential-free HTTPS origin')
+        args.endpoint = args.endpoint.rstrip('/')
+    ca_bytes = None
+    if args.ca_cert:
+        ca_bytes = args.ca_cert.read_bytes()
+        if (len(ca_bytes) > 16384 or ca_bytes.count(b'-----BEGIN CERTIFICATE-----') != 1
+                or not ca_bytes.strip().startswith(b'-----BEGIN CERTIFICATE-----')
+                or not ca_bytes.strip().endswith(b'-----END CERTIFICATE-----')
+                or b'PRIVATE KEY' in ca_bytes):
+            raise ValueError('Expected one public PEM CA certificate, never a private key')
+        ssl.create_default_context().load_verify_locations(cadata=ca_bytes.decode('ascii'))
     tools = args.sdk.resolve() / 'build-tools/36.0.0'
     platform = args.sdk.resolve() / 'platforms/android-36/android.jar'
     jdk = args.jdk.resolve() / 'bin'
@@ -29,8 +49,8 @@ def main():
         if not required.is_file():
             raise FileNotFoundError(required)
     build = ROOT / 'app/build/sdk'
-    classes, dex, generated = (build / name for name in ('classes', 'dex', 'generated'))
-    for path in (classes, dex, generated):
+    classes, dex, generated, resources_dir = (build / name for name in ('classes', 'dex', 'generated', 'res'))
+    for path in (classes, dex, generated, resources_dir):
         path.resolve().relative_to((ROOT / 'app/build').resolve())
         if path.exists():
             shutil.rmtree(path)
@@ -39,14 +59,29 @@ def main():
     def run(*command):
         subprocess.run([str(part) for part in command], cwd=ROOT, check=True)
 
+    shutil.copytree(ROOT / 'app/src/main/res', resources_dir, dirs_exist_ok=True)
+    strings = ET.parse(resources_dir / 'values/strings.xml')
+    strings.find("./string[@name='default_service_url']").text = args.endpoint
+    strings.write(resources_dir / 'values/strings.xml', encoding='utf-8', xml_declaration=True)
+    if ca_bytes:
+        (resources_dir / 'raw').mkdir(exist_ok=True)
+        (resources_dir / 'raw/course_ca.pem').write_bytes(ca_bytes)
+        network = ET.parse(resources_dir / 'xml/network_security_config.xml')
+        debug = network.find('debug-overrides')
+        if debug is not None:
+            network.getroot().remove(debug)
+        debug = ET.SubElement(network.getroot(), 'debug-overrides')
+        anchors = ET.SubElement(debug, 'trust-anchors')
+        ET.SubElement(anchors, 'certificates', {'src': '@raw/course_ca'})
+        network.write(resources_dir / 'xml/network_security_config.xml', encoding='utf-8', xml_declaration=True)
     manifest = ET.parse(ROOT / 'app/src/main/AndroidManifest.xml')
     manifest.getroot().set('package', 'org.smartlock.course')
     manifest.getroot().find('application').set(f'{{{ANDROID}}}debuggable', 'true')
     manifest.write(build / 'AndroidManifest.xml', encoding='utf-8', xml_declaration=True)
-    run(aapt2, 'compile', '--dir', ROOT / 'app/src/main/res', '-o', build / 'resources.zip')
+    run(aapt2, 'compile', '--dir', resources_dir, '-o', build / 'resources.zip')
     run(aapt2, 'link', '-o', build / 'resources.apk', '-I', platform,
         '--manifest', build / 'AndroidManifest.xml', '--min-sdk-version', '26',
-        '--target-sdk-version', '36', '--version-code', '1', '--version-name', '1.0.0',
+        '--target-sdk-version', '36', '--version-code', '2', '--version-name', '1.1.0',
         '--java', generated, build / 'resources.zip')
     sources = sorted((ROOT / 'app/src/main/java').rglob('*.java')) + sorted(generated.rglob('*.java'))
     run(javac, '--release', '17', '-encoding', 'UTF-8', '-cp', platform,
@@ -83,6 +118,8 @@ def main():
     evidence = {'apk': str(apk), 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
                 'bytes': apk.stat().st_size, 'build_tools': '36.0.0', 'compile_sdk': 36,
                 'min_sdk': 26, 'target_sdk': 36, 'type': 'debug',
+                'version': '1.1.0', 'default_endpoint': args.endpoint,
+                'course_ca_sha256': hashlib.sha256(ca_bytes).hexdigest() if ca_bytes else None,
                 'source_sha256': {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
                                   for path in sorted((ROOT / 'app/src/main').rglob('*')) if path.is_file()},
                 'build_script_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
