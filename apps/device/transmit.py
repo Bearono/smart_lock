@@ -20,17 +20,24 @@ class NetworkTransmitter:
             "SMART_LOCK_DEVICE_PASSWORD",
             "ChangeMe-Spake2-Device-Password",
         )
-        if not device_password and os.getenv('SMART_LOCK_DEVICE_PASSWORD_FILE'):
-            self.device_password = Path(os.environ['SMART_LOCK_DEVICE_PASSWORD_FILE']).read_text().strip()
-        if os.getenv('SMART_LOCK_ENV') == 'production':
-            if not self.remote_url.startswith('https://'):
-                raise ValueError('Production device requires a verified HTTPS backend')
-            if len(self.device_password.encode()) < 32 or self.device_password == 'ChangeMe-Spake2-Device-Password':
-                raise ValueError('Production requires an independent device secret of at least 32 bytes')
-            if os.getenv('SMART_LOCK_ALLOW_TEST_IMAGES', 'false').lower() == 'true':
-                raise ValueError('Production forbids test-image fallback')
+        if not device_password and os.getenv("SMART_LOCK_DEVICE_PASSWORD_FILE"):
+            self.device_password = (
+                Path(os.environ["SMART_LOCK_DEVICE_PASSWORD_FILE"]).read_text().strip()
+            )
+        if os.getenv("SMART_LOCK_ENV") == "production":
+            if not self.remote_url.startswith("https://"):
+                raise ValueError("Production device requires a verified HTTPS backend")
+            if (
+                len(self.device_password.encode()) < 32
+                or self.device_password == "ChangeMe-Spake2-Device-Password"
+            ):
+                raise ValueError(
+                    "Production requires an independent device secret of at least 32 bytes"
+                )
+            if os.getenv("SMART_LOCK_ALLOW_TEST_IMAGES", "false").lower() == "true":
+                raise ValueError("Production forbids test-image fallback")
         self.security_session = None
-        self.ca_bundle = os.getenv('SMART_LOCK_CA_BUNDLE') or True
+        self.ca_bundle = os.getenv("SMART_LOCK_CA_BUNDLE") or True
         self._session_lock = RLock()
 
     def _ensure_secure_session(self):
@@ -47,8 +54,12 @@ class NetworkTransmitter:
         )
         response.raise_for_status()
         session = client.finish(state, response.json())
-        confirmation = requests.post(f'{self.remote_url}/api/security/spake2/confirm',
-                                     json=client.confirmation(session), timeout=10, verify=self.ca_bundle)
+        confirmation = requests.post(
+            f"{self.remote_url}/api/security/spake2/confirm",
+            json=client.confirmation(session),
+            timeout=10,
+            verify=self.ca_bundle,
+        )
         confirmation.raise_for_status()
         client.confirm(session, confirmation.json())
         self.security_session = session
@@ -58,26 +69,34 @@ class NetworkTransmitter:
         for attempt in range(2):
             with self._session_lock:
                 session = self._ensure_secure_session()
-            packet = SecureEnvelope.seal(session, data_dict, endpoint=endpoint, unlock_token=unlock_token)
-            response = requests.post(f'{self.remote_url}{endpoint}', json=packet, timeout=10, verify=self.ca_bundle)
+            packet = SecureEnvelope.seal(
+                session, data_dict, endpoint=endpoint, unlock_token=unlock_token
+            )
+            response = requests.post(
+                f"{self.remote_url}{endpoint}", json=packet, timeout=10, verify=self.ca_bundle
+            )
             try:
                 payload = response.json()
             except ValueError:
                 response.raise_for_status()
-                raise ValueError('Backend returned invalid JSON')
+                raise ValueError("Backend returned invalid JSON")
             if not isinstance(payload, dict):
-                raise ValueError('Backend returned a non-object response')
+                raise ValueError("Backend returned a non-object response")
             # Only this rejection guarantees the business operation was not executed.
-            if attempt == 0 and response.status_code == 401 and payload.get('code') == 'SECURITY_SESSION_INVALID':
+            if (
+                attempt == 0
+                and response.status_code == 401
+                and payload.get("code") == "SECURITY_SESSION_INVALID"
+            ):
                 with self._session_lock:
                     if self.security_session is session:
                         self.security_session = None
                 continue
             response.raise_for_status()
-            if payload.get('status') == 'error':
-                raise ValueError(payload.get('msg') or 'Backend rejected secure request')
-            if endpoint == '/api/lock/sync':
-                payload = SecureResponse.verify(session, packet['header'], endpoint, payload)
+            if payload.get("status") == "error":
+                raise ValueError(payload.get("msg") or "Backend rejected secure request")
+            if endpoint == "/api/lock/sync":
+                payload = SecureResponse.verify(session, packet["header"], endpoint, payload)
             return payload
 
     def _send_encrypted(self, endpoint, data_dict, unlock_token=None):
@@ -91,14 +110,14 @@ class NetworkTransmitter:
                 except ValueError:
                     payload = {"msg": response.text or str(exc)}
                 if not isinstance(payload, dict):
-                    payload = {'msg': 'Backend rejected request'}
-                payload['status'] = 'error'
+                    payload = {"msg": "Backend rejected request"}
+                payload["status"] = "error"
                 payload["http_status"] = response.status_code
                 return payload
 
-            return {'status': 'error', 'msg': str(exc), 'http_status': 502}
+            return {"status": "error", "msg": str(exc), "http_status": 502}
         except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
-            return {'status': 'error', 'msg': str(exc), 'http_status': 502}
+            return {"status": "error", "msg": str(exc), "http_status": 502}
 
     def send_recognition_result(self, user_id, confidence):
         data = {
@@ -122,7 +141,15 @@ class NetworkTransmitter:
         }
         return self._send_encrypted("/api/secure/upload", data)
 
-    def send_auth_result(self, request_id, face_user_id, similarity_score, liveness_score=None, frame=None, session_nonce=None):
+    def send_auth_result(
+        self,
+        request_id,
+        face_user_id,
+        similarity_score,
+        liveness_score=None,
+        frame=None,
+        session_nonce=None,
+    ):
         data = {
             "request_id": request_id,
             "device_id": self.device_id,
@@ -141,19 +168,38 @@ class NetworkTransmitter:
     def consume_unlock_token(self, unlock_token):
         """Consume a browser-issued bearer capability; this is not GPIO acknowledgement."""
         response = requests.post(
-            f'{self.remote_url}/api/lock/unlock-token/verify',
-            json={'device_id': self.device_id, 'unlock_token': unlock_token}, timeout=10, verify=self.ca_bundle)
+            f"{self.remote_url}/api/lock/unlock-token/verify",
+            json={"device_id": self.device_id, "unlock_token": unlock_token},
+            timeout=10,
+            verify=self.ca_bundle,
+        )
         response.raise_for_status()
         return response.json()
 
     def heartbeat(self, lock_status, **status):
-        return self._send_secure('/api/device/heartbeat',
-                                       dict(status, device_id=self.device_id, lock_status=lock_status))
+        return self._send_secure(
+            "/api/device/heartbeat", dict(status, device_id=self.device_id, lock_status=lock_status)
+        )
 
     def sync_lock(self):
-        return self._send_secure('/api/lock/sync', {'device_id': self.device_id})
+        return self._send_secure("/api/lock/sync", {"device_id": self.device_id})
 
-    def acknowledge_command(self, command_id, status, reported_status=None, failure_reason=None, execution_mode='UNKNOWN'):
-        return self._send_secure('/api/lock/ack', dict(device_id=self.device_id,
-            command_id=command_id, status=status, reported_status=reported_status, failure_reason=failure_reason,
-            execution_mode=execution_mode))
+    def acknowledge_command(
+        self,
+        command_id,
+        status,
+        reported_status=None,
+        failure_reason=None,
+        execution_mode="UNKNOWN",
+    ):
+        return self._send_secure(
+            "/api/lock/ack",
+            dict(
+                device_id=self.device_id,
+                command_id=command_id,
+                status=status,
+                reported_status=reported_status,
+                failure_reason=failure_reason,
+                execution_mode=execution_mode,
+            ),
+        )

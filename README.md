@@ -8,7 +8,7 @@
 
 当前交付包含网页、Android App、后端、树莓派摄像头服务和 ARM64 模拟门锁。手机端与网页端的真实人脸验证、验证码、开锁及上锁流程均已完成联调，详情见[验收范围](docs/acceptance.md)。
 
-音频实验、实体锁具、整机重启自动恢复及长时间稳定性验收不在本次约定范围。模拟执行在界面和 API 中明确标识，不代表实体锁动作。课程实验与历史资料独立存放，不参与日常开门。
+音频实验、实体锁具、整机重启自动恢复及长时间稳定性验收不在本次约定范围。模拟执行在界面和 API 中明确标识，不代表实体锁动作。协议包保留课程密码算法的独立回归。
 
 ## 系统组成
 
@@ -31,7 +31,6 @@ flowchart LR
 | [packages/smartlock_protocol](packages/smartlock_protocol/README.md) | 双端共享协议与密码实现 |
 | [deploy](deploy/README.md) | 镜像、TLS、初始化、维护与验收工具 |
 | [docs](docs/README.md) | 架构、开发规范、接口、安全与验收说明 |
-| [examples](examples/README.md) | 不进入应用构建的实验和历史示例 |
 | workspace.toml / manage.py | 工作区清单与跨平台命令入口 |
 
 ## 快速启动
@@ -57,9 +56,8 @@ python manage.py verify --output releases/verification
 python manage.py web-dev --port 5173
 ```
 
-CI 分别检查仓库、后端、前端、Android、课程实验、容器及 amd64/arm64 设备镜像。源码发布包由清单生成，校验与验收源码匹配；构建产物、依赖、原始照片与运行数据不提交 Git。
+CI 分别检查仓库、后端、前端、Android、容器及 amd64/arm64 设备镜像。源码发布包由清单生成，校验与验收源码匹配；构建产物、依赖、原始照片与运行数据不提交 Git。
 
 - [架构与模块边界](docs/architecture.md) · [开发与测试](docs/development.md)
 - [接口参考](docs/reference/api.md) · [安全基线](docs/security.md)
 - [贡献约定](CONTRIBUTING.md) · [安全问题反馈](SECURITY.md)
-- [历史资料](docs/archive/README.md)：仅供追溯，不能代表当前状态。

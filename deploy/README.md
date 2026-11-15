@@ -1,14 +1,8 @@
-> 当前文档入口：[文档目录](../docs/README.md)。交付边界以 [验收范围](../docs/acceptance.md) 为准。已有数据升级前先备份。
+# 部署与维护
 
-# 部署、维护与验收
+当前部署由电脑上的 API、网页、HTTPS 和 ARM64 模拟锁，以及树莓派上的 CSI 摄像头服务组成。首次部署先阅读[开发环境](../docs/development.md)；功能边界见[验收范围](../docs/acceptance.md)。所有命令从仓库根目录执行。
 
-## 交付边界
-
-当前部署为单站点 SQLite：电脑运行后端、网页、TLS 与独立 ARM64 模拟锁；Pi 4B 2 GB 原生运行 CSI 摄像头与识别服务。Android 通过 HTTPS 访问同一业务后端。设备容器保留为独立部署选项，不能把容器测试当作 CSI 实测。
-
-本次使用模拟锁，音频、实体锁具、整机自动恢复和长时间稳定性验收已明确排除。若以后接入实体锁，需要另行完成驱动、反馈、电气与现场安全验收，不能沿用模拟执行结论。
-
-## 初始化与启动
+## 电脑服务
 
 ```sh
 python deploy/init_secrets.py
@@ -17,279 +11,132 @@ docker compose -f compose.yaml -f compose.tls.yaml up -d --build --wait backend 
 docker compose exec backend flask --app run create-admin --username operator
 ```
 
-脚本仅生成缺失密钥，不覆盖现有密钥。Linux 主机密钥目录权限为 0700，文件为 0444，以便容器内非 root UID 读取挂载文件；其他主机账号无法遍历目录。Windows 下请由运行 Docker 的账号执行生成脚本；若通过隔离账号生成，必须仅向运行 Docker 的账号授予该目录及文件读取权限，不能授予 Everyone。
+初始化工具只创建缺失密钥，不覆盖已有文件。管理员密码交互输入；首次登录需要绑定身份验证器。浏览器使用 **https://localhost:8443**；HTTP 8080 仅供本机预览。课程 CA 位于 `deploy/tls/ca.crt`，必须核对后由使用者决定是否信任，不能关闭证书验证。
 
-`init` 服务成功完成后后端才启动，健康检查通过后入口服务启动。后端文件系统只读，只有 `/data` 和临时目录可写。不要同时运行多个初始化作业。数据库迁移前先停止写入并备份；当前兼容升级不是通用的可逆迁移系统，回滚依赖备份。
-
-入口绑定 `127.0.0.1:8080`，数据库没有公开端口。生产远程访问必须在入口前配置 HTTPS。`TRUST_PROXY=true` 只允许后端位于受控代理之后；不要单独发布后端端口。代理覆盖转发地址头，应用只信任一跳。CORS 默认不开放跨源，可用明确的 `CORS_ORIGINS` 白名单配置分离前端。
-
-`/health/live` 反映进程存活；`/health/ready` 检查所有映射表及字段可查询；不代表设备在线、摄像头可用或锁具安全。日志默认输出到容器日志，限制每文件 10 MB、保留 3 份。
-
-## 用户与设备登记
-
-### 恢复现有 Windows 安装
-
-打开 Docker Desktop 后，如只需恢复本项目已经存在的容器，使用精确容器名：
+已有 Windows 演示环境先打开 Docker Desktop，再启动已有容器：
 
 ```powershell
-docker start smart-lock-backend-1 smart-lock-web-1 smart-lock-tls-1 smart-lock-notifications-1
-docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' smart-lock-backend-1 smart-lock-web-1 smart-lock-tls-1 smart-lock-notifications-1
+docker start smart-lock-backend-1 smart-lock-web-1 smart-lock-tls-1
 ```
 
-本例容器名对应默认项目 `smart-lock`；自定义项目先核对容器名。这不创建容器、不运行 `init`、不修改 Windows 自启。后端和入口健康检查就绪后再访问页面。不要使用 `docker compose start` 来保证跳过初始化：Compose 可能遍历依赖并启动已退出的 `init`。首次安装、配置变更和升级继续按各自章节执行。
+容器名对应默认 Compose 项目。该操作不执行数据库初始化。首次安装、配置变更和升级使用 Compose；停止使用 `docker compose -f compose.yaml -f compose.tls.yaml stop`。通知发送单独配置，日常演示不启动邮件任务。
 
-1. 创建管理员，首次登录进行 TOTP 绑定。
-2. 用户注册（密码至少 12 字符、最多 72 字节），管理员审批。
-3. 为每台设备登记独立随机口令和固定服务地址：
+API 不单独暴露宿主机端口；入口只绑定回环地址。后端以非 root 身份运行，文件系统只读，业务数据保存在 `data` 卷。`/health/live` 检查进程，`/health/ready` 检查数据库结构；设备在线情况以有效心跳为准。
+
+## 账户与设备
+
+注册账户需要管理员审批，并单独授予设备权限：
 
 ```sh
-docker compose exec backend flask --app run provision-device --device-id door_01 --service-url https://192.168.1.50:8443
+docker compose exec backend flask --app run provision-device --device-id door_01 --service-url https://DEVICE_ADDRESS:8443
 docker compose exec backend flask --app run grant-device --username alice --device-id door_01
 ```
 
-输入的设备口令至少 32 字节，应来自密码管理器或随机生成器。不要使用示例词串或与登录密钥共用。用户完成授权后，在前端绑定对应设备。撤销使用相同 `grant-device` 命令附加 `--revoke`。口令轮换会作废设备旧会话、未用令牌、认证会话和待执行命令，设备须配置新口令才能重新握手。
+设备口令至少 32 字节，应独立随机生成。设备端通过 `SMART_LOCK_DEVICE_PASSWORD_FILE` 读取同一口令。服务地址和证书 SAN 必须一致；设备只接受带签名的后端指令。设备权限、用户认证绑定与设备协议凭据分别管理。
 
-`SECRET_KEY` 同时保护设备会话和登记口令。轮换它会使已有登记口令无法解密，必须重新登记全部设备；只轮换 JWT 密钥则要求用户重新登录。数据卷备份与两份应用密钥必须成套恢复，并分别安全保管。
+授权撤销使用 `grant-device --revoke`；账户恢复使用 `recover-account`，密码始终交互输入。密钥轮换、撤权和密码变更会作废相关会话与授权，具体规则见[安全基线](../docs/security.md)。
 
-## Raspberry Pi 4B / 2 GB
+## 树莓派 CSI 服务
 
-使用 64 位系统和 Docker。`compose.device.yaml` 默认对接 `/dev/video0` 的 USB/V4L2 摄像头，不能据此声称 CSI/Picamera2 已通过容器验证。CSI 摄像头需要针对系统 libcamera、设备节点和权限单独验证。
-
-1. 把登记口令保存为 `deploy/secrets/device_key`，只允许运维账号读取其父目录。
-2. 在维护主机执行 `python deploy/prepare_face_models.py --download`，把固定版本的模型放入 `deploy/device/models`。再次执行不带 `--download` 的命令校验模型。来源和 SHA-256 固定在 `model_manifest.py`；缺失或被改动的模型不通过设备就绪检查，生产进程不自动下载。
-3. 使用下方模板管理工具登记已批准账户，输出到 `deploy/device/templates`。模板用户名与后端账号一致，目录以只读方式挂载。
-4. 按 [家门交付说明](../docs/archive/HOME_DELIVERY.md) 配置后端与设备 HTTPS：只传输设备服务证书、设备服务私钥和 CA 公钥，CA 私钥留在维护主机。设备服务证书 SAN 必须匹配后端登记地址。
-5. 设置变量并部署：
+原生服务使用系统 Picamera2、OpenCV 和 NumPy，不将通用 pip 包安装进系统 Python：
 
 ```sh
-export SMART_LOCK_DEVICE_ID=door_01
-export BACKEND_URL=https://your-backend.example
-export DEVICE_TLS_BIND_IP=192.168.1.50
-export VIDEO_GID=$(getent group video | cut -d: -f3)
-docker compose -f compose.device.yaml build
-docker compose -f compose.device.yaml -f compose.device.tls.yaml up -d --wait
-```
-
-上面的镜像构建应在内存充足的 ARM64 构建主机执行，Pi 4B / 2 GB 不直接承担双任务 C++ 编译。可在构建主机执行 `docker save smart-lock-device:local -o smart-lock-device-arm64.tar`，传到 Pi 后执行 `docker load -i smart-lock-device-arm64.tar`，再只执行 `up -d --wait`。AMD64 主机可用 `docker buildx build --platform linux/arm64 --load -f deploy/device.Dockerfile -t smart-lock-device:local .`，跨架构编译较慢。GitHub CI 已在原生 ARM64 runner 验证该 Dockerfile，不把 runner 的内存或耗时当作 Pi 实测。
-
-服务地址应限于受控局域网/VPN，防火墙仅允许后端访问。每次 POST 必须有后端签名；修改模板建议在维护窗口更新只读挂载后重启。设备只用一个工作进程、两个请求线程，并在工作进程启动后运行独立的心跳和命令轮询线程；摄像头采集串行进行，避免重复装载人脸模型。内存上限 1200 MB 是保护配置，不是已经验证的峰值。
-
-设备镜像统一使用 Python 3.12，固定 NumPy、无界面 OpenCV 与 Pillow 版本；dlib 20.0.1 在独立构建阶段编译为 wheel，运行镜像不携带编译工具。构建阶段将并行任务限制为 2，建议在构建主机生成镜像后分发到设备。不要将本机 x86 构建结果视为 ARM 验收：ARM 镜像必须在对应架构单独构建验证，摄像头采集与推理性能仍需 Pi 实机测试。Docker 文件不包含 GPIO 驱动，不默认授予 privileged 权限。
-
-## 备份与恢复
-
-备份必须先停止所有写入者（包括设备向后端上传）。工具包含 SQLite 完整性检查、每文件 SHA-256 校验，采用流式处理以控制内存。归档本身不加密，应放在受控目录或加密备份系统；应用密钥单独备份。
-
-```sh
-mkdir -p deploy/backups
-docker compose stop web backend notifications
-docker compose run --rm --no-deps -v "$PWD/deploy/backups:/backups" init python /app/backup.py backup /backups/release.zip
-docker compose up -d --wait
-```
-
-Linux 上归档目录应对容器 UID 10001 可写。备份文件名必须是新名字，已有归档不会覆盖。设备本地指令防重放数据卷也需要保护；重建或删除它会丢失本地接收记录。
-
-恢复演练请使用新建空目录/卷，不能直接覆盖在线数据：
-
-```sh
-mkdir -p deploy/backups/restore-check
-docker compose run --rm --no-deps -v "$PWD/deploy/backups:/backups" init python /app/backup.py restore /backups/release.zip --data /backups/restore-check
-```
-
-恢复后先用独立实例验证管理员登录、设备授权、图像可读及过期指令不会执行，再安排正式切换。回滚应用版本时同时恢复匹配的数据卷；不可假定新版数据库自动向下兼容。
-
-## 升级与验证
-
-固定应用提交和镜像 digest，保存依赖锁文件及测试报告；升级前备份，再重建镜像、执行初始化服务并启动。不要直接在正在运行的容器里安装依赖。
-
-```sh
-python -B -m unittest discover -s apps/api/tests -p 'test_*.py' -v
-cd apps/web
-npm ci
-npm test
-npm run lint
-npm run typecheck
-npm run format:check
-npm run build
-```
-
-未来扩大到实体部署时，另行安排以下验收；这些项目不改变已确认的本次交付范围：
-
-| 验收项目 | 必须证明的行为 |
-| --- | --- |
-| 权限隔离 | 未授权账号无法绑定、查询设备或读取图像；撤权后不能继续开锁 |
-| 断网与恢复 | 旧开锁命令超时后不再下发；网络超时不导致重复动作 |
-| 设备重启 | 已接收指令不重复执行；不确定执行结果不能报告成功 |
-| 机械与电气 | 接线、继电器极性、驱动电流、锁舌反馈、门磁及断电状态经实测 |
-| 身份验证 | 照片/视频攻击、光照变化、误拒和误识率达到项目要求 |
-| 持续运行 | Pi CPU、内存、温度、存储增长、离线恢复和时间同步稳定 |
-| 故障恢复 | 在另一空实例恢复数据库、图像与密钥，实际验证业务 |
-
-## 软件验收与打包
-
-安装后端锁定依赖、共享协议包（`pip install --no-deps ./packages/smartlock_protocol`）和前端 `npm ci` 后，从仓库根目录执行：
-
-```sh
-python -B deploy/verify.py
-python deploy/package_release.py releases/smart-lock-software.zip
-```
-
-统一验收会运行后端全量测试、真实本机 HTTP 软件联调、前端测试、ESLint 和生产构建，任一步失败即停止。结果、日志和被验证源码的 SHA-256 写入 `releases/verification`。发布脚本只接受与通过验证源码一致的工作区，打包后逐文件回读校验，同时生成 ZIP 的 `.sha256` 文件。
-
-源码包包含应用、部署文件、测试、文档与验收证据；不包含数据库、密钥、个人模板、CV 模型、node_modules/虚拟环境和构建产物。部署时安装锁定依赖，并按设备部署章节提供模型及设备配置。解压后可使用同一 `verify.py` 重新验收，不能把已有报告当作目标环境运行结果。
-
-## 账号与授权运维
-
-管理员可在网页 Admin → Device access 中管理已登记设备的用户权限。设备口令登记仍通过运维命令完成，密钥不进入网页列表。用户可在 Account 中提交当前密码、新密码和认证器验证码修改密码，成功后重新登录。
-
-忘记密码或丢失认证器时，由具备主机运维权限的人核实身份后执行：
-
-```sh
-docker compose exec backend flask --app run recover-account --username alice
-# 仅在认证器丢失时使用；之后首次登录必须绑定新认证器
-docker compose exec backend flask --app run recover-account --username alice --reset-totp
-```
-
-密码通过交互输入，不写在命令行。恢复会使旧登录、认证挑战和待执行授权失效并记录审计；不改变角色、审批状态或设备授权名单，不自动提升权限。
-
-## 告警与存储维护
-
-报警与邮件任务在同一个数据库事务中保存，`notifications` 服务独立派送邮件。未配置 SMTP 时任务状态为 `disabled`，不会尝试联网；配置后新任务最多重试 5 次，退避等待，工作租约 120 秒，SMTP 单次连接超时 10 秒。崩溃发生在邮件发出后、状态提交前时可能重复投递，不能声称邮件严格只发送一次。邮件失败不会删除报警记录。
-
-需要邮件通知时，通过部署覆盖文件为 backend 与 notifications 同时配置 `SMTP_SERVER`、`SMTP_PORT`、`SENDER_EMAIL`、`RECEIVER_EMAIL`，并挂载独立凭据文件，通过 `SENDER_PASSWORD_FILE` 指向它。配置变更后重建这两个容器。既有 disabled 任务不会自动补发；先在受控测试收件箱验收，不将邮件作为唯一告警渠道。
-
-```sh
-# 预览超过 30 天的媒体，默认最多 1000 项，不删除
- docker compose exec backend flask --app run prune-media --older-than-days 30
-# 确认保留策略并完成备份后执行；历史日志保留，但对应图像不再可读
- docker compose exec backend flask --app run prune-media --older-than-days 30 --apply
-# 单次处理邮件队列，日常由 notifications 服务持续运行
- docker compose exec backend flask --app run deliver-alarms --limit 20
-```
-
-媒体保留策略由运维显式执行，容量阈值及磁盘告警仍需主机监控。备份前必须停止 notifications，因为它也是数据库写入者。恢复在同目录旁的暂存目录完成文件校验和 SQLite 检查，通过后才替换空目标目录；校验失败不会向目标发布半份数据。
-
-`schema.py` 集中管理兼容字段升级，`init-db` 仍需在停写、备份后单独执行。此次升级增加 `users.auth_version`、`door_commands.guest_pass_id`、`unlock_tokens.command_id` 和 `alarm_deliveries` 表，回滚应恢复配套备份。
-
-设备心跳每 30 秒采集一次摄像头健康状态；当前没有安装 GPIO 反馈驱动，因此锁状态始终上报 UNKNOWN，绝不会从命令目标推断实际开锁。设备进程存活检查不代表摄像头或锁具可用。
-
-当前不宣称具备 HA、多租户隔离、审计防篡改或合规认证。
-
-部署顺序依据 [Docker Compose 官方说明](https://docs.docker.com/compose/how-tos/startup-order/)；Flask 使用独立生产 WSGI 服务，参见 [Flask 部署文档](https://flask.palletsprojects.com/en/stable/deploying/)。Vue 迁移依据 [官方迁移说明](https://router.vuejs.org/guide/migration/)。
-
-设备命令执行、持久化状态卷和驱动接入契约见 [设备软件执行说明](../docs/reference/device-protocol.md)。默认没有实物驱动时报告执行失败；命令接收和回执重试已由软件执行器负责。
-
-本机 8080 被占用时可设置 `SMART_LOCK_WEB_PORT=18080` 再启动；监听地址仍为 127.0.0.1。使用 `docker compose -p smart-lock-acceptance` 可为验收隔离网络和数据卷。不要把验收账号用于实际部署。
-
-设备镜像可单独执行无硬件验收：
-
-```sh
-docker build -f deploy/device.Dockerfile -t smart-lock-device:local .
-docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local python /app/device_smoke.py
-```
-
-该检查加载视觉依赖、处理合成空白图像，并验证设备 HTTP 健康与签名拒绝边界。它不启动摄像头，不连接后端，也不执行锁具动作。持续集成中的 `device-image` 作业执行相同检查。
-
-## 人脸模板登记、替换与删除
-
-这是受控运维流程，不是网页自助登记。先核实被登记者身份及后端账户审批、设备授权；在具备设备镜像视觉依赖的维护环境中处理 3–20 张不同的本人图像。每张只允许一张人脸，重复图片、无脸/多脸和损坏图片均拒绝。图像质量、是否同一人仍由登记者核查，不宣称自动活体校验。
-
-```sh
-python apps/device/manage_templates.py --directory deploy/device/templates enroll --username alice --images capture1.jpg capture2.jpg capture3.jpg
-python apps/device/manage_templates.py --directory deploy/device/templates validate
-python apps/device/manage_templates.py --directory deploy/device/templates list
-# 替换必须显式指定 --replace；不会默认覆盖已有登记
-python apps/device/manage_templates.py --directory deploy/device/templates install --username alice --vector approved-vector.npy --replace
-python apps/device/manage_templates.py --directory deploy/device/templates remove --username alice
-```
-
-工具与推理共用 `SMART_LOCK_TEMPLATES_DIR`、`SMART_LOCK_MODELS_DIR`；默认路径分别是设备的 `cv/data/templates/templates` 和 `cv/models`。向量要求 128 维、有限非零数值，读取禁止 pickle，安装原子发布并拒绝符号链接。移除只删除指定账户模板。更新后验证并在维护窗口重启设备，使推理缓存刷新：`docker compose -f compose.device.yaml -f compose.device.tls.yaml restart device`。删除模板不能代替后端撤销设备授权，两者应一起执行。
-
-设备 `/` 仅表示进程存活；`/health/ready` 校验固定模型和至少一个合法模板。就绪不表示摄像头、锁具、识别准确率或活体能力通过验收。模型下载来源：[OpenCV 4.11.0 检测配置](https://github.com/opencv/opencv/blob/4.11.0/samples/dnn/face_detector/deploy.prototxt) 和 [OpenCV 检测模型](https://github.com/opencv/opencv_3rdparty/tree/dnn_samples_face_detector_20170830)。本地模型与个人模板不进入 Git 或源码交付包。
-
-初次 TOTP 登记窗口为 5 分钟；超时重新登录取得新登记信息。重复预登录复用当前窗口，不能通过旧登记替换已激活的认证器。历史重复待绑定凭据在成功激活时作废。
-
-连续认证失败达到锁定阈值时自动保存 `AUTH_LOCKOUT` 告警及通知任务，同一次锁定只生成一次；管理员解除锁定后再次触发可产生新告警。SMTP 未配置时通知明确为 disabled，后台告警仍可查看和处理。
-
-设备离线验收包含模板与就绪接口回归：
-
-```sh
-docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local python -B -m unittest discover -s /app/tests -v
-```
-
-最新复核范围、证据和剩余能力见 [软件验收复核](../docs/archive/SOFTWARE_ACCEPTANCE_20261009.md)。
-
-## CSI 摄像头原生部署
-
-Pi 4 + Rev 1.3 / OV5647 使用系统 Picamera2 采集；USB `/dev/video0` 容器配置不能直接替代 CSI 多设备节点和系统库。原生部署复用同一设备业务、协议及签名校验，无需 privileged 容器。
-
-```sh
-sudo python3 deploy/pi_dependencies.py --linger-user taylor
-# 以下以普通服务用户运行，保留系统相机库
+sudo python3 deploy/pi_dependencies.py --linger-user SERVICE_USER
 python3 deploy/pi_native.py prepare
+python3 deploy/pi_native.py check-runtime
 ```
 
-原生虚拟环境使用 --system-site-packages 继承系统 Picamera2、NumPy、OpenCV、Pillow，不对系统 Python 运行 pip install。Python 3.13 profile 与 USB Docker 都固定 dlib 20.0.1，分别验收。原生编译限制单任务；运行依赖清单保存于 instance/pi-native/runtime-packages.txt，APT 版本另记录 dpkg-query。安装后递归校验应用依赖闭包、版本和环境标记；继承的无关 APT 工具依赖不纳入应用验收。
+准备 `deploy/.env`，限制为服务账户可读，并显式配置：
 
-启动前准备 deploy/.env（0600），明确 SMART_LOCK_ENV=production、SMART_LOCK_DEVICE_ID、BACKEND_URL（HTTPS）、SMART_LOCK_CA_BUNDLE、SMART_LOCK_DEVICE_PASSWORD_FILE、DEVICE_STATE_DIR、SMART_LOCK_MODELS_DIR、SMART_LOCK_TEMPLATES_DIR、SMART_LOCK_CAMERA_BACKEND=picamera2。提供 deploy/tls/pi-native.crt、pi-native.key（0600）和 CA 公钥；设备口令独立随机，不复用登录密码。证书 SAN 覆盖访问地址。
+| 配置 | 内容 |
+| --- | --- |
+| `SMART_LOCK_ENV` | `production` |
+| `SMART_LOCK_DEVICE_ID` | 已登记设备 ID |
+| `BACKEND_URL` | 验证证书的 HTTPS 后端地址 |
+| `SMART_LOCK_CA_BUNDLE` | CA 公钥文件 |
+| `SMART_LOCK_DEVICE_PASSWORD_FILE` | 独立设备口令文件 |
+| `DEVICE_STATE_DIR` | 可写的命令去重目录 |
+| `SMART_LOCK_MODELS_DIR` | 已校验模型目录 |
+| `SMART_LOCK_TEMPLATES_DIR` | 已登记人脸模板目录 |
+| `SMART_LOCK_CAMERA_BACKEND` | `picamera2` |
+
+为服务提供 `deploy/tls/pi-native.crt`、`pi-native.key` 和 CA 公钥，证书 SAN 必须覆盖后端实际访问的地址。设备不保存 CA 私钥。现有证书升级可用 `repair_local_tls.py` 检查并生成独立修复副本；该工具不会直接覆盖在线证书。
 
 ```sh
 python3 deploy/pi_native.py install-service
 systemctl --user status smart-lock-device
 journalctl --user -u smart-lock-device --no-pager -n 50
-systemctl --user restart smart-lock-device
-systemctl --user stop smart-lock-device
 ```
 
-服务监听 127.0.0.1:5443 HTTPS，单 worker、双线程，1200M 内存上限；通过用户 systemd 管理，linger 使其开机启动而不依赖交互登录。没有 NOPASSWD sudo，也未授予 Docker 管理权限。退出时释放相机；采集错误清理资源，下次可重新初始化。Picamera2 RGB888 数组实际为 BGR，直接供 OpenCV 使用，避免错误通道交换。明确选择 picamera2 时不退回其他视频节点。
-
-实验电脑后端和 Pi 通过双向 SSH 转发：
+原生服务监听 `127.0.0.1:5443`，单 worker、双线程，串行使用相机和模型；退出时释放相机。当前电脑与 Pi 通过显式 SSH 转发连接：
 
 ```sh
-python deploy/pi_tunnel.py --host PI_IP --user taylor --identity PATH_TO_PRIVATE_KEY
+python deploy/pi_tunnel.py --host PI_ADDRESS --user SERVICE_USER --identity PATH_TO_PRIVATE_KEY
 ```
 
-保持该进程运行：电脑 loopback 15443 转发 Pi 5443；Pi loopback 18443 转发电脑后端 8443。Pi 的 BACKEND_URL=https://localhost:18443，Docker Desktop 后端登记地址=https://host.docker.internal:15443。设备证书 SAN 覆盖 localhost 和 host.docker.internal。仍严格验证 CA、SSH 主机密钥及后端命令签名，不关闭 TLS 检查。不开放整个局域网；隧道关闭后设备通信中断，正式部署应使用受控局域网/VPN地址及匹配证书。
+电脑 `15443 → Pi 5443`，Pi `18443 → 电脑 8443`。Pi 后端地址为 `https://localhost:18443`，Docker Desktop 后端登记设备地址为 `https://host.docker.internal:15443`。证书需包含这些主机名。保持转发进程运行；关闭后通信中断，恢复需重新启动，不创建电脑自动重连任务。
 
-按用户要求，电脑端保持手动启动：先打开 Docker Desktop，再运行 `docker compose -f compose.yaml -f compose.tls.yaml up -d --wait`，并在另一终端启动上述隧道。项目电脑端容器 restart 策略均为 no，不安装 Windows 自启任务或自动重连服务。退出时按 Ctrl+C 结束隧道，并执行 `docker compose -f compose.yaml -f compose.tls.yaml stop`。树莓派设备服务仍保留已授权的开机自启。电脑关机、睡眠或隧道断开后需人工恢复；地址改变时使用路由器显示的新 Pi 地址。
+模拟锁通过独立签名请求和 HTTPS 连接，配置及 Pi 端执行器变量见 [ARM64 模拟门锁](../apps/lock_sim/README.md)。手机安装和 USB 转发见 [Android 指南](../apps/android/README.md)。
 
-空模板目录仍返回就绪 503，不能安装虚构向量让就绪变绿。进程、真实相机、心跳和识别模板分别验收；需本人身份登记才进行人脸 MFA 测试。
+## 模型与人脸模板
 
-### 生产认证的防伪模型
+检测模型使用固定来源与摘要校验；运行服务不自动下载模型：
 
-本版生产认证还要求 MiniFASNetV2 ONNX。请在工作站的专用导出环境安装 PyTorch CPU 2.9.0、onnx 1.19.1、numpy 2.2.4 与 opencv-python-headless 4.11.0.86，再执行：
+```sh
+python deploy/prepare_face_models.py --download
+python deploy/prepare_face_models.py
+```
+
+生产人脸验证还要求 MiniFASNetV2 ONNX。在工作站独立导出环境安装 PyTorch CPU 2.9.0、onnx 1.19.1、NumPy 2.2.4、opencv-python-headless 4.11.0.86，执行：
 
 ```sh
 python deploy/export_pad.py --cache releases/pad-upstream --output deploy/device/models
 ```
 
-仅按固定来源与校验值下载；拒绝覆盖已有输出。向 Pi 的 `SMART_LOCK_MODELS_DIR` 复制生成的 `minifasnet-v2.onnx`、`MINIFASNET-LICENSE` 与 `pad-export.json`，保持许可证随模型交付。Pi 使用已有 OpenCV，不安装 PyTorch。模型不包含个人模板；模型/许可证来源与认证阈值说明见 [防伪与音频验收](../docs/archive/PAD_AUDIO_ACCEPTANCE.md)。缺失或校验失败时就绪 503，不提供生产绕过开关。
+将模型、`MINIFASNET-LICENSE` 和 `pad-export.json` 一起交付设备。来源、摘要及导出过程由脚本校验；模型缺失或被修改时就绪检查失败。Pi 不需要安装 PyTorch。
 
-音频软件实验额外依赖共享协议包的 `audio` 可选依赖；完整测试环境需安装 `pip install './packages/smartlock_protocol[audio]'`。运行 `python deploy/audio_lab.py --output releases/audio-lab.json` 只做软件回环，不启动声卡。实时声学传输与硬件指纹仍需真实录音数据。
+核实账户身份与授权后，在具备视觉依赖的维护环境中处理 3–20 张不同的本人图像：
 
-### 有限时长稳定性检查
+```sh
+python apps/device/manage_templates.py --directory deploy/device/templates enroll --username alice --images capture1.jpg capture2.jpg capture3.jpg
+python apps/device/manage_templates.py --directory deploy/device/templates validate
+python apps/device/manage_templates.py --directory deploy/device/templates list
+python apps/device/manage_templates.py --directory deploy/device/templates remove --username alice
+```
 
-Docker 和隧道手动启动后，可执行 `python deploy/soak.py --seconds 1800 --interval 60 --output releases/soak.json`。只检查当前会话内就绪、在线和摄像头状态，最多运行两小时；不安装自动任务，也不会自动恢复隧道。报告中的失败采样保留，不可当成未发生。
+每张图像只能有一张脸。模板须为 128 维有限非零向量，禁止 pickle；替换需显式 `--replace`。更新后重启设备或调用受签名保护的模板刷新接口。删除人脸模板不能代替后端撤权。缺少模板时保持就绪失败，不安装虚构数据。
 
-依据：[Picamera2 颜色映射](https://github.com/raspberrypi/picamera2/blob/main/picamera2/request.py)、[官方手册](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf)、[dlib 构建配置](https://github.com/davisking/dlib/blob/v20.0.1/setup.py)。
+## 设备容器
 
+`compose.device.yaml` 提供 USB/V4L2 部署选项；CSI 使用上面的原生服务。镜像在内存充足的目标架构主机构建，避免在 2 GB Pi 上承担 C++ 构建负载。
 
-## 2026-10-18 安全升级与回滚
+```sh
+docker build -f deploy/device.Dockerfile -t smart-lock-device:local .
+docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local python /app/device_smoke.py
+docker run --rm --network none --read-only --tmpfs /tmp smart-lock-device:local python -B -m unittest discover -s /app/tests -v
+```
 
-新前端使用 HttpOnly Cookie 和 CSRF，生产 Cookie 强制 Secure、SameSite=Strict。正式登录使用已受信的 HTTPS 地址，优先同源部署；http://localhost:8080 仅供回环预览。分离跨站前后端需要单独设计会话与跨站策略，不能简单关闭 SameSite 或 CSRF 来适配。
+部署前提供 `deploy/secrets/device_key`、模型和模板，设置 `SMART_LOCK_DEVICE_ID`、`BACKEND_URL`、`DEVICE_TLS_BIND_IP` 及摄像头 `VIDEO_GID`。维护主机执行 `issue_device_tls.py --host DEVICE_ADDRESS` 签发独立设备证书，仅传输 `device.crt`、`device.key` 和 `ca.crt`：
 
-升级前停止 backend、notifications 等写入者，保留数据库/媒体完整备份和当前密钥。用新镜像、原来的 SECRET_KEY/JWT_SECRET_KEY 执行 init-db：新增 OTP 消费计数与登录撤销表，将旧 MFA 凭据及已登记媒体认证加密。SQLite 已有隔离迁移回归；MySQL 字段扩容路径未作实机验收。媒体逐文件原子替换，可重跑迁移；中途失败应排查，不能启动旧版本强行读取混合格式。
+```sh
+docker compose -f compose.device.yaml -f compose.device.tls.yaml up -d --wait
+```
 
-新密码默认 scrypt:131072:8:1；已有 bcrypt 在正确密码认证时升级，不需要知道或重置所有用户密码。首次绑定、登录、开门和密码验证共享 TOTP 一次性时间步，刚登录后再次验证需等待下一组代码。注销认证器也需要新 TOTP。
+## 升级、备份与恢复
 
-升级后若回滚，必须恢复升级前的整份数据与匹配密钥，再启动旧镜像。**仅回滚代码不能读新密文。** 主密钥不能直接替换；当前没有在线重加密/多版本 KMS，需专门迁移流程。备份不因新版本落盘加密而自动变成加密备份，须限制读取权限。
+升级前记录提交和镜像，停止所有数据写入者，并成套保存数据卷与应用密钥。备份工具校验 SQLite 和文件摘要；备份本身不加密，应置于受控或加密存储。
 
-设备新环境升级 setuptools 83.0.0、wheel 0.46.2，避免已知公告；识别改为直接使用 dlib 与同一组固定模型，不再导入依赖 pkg_resources 的旧包装库。合成输入的旧新向量一致性不代表真人效果。原生 Pi 的系统库不能被通用 pip 依赖替换。
+```sh
+docker compose stop web backend notifications
+docker compose run --rm --no-deps -v "$PWD/deploy/backups:/backups" init python /app/backup.py backup /backups/release.zip
+```
 
-所有容器保持 restart=no；本轮不会安装 Windows 自启或重连任务。树莓派服务自启遵循原有配置，现场部署和实测结果需单独记录。
+先创建 `deploy/backups`，在 Linux 上确保容器 UID 10001 可写。归档必须使用新文件名。恢复只允许写入新的空目录或空卷，先独立验证再切换：
 
-### 隔离 HTTPS 回归
+```sh
+docker compose run --rm --no-deps -v "$PWD/deploy/backups:/backups" init python /app/backup.py restore /backups/release.zip --data /backups/restore-check
+```
 
-先构建 `smart-lock-backend:security-review` 与 `smart-lock-web:security-review`（分别使用 deploy/backend.Dockerfile、deploy/web.Dockerfile），确认本机已有 deploy/tls 的实验室证书，然后执行 `python deploy/test_tls_stack.py --output releases/verification`。脚本需要 requests 和 pyotp。
+新镜像构建后显式运行初始化迁移，再启动业务服务。不能只回滚代码而继续读取不兼容的新数据库或密文；回滚需要匹配的数据和密钥。不要删除在线数据卷来解决升级问题。
 
-脚本使用随机 Compose 项目名、独立随机应用密钥和独立数据卷，只占用回环端口 18080/18444，不读取正式业务数据。它验证证书、生产 Cookie、CSRF、退出与重启后撤销，最后移除自身容器和卷；失败时也清理。它不是实机摄像头测试。不要在这些端口已有其他程序时强行停止对方程序。
+验收、依赖安装和源码发布统一使用[开发指南](../docs/development.md)中的命令。硬件测试与软件夹具分开记录，模拟执行不代表实体锁动作。

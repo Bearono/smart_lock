@@ -4,7 +4,7 @@
 
 - `app.py`：经过命令认证的设备 HTTP 入口。
 - `camera_core.py` / `cv/code`：有界采集、模型校验、模板与推理。
-- `transmit.py` / `security_protocol.py`：共享协议的设备适配。
+- `transmit.py`：共享协议的设备适配。
 - `command_executor.py` / `remote_actuator.py`：指令幂等执行与模拟锁适配。
 - `runtime.py` / `gunicorn.conf.py`：每个 worker 的任务生命周期。
 - `tests`：模型、相机与模板边界测试，不代表实际硬件性能。

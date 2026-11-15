@@ -1,11 +1,11 @@
 from app.time_contract import timestamp as serialize_time
-from app import db
+from app.extensions import db
 from datetime import datetime, timedelta
 from app.credential_storage import EncryptedCredential
 
 
 class DeviceProvisioning(db.Model):
-    __tablename__ = 'device_provisioning'
+    __tablename__ = "device_provisioning"
     device_id = db.Column(db.String(50), primary_key=True)
     encrypted_password = db.Column(db.LargeBinary, nullable=False)
     service_url = db.Column(db.String(255), nullable=False)
@@ -13,85 +13,85 @@ class DeviceProvisioning(db.Model):
 
 
 class DeviceGrant(db.Model):
-    __tablename__ = 'device_grants'
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), primary_key=True)
+    __tablename__ = "device_grants"
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
     device_id = db.Column(db.String(50), primary_key=True)
 
 
 class MediaAsset(db.Model):
-    __tablename__ = 'media_assets'
+    __tablename__ = "media_assets"
     filename = db.Column(db.String(80), primary_key=True)
     device_id = db.Column(db.String(50), nullable=False, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now, index=True)
 
 
 class RateLimitBucket(db.Model):
-    __tablename__ = 'rate_limit_buckets'
+    __tablename__ = "rate_limit_buckets"
     key = db.Column(db.String(64), primary_key=True)
     count = db.Column(db.Integer, nullable=False)
     expires_at = db.Column(db.Float, nullable=False, index=True)
 
 
 class DeviceSecuritySession(db.Model):
-    __tablename__ = 'device_security_sessions'
+    __tablename__ = "device_security_sessions"
     id = db.Column(db.String(32), primary_key=True)
     device_id = db.Column(db.String(50), nullable=False, index=True)
     encrypted_key = db.Column(db.LargeBinary, nullable=False)
     expires_at = db.Column(db.Float, nullable=False, index=True)
-    protocol_version = db.Column(db.String(20), nullable=False, default='SL-SEC-v2')
+    protocol_version = db.Column(db.String(20), nullable=False, default="SL-SEC-v2")
     confirmed = db.Column(db.Boolean, nullable=False, default=True)
     transcript = db.Column(db.LargeBinary)
 
 
 class SecureMessageReceipt(db.Model):
-    __tablename__ = 'secure_message_receipts'
+    __tablename__ = "secure_message_receipts"
     id = db.Column(db.Integer, primary_key=True)
     session_id = db.Column(db.String(32), nullable=False)
     request_id = db.Column(db.String(64), nullable=False)
     nonce = db.Column(db.String(64), nullable=False)
     expires_at = db.Column(db.Float, nullable=False, index=True)
     __table_args__ = (
-        db.UniqueConstraint('session_id', 'request_id', name='uq_secure_request'),
-        db.UniqueConstraint('session_id', 'nonce', name='uq_secure_nonce'),
+        db.UniqueConstraint("session_id", "request_id", name="uq_secure_request"),
+        db.UniqueConstraint("session_id", "nonce", name="uq_secure_nonce"),
     )
 
 
 class DoorCommand(db.Model):
-    __tablename__ = 'door_commands'
+    __tablename__ = "door_commands"
     id = db.Column(db.String(32), primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     device_id = db.Column(db.String(50), nullable=False, index=True)
     target_status = db.Column(db.String(20), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='pending')
+    status = db.Column(db.String(20), nullable=False, default="pending")
     created_at = db.Column(db.Float, nullable=False)
     expires_at = db.Column(db.Float, nullable=False, index=True)
     acknowledged_at = db.Column(db.Float)
     failure_reason = db.Column(db.String(40))
-    execution_mode = db.Column(db.String(20), nullable=False, default='UNKNOWN')
-    guest_pass_id = db.Column(db.Integer, db.ForeignKey('guest_passes.id'))
+    execution_mode = db.Column(db.String(20), nullable=False, default="UNKNOWN")
+    guest_pass_id = db.Column(db.Integer, db.ForeignKey("guest_passes.id"))
 
 
 class AlarmDelivery(db.Model):
-    __tablename__ = 'alarm_deliveries'
-    alarm_id = db.Column(db.Integer, db.ForeignKey('alarm_logs.id'), primary_key=True)
-    status = db.Column(db.String(20), nullable=False, default='pending')
+    __tablename__ = "alarm_deliveries"
+    alarm_id = db.Column(db.Integer, db.ForeignKey("alarm_logs.id"), primary_key=True)
+    status = db.Column(db.String(20), nullable=False, default="pending")
     attempts = db.Column(db.Integer, nullable=False, default=0)
     next_attempt_at = db.Column(db.Float, nullable=False, default=0, index=True)
     lease_id = db.Column(db.String(32))
 
 
 class LoginRevocation(db.Model):
-    __tablename__ = 'login_revocations'
+    __tablename__ = "login_revocations"
     jti = db.Column(db.String(64), primary_key=True)
     expires_at = db.Column(db.Float, nullable=False, index=True)
 
 
 class LoginChallenge(db.Model):
-    __tablename__ = 'login_challenges'
+    __tablename__ = "login_challenges"
     id = db.Column(db.Integer, primary_key=True)
     token_hash = db.Column(db.String(64), unique=True, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    credential_id = db.Column(db.Integer, db.ForeignKey('mfa_credentials.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    credential_id = db.Column(db.Integer, db.ForeignKey("mfa_credentials.id"), nullable=False)
     binding = db.Column(db.Boolean, nullable=False)
     attempts = db.Column(db.Integer, default=0, nullable=False)
     consumed = db.Column(db.Boolean, default=False, nullable=False)
@@ -100,14 +100,14 @@ class LoginChallenge(db.Model):
 
 # 1. 用户表
 class User(db.Model):
-    __tablename__ = 'users'
+    __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
     # 'admin' 或 'user'。admin 可审批、可解除设备锁定。
-    role = db.Column(db.String(20), default='user')
+    role = db.Column(db.String(20), default="user")
     # 'pending' 注册后待审批；'approved' 可登录；'rejected' 已驳回。
-    status = db.Column(db.String(20), default='pending')
+    status = db.Column(db.String(20), default="pending")
     created_at = db.Column(db.DateTime, default=datetime.now)
     approved_at = db.Column(db.DateTime)
     approved_by = db.Column(db.String(80))
@@ -115,51 +115,54 @@ class User(db.Model):
 
     def to_dict(self):
         return {
-            'id': self.id,
-            'username': self.username,
-            'role': self.role,
-            'status': self.status,
-            'created_at': serialize_time(self.created_at) if self.created_at else None,
-            'approved_at': serialize_time(self.approved_at) if self.approved_at else None,
-            'approved_by': self.approved_by,
+            "id": self.id,
+            "username": self.username,
+            "role": self.role,
+            "status": self.status,
+            "created_at": serialize_time(self.created_at) if self.created_at else None,
+            "approved_at": serialize_time(self.approved_at) if self.approved_at else None,
+            "approved_by": self.approved_by,
         }
 
 
 # 2. 设备状态表
 class Device(db.Model):
-    __tablename__ = 'devices'
+    __tablename__ = "devices"
     id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.String(50), unique=True, nullable=False)
     display_name = db.Column(db.String(60))
     status = db.Column(db.String(20), default="LOCKED")
-    reported_status = db.Column(db.String(20), default='UNKNOWN')
+    reported_status = db.Column(db.String(20), default="UNKNOWN")
     battery = db.Column(db.Integer)
     camera_status = db.Column(db.String(20), default="UNKNOWN")
-    actuator_status = db.Column(db.String(20), default='UNKNOWN')
-    execution_mode = db.Column(db.String(20), nullable=False, default='UNKNOWN')
+    actuator_status = db.Column(db.String(20), default="UNKNOWN")
+    execution_mode = db.Column(db.String(20), nullable=False, default="UNKNOWN")
     ip_address = db.Column(db.String(45))
     is_online = db.Column(db.Boolean, default=False)
     last_update = db.Column(db.DateTime)
 
     def to_dict(self):
         return {
-            'device_id': self.device_id,
-            'display_name': self.display_name,
-            'status': self.status,
-            'reported_status': self.reported_status,
-            'battery': self.battery,
-            'camera_status': self.camera_status,
-            'actuator_status': self.actuator_status,
-            'execution_mode': self.execution_mode,
-            'ip_address': self.ip_address,
-            'is_online': bool(self.last_update and timedelta(0) <= datetime.now() - self.last_update <= timedelta(minutes=2)),
-            'last_update': serialize_time(self.last_update) if self.last_update else None
+            "device_id": self.device_id,
+            "display_name": self.display_name,
+            "status": self.status,
+            "reported_status": self.reported_status,
+            "battery": self.battery,
+            "camera_status": self.camera_status,
+            "actuator_status": self.actuator_status,
+            "execution_mode": self.execution_mode,
+            "ip_address": self.ip_address,
+            "is_online": bool(
+                self.last_update
+                and timedelta(0) <= datetime.now() - self.last_update <= timedelta(minutes=2)
+            ),
+            "last_update": serialize_time(self.last_update) if self.last_update else None,
         }
 
 
 # 3. 访问日志表（控制记录）
 class AccessLog(db.Model):
-    __tablename__ = 'access_logs'
+    __tablename__ = "access_logs"
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.now)
     action = db.Column(db.String(100))
@@ -170,36 +173,36 @@ class AccessLog(db.Model):
 
 # 4. 报警日志表
 class AlarmLog(db.Model):
-    __tablename__ = 'alarm_logs'
+    __tablename__ = "alarm_logs"
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.now)
     alarm_type = db.Column(db.String(50), nullable=False)
     message = db.Column(db.String(200))
     snapshot_path = db.Column(db.String(200))
-    status = db.Column(db.String(20), default='pending')  # pending, resolved, ignored
+    status = db.Column(db.String(20), default="pending")  # pending, resolved, ignored
     handled_by = db.Column(db.String(80))
     handled_at = db.Column(db.DateTime)
 
     def to_dict(self):
         return {
-            'id': self.id,
-            'time': serialize_time(self.timestamp),
-            'type': self.alarm_type,
-            'alarm_type': self.alarm_type,
-            'message': self.message,
-            'snapshot': self.snapshot_path,
-            'snapshot_path': self.snapshot_path,
-            'status': self.status,
-            'handled_by': self.handled_by,
-            'handled_at': serialize_time(self.handled_at) if self.handled_at else None
+            "id": self.id,
+            "time": serialize_time(self.timestamp),
+            "type": self.alarm_type,
+            "alarm_type": self.alarm_type,
+            "message": self.message,
+            "snapshot": self.snapshot_path,
+            "snapshot_path": self.snapshot_path,
+            "status": self.status,
+            "handled_by": self.handled_by,
+            "handled_at": serialize_time(self.handled_at) if self.handled_at else None,
         }
 
 
 # 5. MFA凭证表（TOTP密钥、设备绑定）
 class MFACredential(db.Model):
-    __tablename__ = 'mfa_credentials'
+    __tablename__ = "mfa_credentials"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     credential_type = db.Column(db.String(20), nullable=False)  # 'totp', 'device'
     credential_data = db.Column(EncryptedCredential(), nullable=False)
     last_totp_counter = db.Column(db.BigInteger, nullable=False, default=-1)
@@ -216,14 +219,16 @@ class MFACredential(db.Model):
 
 # 6. 认证会话表
 class AuthSession(db.Model):
-    __tablename__ = 'auth_sessions'
+    __tablename__ = "auth_sessions"
     id = db.Column(db.Integer, primary_key=True)
     request_id = db.Column(db.String(64), unique=True, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     nonce = db.Column(db.String(64), nullable=False)
     device_id = db.Column(db.String(50))
     requires_totp = db.Column(db.Boolean, default=False)
-    status = db.Column(db.String(20), default='pending')  # pending, face_verified, totp_required, completed, failed
+    status = db.Column(
+        db.String(20), default="pending"
+    )  # pending, face_verified, totp_required, completed, failed
     device_verified = db.Column(db.Boolean, default=False)
     face_verified = db.Column(db.Boolean, default=False)
     totp_verified = db.Column(db.Boolean, default=False)
@@ -235,24 +240,24 @@ class AuthSession(db.Model):
 
 # 7. 开门令牌表
 class UnlockToken(db.Model):
-    __tablename__ = 'unlock_tokens'
+    __tablename__ = "unlock_tokens"
     id = db.Column(db.Integer, primary_key=True)
     token = db.Column(db.String(128), unique=True, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     request_id = db.Column(db.String(64), nullable=False)
     device_id = db.Column(db.String(50))
     is_used = db.Column(db.Boolean, default=False)
-    command_id = db.Column(db.String(32), db.ForeignKey('door_commands.id'))
+    command_id = db.Column(db.String(32), db.ForeignKey("door_commands.id"))
     created_at = db.Column(db.DateTime, default=datetime.now)
     expires_at = db.Column(db.DateTime, nullable=False)
 
 
 # 8. 访客授权表
 class GuestPass(db.Model):
-    __tablename__ = 'guest_passes'
+    __tablename__ = "guest_passes"
     id = db.Column(db.Integer, primary_key=True)
     pass_code = db.Column(db.String(128), unique=True, nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     guest_name = db.Column(db.String(80))
     device_id = db.Column(db.String(50))
     valid_from = db.Column(db.DateTime, nullable=False)
@@ -264,21 +269,21 @@ class GuestPass(db.Model):
 
     def to_dict(self):
         return {
-            'id': self.id,
-            'guest_name': self.guest_name,
-            'device_id': self.device_id,
-            'valid_from': serialize_time(self.valid_from) if self.valid_from else None,
-            'valid_until': serialize_time(self.valid_until) if self.valid_until else None,
-            'max_uses': self.max_uses,
-            'used_count': self.used_count,
-            'is_active': self.is_active,
-            'created_at': serialize_time(self.created_at) if self.created_at else None
+            "id": self.id,
+            "guest_name": self.guest_name,
+            "device_id": self.device_id,
+            "valid_from": serialize_time(self.valid_from) if self.valid_from else None,
+            "valid_until": serialize_time(self.valid_until) if self.valid_until else None,
+            "max_uses": self.max_uses,
+            "used_count": self.used_count,
+            "is_active": self.is_active,
+            "created_at": serialize_time(self.created_at) if self.created_at else None,
         }
 
 
 # 9. 人脸识别日志表
 class FaceRecognitionLog(db.Model):
-    __tablename__ = 'face_recognition_logs'
+    __tablename__ = "face_recognition_logs"
     id = db.Column(db.Integer, primary_key=True)
     request_id = db.Column(db.String(64))
     device_id = db.Column(db.String(50))
@@ -293,15 +298,15 @@ class FaceRecognitionLog(db.Model):
 
     def to_dict(self):
         return {
-            'id': self.id,
-            'request_id': self.request_id,
-            'device_id': self.device_id,
-            'expected_username': self.expected_username,
-            'face_user_id': self.face_user_id,
-            'similarity_score': self.similarity_score,
-            'liveness_score': self.liveness_score,
-            'passed': self.passed,
-            'snapshot': self.snapshot_path,
-            'failure_reason': self.failure_reason,
-            'timestamp': serialize_time(self.timestamp) if self.timestamp else None
+            "id": self.id,
+            "request_id": self.request_id,
+            "device_id": self.device_id,
+            "expected_username": self.expected_username,
+            "face_user_id": self.face_user_id,
+            "similarity_score": self.similarity_score,
+            "liveness_score": self.liveness_score,
+            "passed": self.passed,
+            "snapshot": self.snapshot_path,
+            "failure_reason": self.failure_reason,
+            "timestamp": serialize_time(self.timestamp) if self.timestamp else None,
         }

@@ -52,10 +52,8 @@ export const auth = {
     }),
   register: (username: string, password: string) =>
     api.post('/api/register', { username, password }),
-  // 第一步：账号密码初验，返回临时通行证 + TOTP绑定状态
   prelogin: (username: string, password: string) =>
     api.post('/api/login/pre', { username, password }),
-  // 第二步A：已绑定用户验证TOTP，换正式Token
   verifyMfa: (preToken: string, code: string) =>
     api.post(
       '/api/login/mfa/verify',
@@ -64,7 +62,6 @@ export const auth = {
         headers: { 'X-SmartLock-Session': 'browser' }
       }
     ),
-  // 第二步B：首次登录绑定TOTP，换正式Token
   bindTotpWithPreToken: (preToken: string, code: string) =>
     api.post(
       '/api/login/mfa/bind',
@@ -86,8 +83,6 @@ export const lock = {
     ),
   consumeToken: (unlockToken: string, deviceId: string | undefined) =>
     api.post('/api/lock/unlock-token/verify', { unlock_token: unlockToken, device_id: deviceId }),
-  getStatus: (deviceId?: string) =>
-    api.get('/api/lock/status', { params: { device_id: deviceId } }),
   control: (action: string, deviceId = 'door_01') =>
     api.post('/api/lock/control', { action, device_id: deviceId }),
   getHistory: (page = 1, perPage = 10, deviceId?: string) =>
@@ -97,7 +92,6 @@ export const lock = {
 }
 
 export const device = {
-  heartbeat: (data: Record<string, unknown>) => api.post('/api/device/heartbeat', data),
   getStatus: async (deviceId?: string) => {
     const response = await api.get('/api/device/status', {
       params: deviceId ? { device_id: deviceId } : undefined
@@ -111,10 +105,6 @@ export const device = {
 
 export const mfa = {
   getStatus: () => api.get('/api/mfa/status'),
-  bindTotp: () => api.post('/api/mfa/bind/totp'),
-  verifyTotp: (code: string, credentialId: number) =>
-    api.post('/api/mfa/verify/totp', { code, credential_id: credentialId }),
-  unbindTotp: (code: string) => api.post('/api/mfa/unbind/totp', { code }),
   bindDevice: (deviceId: string | undefined, devicePubkey: string) =>
     api.post('/api/mfa/bind/device', { device_id: deviceId, device_pubkey: devicePubkey }),
   unbindDevice: (deviceId?: string) => api.post('/api/mfa/unbind/device', { device_id: deviceId }),
@@ -122,10 +112,6 @@ export const mfa = {
     api.post('/api/mfa/open-door/request', { device_id: deviceId }),
   openDoorConfirm: (requestId: string, totpCode?: string) =>
     api.post('/api/mfa/open-door/confirm', { request_id: requestId, totp_code: totpCode }),
-  sendFaceResult: (payload: Record<string, unknown>) =>
-    api.post('/api/mfa/open-door/face-result', payload),
-  clearSnapshot: (snapshotPath: string) =>
-    api.post('/api/snapshot/clear', { snapshot: snapshotPath }),
   adminUnlock: (targetUsername: string) =>
     api.post('/api/mfa/admin/device/unlock', { target_username: targetUsername }),
   createGuest: (guestName: string, validHours = 24, maxUses = 1, deviceId: string | undefined) =>
@@ -141,7 +127,6 @@ export const mfa = {
 }
 
 export const alarm = {
-  trigger: (type: string, message: string) => api.post('/api/trigger_alarm', { type, message }),
   list: (status: string | undefined = undefined, limit = 10) => {
     const url = `/api/alarms?limit=${limit}${status ? `&status=${status}` : ''}`
     return api.get(url)
@@ -164,6 +149,8 @@ export const face = {
 }
 
 export const media = {
+  clearSnapshot: (snapshotPath: string) =>
+    api.post('/api/snapshot/clear', { snapshot: snapshotPath }),
   capture: async (deviceId: string) => {
     const response = await api.post('/api/video/capture', { device_id: deviceId })
     return { ...response, data: parseSnapshot(response.data) }
@@ -192,7 +179,6 @@ export const admin = {
     const url = status ? `/api/admin/users?status=${status}` : '/api/admin/users'
     return api.get(url)
   },
-  listPending: () => api.get('/api/admin/users/pending'),
   approve: (userId: number) => api.post(`/api/admin/users/${userId}/approve`),
   reject: (userId: number) => api.post(`/api/admin/users/${userId}/reject`)
 }

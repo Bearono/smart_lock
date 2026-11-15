@@ -1,4 +1,5 @@
 """Exercise a fresh, explicitly simulated service over verified TLS; leave it locked."""
+
 import argparse
 import json
 from pathlib import Path
@@ -13,71 +14,86 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def verify(endpoint, key_path, ca_path):
-    if urlsplit(endpoint).scheme != 'https':
-        raise ValueError('Verified HTTPS is required')
+    if urlsplit(endpoint).scheme != "https":
+        raise ValueError("Verified HTTPS is required")
     secret = key_path.read_text().strip()
     http = requests.Session()
     http.trust_env = False
     checks = {}
 
     def send(path, body, headers):
-        return http.post(endpoint + path, data=body, headers=headers, verify=str(ca_path),
-                         timeout=5, allow_redirects=False)
+        return http.post(
+            endpoint + path,
+            data=body,
+            headers=headers,
+            verify=str(ca_path),
+            timeout=5,
+            allow_redirects=False,
+        )
 
     def post(path, payload, code=200):
         response = send(path, *sign(secret, path, payload))
         if response.status_code != code:
-            raise AssertionError(f'{path} returned {response.status_code}, expected {code}')
+            raise AssertionError(f"{path} returned {response.status_code}, expected {code}")
         return response.json()
 
     def command(target):
-        return {'id': secrets.token_hex(16), 'target_status': target, 'expires_at': time.time() + 30}
+        return {
+            "id": secrets.token_hex(16),
+            "target_status": target,
+            "expires_at": time.time() + 30,
+        }
 
-    health = http.get(endpoint + '/health/ready', verify=str(ca_path), timeout=5).json()
-    if health.get('architecture') != 'aarch64' or health.get('execution_mode') != 'SIMULATED':
-        raise ValueError('This check requires the actual ARM64 simulator')
-    initial = post('/state', {})
-    if initial.get('command_count') != 0 or initial.get('fault') != 'normal':
-        raise ValueError('Use a fresh simulator volume; refusing to disturb an active demo')
+    health = http.get(endpoint + "/health/ready", verify=str(ca_path), timeout=5).json()
+    if health.get("architecture") != "aarch64" or health.get("execution_mode") != "SIMULATED":
+        raise ValueError("This check requires the actual ARM64 simulator")
+    initial = post("/state", {})
+    if initial.get("command_count") != 0 or initial.get("fault") != "normal":
+        raise ValueError("Use a fresh simulator volume; refusing to disturb an active demo")
     try:
-        packet = command('UNLOCKED')
-        body, headers = sign(secret, '/commands', packet)
-        assert send('/commands', body, {}).status_code == 401
-        assert send('/commands', body + b' ', headers).status_code == 401
-        checks['unsigned_and_modified_requests_rejected'] = True
-        first = send('/commands', body, headers)
-        assert first.status_code == 200 and first.json()['reported_status'] == 'UNLOCKED'
-        assert send('/commands', body, headers).status_code == 409
-        assert post('/commands', packet) == first.json()
-        assert post('/state', {})['command_count'] == 1
-        checks['request_replay_rejected_and_command_retry_idempotent'] = True
-        post('/commands', {**packet, 'target_status': 'LOCKED'}, 400)
-        post('/commands', {**command('LOCKED'), 'expires_at': time.time() - 1}, 400)
-        checks['changed_identity_and_expired_commands_rejected'] = True
-        post('/fault', {'fault': 'jammed'})
-        jammed = post('/commands', command('LOCKED'))
-        assert (jammed['status'], jammed['reported_status']) == ('failed', 'UNLOCKED')
-        checks['jammed_bolt_does_not_report_success'] = True
-        post('/fault', {'fault': 'feedback_lost'})
-        missing = post('/commands', command('LOCKED'))
-        assert (missing['status'], missing['reported_status']) == ('failed', 'UNKNOWN')
-        checks['missing_feedback_is_unknown'] = True
+        packet = command("UNLOCKED")
+        body, headers = sign(secret, "/commands", packet)
+        assert send("/commands", body, {}).status_code == 401
+        assert send("/commands", body + b" ", headers).status_code == 401
+        checks["unsigned_and_modified_requests_rejected"] = True
+        first = send("/commands", body, headers)
+        assert first.status_code == 200 and first.json()["reported_status"] == "UNLOCKED"
+        assert send("/commands", body, headers).status_code == 409
+        assert post("/commands", packet) == first.json()
+        assert post("/state", {})["command_count"] == 1
+        checks["request_replay_rejected_and_command_retry_idempotent"] = True
+        post("/commands", {**packet, "target_status": "LOCKED"}, 400)
+        post("/commands", {**command("LOCKED"), "expires_at": time.time() - 1}, 400)
+        checks["changed_identity_and_expired_commands_rejected"] = True
+        post("/fault", {"fault": "jammed"})
+        jammed = post("/commands", command("LOCKED"))
+        assert (jammed["status"], jammed["reported_status"]) == ("failed", "UNLOCKED")
+        checks["jammed_bolt_does_not_report_success"] = True
+        post("/fault", {"fault": "feedback_lost"})
+        missing = post("/commands", command("LOCKED"))
+        assert (missing["status"], missing["reported_status"]) == ("failed", "UNKNOWN")
+        checks["missing_feedback_is_unknown"] = True
     finally:
-        post('/fault', {'fault': 'normal'})
-        post('/commands', command('LOCKED'))
-    final = post('/state', {})
-    assert final['reported_status'] == 'LOCKED' and final['execution_mode'] == 'SIMULATED'
-    return {'passed': True, 'architecture': health['architecture'], 'checks': checks,
-            'final_state': final, 'scope': 'ARM simulator HTTPS interface; no user MFA or camera capture'}
+        post("/fault", {"fault": "normal"})
+        post("/commands", command("LOCKED"))
+    final = post("/state", {})
+    assert final["reported_status"] == "LOCKED" and final["execution_mode"] == "SIMULATED"
+    return {
+        "passed": True,
+        "architecture": health["architecture"],
+        "checks": checks,
+        "final_state": final,
+        "scope": "ARM simulator HTTPS interface; no user MFA or camera capture",
+    }
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--url', default='https://localhost:19443')
-    parser.add_argument('--output', type=Path)
+    parser.add_argument("--url", default="https://localhost:19443")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    report = verify(args.url, ROOT / 'instance/lock-sim/simulator_key', ROOT / 'deploy/tls/ca.crt')
+    report = verify(args.url, ROOT / "instance/lock-sim/simulator_key", ROOT / "deploy/tls/ca.crt")
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(report, indent=2), encoding='utf-8')
+        args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))

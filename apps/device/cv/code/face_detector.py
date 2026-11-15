@@ -1,9 +1,8 @@
 import os
-import pathlib
 import shutil
 import tempfile
-import urllib.parse
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
+
 try:
     from .paths import models_dir
     from .model_manifest import MODELS, verify_models
@@ -21,8 +20,8 @@ _PROJECT_ROOT = os.path.dirname(_CURRENT_DIR)  # code/ 的上一级是项目根�
 _DEFAULT_MODEL_DIR = str(models_dir())
 
 
-CAFFE_PROTO_URL = MODELS['deploy.prototxt'][0]
-CAFFE_MODEL_URL = MODELS['res10_300x300_ssd_iter_140000.caffemodel'][0]
+CAFFE_PROTO_URL = MODELS["deploy.prototxt"][0]
+CAFFE_MODEL_URL = MODELS["res10_300x300_ssd_iter_140000.caffemodel"][0]
 
 
 def _ensure_dir(dir_path: str) -> None:
@@ -89,9 +88,13 @@ def _ensure_models(model_dir: str) -> Tuple[str, str]:
     _ensure_dir(model_dir)
     proto_path = os.path.join(model_dir, "deploy.prototxt")
     model_path = os.path.join(model_dir, "res10_300x300_ssd_iter_140000.caffemodel")
-    if os.getenv('SMART_LOCK_ENV') == 'production' and not all(os.path.isfile(p) for p in (proto_path, model_path)):
-        raise RuntimeError('Production requires preinstalled, verified face models; runtime download is disabled')
-    if os.getenv('SMART_LOCK_ENV') == 'production':
+    if os.getenv("SMART_LOCK_ENV") == "production" and not all(
+        os.path.isfile(p) for p in (proto_path, model_path)
+    ):
+        raise RuntimeError(
+            "Production requires preinstalled, verified face models; runtime download is disabled"
+        )
+    if os.getenv("SMART_LOCK_ENV") == "production":
         verify_models(model_dir)
 
     if not os.path.isfile(proto_path):
@@ -143,7 +146,14 @@ class DnnFaceDetector:
 
             faces.append(
                 {
-                    "box": {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "width": x2 - x1, "height": y2 - y1},
+                    "box": {
+                        "x1": x1,
+                        "y1": y1,
+                        "x2": x2,
+                        "y2": y2,
+                        "width": x2 - x1,
+                        "height": y2 - y1,
+                    },
                     "score": confidence,
                 }
             )
@@ -159,11 +169,13 @@ def detect_faces_from_path(image_path: str, conf_threshold: float = 0.5) -> List
     return detector.detect(image)
 
 
-def _expand_and_clip_box(x1: int, y1: int, x2: int, y2: int, width: int, height: int, margin_ratio: float) -> Tuple[int, int, int, int]:
+def _expand_and_clip_box(
+    x1: int, y1: int, x2: int, y2: int, width: int, height: int, margin_ratio: float
+) -> Tuple[int, int, int, int]:
     cx = (x1 + x2) / 2.0
     cy = (y1 + y2) / 2.0
-    w = (x2 - x1)
-    h = (y2 - y1)
+    w = x2 - x1
+    h = y2 - y1
     w_exp = int(round(w * (1.0 + margin_ratio)))
     h_exp = int(round(h * (1.0 + margin_ratio)))
     nx1 = int(round(cx - w_exp / 2.0))
@@ -181,7 +193,13 @@ def _expand_and_clip_box(x1: int, y1: int, x2: int, y2: int, width: int, height:
     return nx1, ny1, nx2, ny2
 
 
-def crop_and_save_faces(image_bgr: np.ndarray, faces: List[Dict], output_dir: str, filename_prefix: str = "face", margin_ratio: float = 0.2) -> List[Dict]:
+def crop_and_save_faces(
+    image_bgr: np.ndarray,
+    faces: List[Dict],
+    output_dir: str,
+    filename_prefix: str = "face",
+    margin_ratio: float = 0.2,
+) -> List[Dict]:
     if image_bgr is None or image_bgr.size == 0:
         return []
     # resolve absolute output directory to avoid cwd issues
@@ -191,25 +209,40 @@ def crop_and_save_faces(image_bgr: np.ndarray, faces: List[Dict], output_dir: st
     saved: List[Dict] = []
     for idx, f in enumerate(faces):
         b = f.get("box", {})
-        x1, y1, x2, y2 = int(b.get("x1", 0)), int(b.get("y1", 0)), int(b.get("x2", 0)), int(b.get("y2", 0))
+        x1, y1, x2, y2 = (
+            int(b.get("x1", 0)),
+            int(b.get("y1", 0)),
+            int(b.get("x2", 0)),
+            int(b.get("y2", 0)),
+        )
         ex1, ey1, ex2, ey2 = _expand_and_clip_box(x1, y1, x2, y2, w, h, margin_ratio)
         crop = image_bgr[ey1:ey2, ex1:ex2]
-        filename = f"{filename_prefix}_{idx+1}.jpg"
+        filename = f"{filename_prefix}_{idx + 1}.jpg"
         filepath = os.path.join(abs_output_dir, filename)
         if crop.size == 0:
             continue
         try:
             from PIL import Image
+
             rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(rgb)
             img.save(filepath, format="JPEG")
         except Exception:
             continue
-        saved.append({
-            "file": filepath,
-            "box": {"x1": ex1, "y1": ey1, "x2": ex2, "y2": ey2, "width": ex2 - ex1, "height": ey2 - ey1},
-            "score": f.get("score", 0.0),
-        })
+        saved.append(
+            {
+                "file": filepath,
+                "box": {
+                    "x1": ex1,
+                    "y1": ey1,
+                    "x2": ex2,
+                    "y2": ey2,
+                    "width": ex2 - ex1,
+                    "height": ey2 - ey1,
+                },
+                "score": f.get("score", 0.0),
+            }
+        )
     return saved
 
 
@@ -237,7 +270,12 @@ def compute_embeddings(
     embeddings: List[Dict] = []
     for f in faces:
         b = f.get("box", {})
-        x1, y1, x2, y2 = int(b.get("x1", 0)), int(b.get("y1", 0)), int(b.get("x2", 0)), int(b.get("y2", 0))
+        x1, y1, x2, y2 = (
+            int(b.get("x1", 0)),
+            int(b.get("y1", 0)),
+            int(b.get("x2", 0)),
+            int(b.get("y2", 0)),
+        )
         ex1, ey1, ex2, ey2 = _expand_and_clip_box(x1, y1, x2, y2, w, h, margin_ratio)
         # face_recognition 需要 (top, right, bottom, left)
         location = (ey1, ex2, ey2, ex1)
@@ -245,11 +283,16 @@ def compute_embeddings(
         embeddings.append(
             {
                 "embedding": list(encoding),
-                "box": {"x1": ex1, "y1": ey1, "x2": ex2, "y2": ey2, "width": ex2 - ex1, "height": ey2 - ey1},
+                "box": {
+                    "x1": ex1,
+                    "y1": ey1,
+                    "x2": ex2,
+                    "y2": ey2,
+                    "width": ex2 - ex1,
+                    "height": ey2 - ey1,
+                },
                 "score": f.get("score", 0.0),
             }
         )
 
     return embeddings
-
-

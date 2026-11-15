@@ -2,13 +2,14 @@
 
 No camera, GPIO, personal templates or backend network connection is used.
 """
+
 import os
 import secrets
 
-os.environ['SMART_LOCK_ENV'] = 'production'
-os.environ['BACKEND_URL'] = 'https://backend.invalid'
-os.environ['SMART_LOCK_DEVICE_PASSWORD'] = secrets.token_hex(32)
-os.environ.pop('SMART_LOCK_DEVICE_PASSWORD_FILE', None)
+os.environ["SMART_LOCK_ENV"] = "production"
+os.environ["BACKEND_URL"] = "https://backend.invalid"
+os.environ["SMART_LOCK_DEVICE_PASSWORD"] = secrets.token_hex(32)
+os.environ.pop("SMART_LOCK_DEVICE_PASSWORD_FILE", None)
 
 import cv2
 import dlib
@@ -21,15 +22,18 @@ from runtime import CommandWorker, HeartbeatWorker
 def main():
     assert len(dlib.get_frontal_face_detector()(np.zeros((64, 64, 3), dtype=np.uint8), 1)) == 0
     from cv.code.face_embedding import load_models
+
     assert len(load_models()) == 2
-    assert UnavailableActuator().read_state() == 'UNKNOWN'
+    assert UnavailableActuator().read_state() == "UNKNOWN"
     client = app.test_client()
-    assert client.get('/').status_code == 200
-    assert client.get('/health/ready').status_code == 503, 'Missing face assets must not appear ready'
-    assert client.post('/auth_challenge', json={}).status_code == 401
+    assert client.get("/").status_code == 200
+    assert client.get("/health/ready").status_code == 503, (
+        "Missing face assets must not appear ready"
+    )
+    assert client.post("/auth_challenge", json={}).status_code == 401
     assert CommandWorker and HeartbeatWorker
-    print(f'Offline device image checks passed: OpenCV {cv2.__version__}, dlib {dlib.__version__}')
+    print(f"Offline device image checks passed: OpenCV {cv2.__version__}, dlib {dlib.__version__}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

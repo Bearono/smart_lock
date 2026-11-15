@@ -1,4 +1,5 @@
 """Software actuator fixtures; no GPIO or physical execution."""
+
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 import importlib.util
@@ -12,7 +13,9 @@ from unittest.mock import Mock
 from requests import HTTPError, Response
 
 ROOT = Path(__file__).resolve().parents[3]
-spec = importlib.util.spec_from_file_location('device_executor', ROOT / 'apps/device/command_executor.py')
+spec = importlib.util.spec_from_file_location(
+    "device_executor", ROOT / "apps/device/command_executor.py"
+)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 CommandExecutor = module.CommandExecutor
@@ -22,13 +25,13 @@ class CommandExecutorTests(unittest.TestCase):
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.path = Path(self.directory.name) / 'executions.db'
+        self.path = Path(self.directory.name) / "executions.db"
         self.now = 1000
-        self.command = dict(id='a' * 32, target_status='UNLOCKED', expires_at=1030)
+        self.command = dict(id="a" * 32, target_status="UNLOCKED", expires_at=1030)
         self.transmitter = Mock()
-        self.transmitter.sync_lock.return_value = {'command': self.command}
+        self.transmitter.sync_lock.return_value = {"command": self.command}
         self.actuator = Mock()
-        self.actuator.read_state.return_value = 'UNLOCKED'
+        self.actuator.read_state.return_value = "UNLOCKED"
         self.executor = self.make_executor()
 
     def make_executor(self):
@@ -37,8 +40,10 @@ class CommandExecutorTests(unittest.TestCase):
     def test_restart_and_duplicate_never_repeat_actuation(self):
         self.executor.run_once()
         self.make_executor().run_once()
-        self.actuator.set_state.assert_called_once_with('UNLOCKED')
-        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'executed', 'UNLOCKED', failure_reason=None, execution_mode='UNKNOWN')
+        self.actuator.set_state.assert_called_once_with("UNLOCKED")
+        self.transmitter.acknowledge_command.assert_called_once_with(
+            "a" * 32, "executed", "UNLOCKED", failure_reason=None, execution_mode="UNKNOWN"
+        )
 
     def test_lost_receipt_retries_without_reexecution_even_if_sync_fails(self):
         self.transmitter.acknowledge_command.side_effect = [TimeoutError(), None]
@@ -52,7 +57,10 @@ class CommandExecutorTests(unittest.TestCase):
     def test_reservation_is_committed_before_driver_io(self):
         def inspect(target):
             with closing(sqlite3.connect(self.path)) as connection:
-                self.assertEqual(connection.execute('SELECT status FROM executions').fetchone(), ('executing',))
+                self.assertEqual(
+                    connection.execute("SELECT status FROM executions").fetchone(), ("executing",)
+                )
+
         self.actuator.set_state.side_effect = inspect
         self.executor.run_once()
 
@@ -65,45 +73,76 @@ class CommandExecutorTests(unittest.TestCase):
         self.now = 1031
         self.make_executor().run_once()
         self.actuator.set_state.assert_called_once()
-        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN', failure_reason='COMMAND_INTERRUPTED', execution_mode='UNKNOWN')
+        self.transmitter.acknowledge_command.assert_called_once_with(
+            "a" * 32,
+            "failed",
+            "UNKNOWN",
+            failure_reason="COMMAND_INTERRUPTED",
+            execution_mode="UNKNOWN",
+        )
 
     def test_mismatch_and_driver_error_never_report_success(self):
-        self.actuator.read_state.return_value = 'LOCKED'
+        self.actuator.read_state.return_value = "LOCKED"
         self.executor.run_once()
-        self.transmitter.acknowledge_command.assert_called_with('a' * 32, 'failed', 'LOCKED', failure_reason='FEEDBACK_MISMATCH', execution_mode='UNKNOWN')
-        self.command['id'] = 'b' * 32
-        self.actuator.set_state.side_effect = RuntimeError('unavailable')
+        self.transmitter.acknowledge_command.assert_called_with(
+            "a" * 32,
+            "failed",
+            "LOCKED",
+            failure_reason="FEEDBACK_MISMATCH",
+            execution_mode="UNKNOWN",
+        )
+        self.command["id"] = "b" * 32
+        self.actuator.set_state.side_effect = RuntimeError("unavailable")
         self.executor.run_once()
-        self.transmitter.acknowledge_command.assert_called_with('b' * 32, 'failed', 'UNKNOWN', failure_reason='ACTUATION_FAILED', execution_mode='UNKNOWN')
+        self.transmitter.acknowledge_command.assert_called_with(
+            "b" * 32,
+            "failed",
+            "UNKNOWN",
+            failure_reason="ACTUATION_FAILED",
+            execution_mode="UNKNOWN",
+        )
 
     def test_default_driver_is_explicitly_unavailable(self):
         self.executor.actuator = module.UnavailableActuator()
         self.executor.run_once()
-        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN', failure_reason='ACTUATOR_UNAVAILABLE', execution_mode='UNKNOWN')
+        self.transmitter.acknowledge_command.assert_called_once_with(
+            "a" * 32,
+            "failed",
+            "UNKNOWN",
+            failure_reason="ACTUATOR_UNAVAILABLE",
+            execution_mode="UNKNOWN",
+        )
 
     def test_expired_and_invalid_commands_do_not_reach_driver(self):
         self.now = 1030
         self.executor.run_once()
-        for fields in ({'expires_at': float('nan')}, {'expires_at': True},
-                       {'expires_at': 9999}, {'id': '../bad'}, {'target_status': []}):
-            self.transmitter.sync_lock.return_value = {'command': dict(self.command, **fields)}
+        for fields in (
+            {"expires_at": float("nan")},
+            {"expires_at": True},
+            {"expires_at": 9999},
+            {"id": "../bad"},
+            {"target_status": []},
+        ):
+            self.transmitter.sync_lock.return_value = {"command": dict(self.command, **fields)}
             with self.assertRaises(ValueError):
                 self.executor.run_once()
         self.actuator.set_state.assert_not_called()
 
     def test_payload_conflict_does_not_reexecute(self):
         self.executor.run_once()
-        self.command['target_status'] = 'LOCKED'
+        self.command["target_status"] = "LOCKED"
         with self.assertRaises(ValueError):
             self.executor.run_once()
         self.actuator.set_state.assert_called_once()
 
     def test_concurrent_executors_do_not_steal_live_reservation(self):
         entered, release = Event(), Event()
+
         def actuate(target):
             entered.set()
             if not release.wait(5):
-                raise RuntimeError('test coordination timed out')
+                raise RuntimeError("test coordination timed out")
+
         self.actuator.set_state.side_effect = actuate
         other = self.make_executor()
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -130,7 +169,7 @@ class CommandExecutorTests(unittest.TestCase):
         self.now += 90000
         self.executor.run_once()
         with closing(sqlite3.connect(self.path)) as connection:
-            self.assertEqual(connection.execute('SELECT count(*) FROM executions').fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT count(*) FROM executions").fetchone()[0], 0)
         self.actuator.set_state.assert_called_once()
 
     def test_expiry_after_reservation_prevents_driver_call(self):
@@ -138,10 +177,18 @@ class CommandExecutorTests(unittest.TestCase):
         self.executor.clock = lambda: next(ticks)
         self.executor.run_once()
         self.actuator.set_state.assert_not_called()
-        self.transmitter.acknowledge_command.assert_called_once_with('a' * 32, 'failed', 'UNKNOWN', failure_reason='ACTUATION_FAILED', execution_mode='UNKNOWN')
+        self.transmitter.acknowledge_command.assert_called_once_with(
+            "a" * 32,
+            "failed",
+            "UNKNOWN",
+            failure_reason="ACTUATION_FAILED",
+            execution_mode="UNKNOWN",
+        )
 
     def test_worker_lifecycle_and_observed_heartbeat(self):
-        spec = importlib.util.spec_from_file_location('device_runtime', ROOT / 'apps/device/runtime.py')
+        spec = importlib.util.spec_from_file_location(
+            "device_runtime", ROOT / "apps/device/runtime.py"
+        )
         runtime = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(runtime)
         called = Event()
@@ -158,7 +205,14 @@ class CommandExecutorTests(unittest.TestCase):
         camera = Mock()
         heartbeat = runtime.HeartbeatWorker(self.transmitter, camera, actuator=self.actuator)
         heartbeat.report_once()
-        self.transmitter.heartbeat.assert_called_with('UNLOCKED', camera_status='ONLINE', actuator_status='AVAILABLE', execution_mode='UNKNOWN')
-        self.actuator.read_state.side_effect = RuntimeError('sensor offline')
+        self.transmitter.heartbeat.assert_called_with(
+            "UNLOCKED",
+            camera_status="ONLINE",
+            actuator_status="AVAILABLE",
+            execution_mode="UNKNOWN",
+        )
+        self.actuator.read_state.side_effect = RuntimeError("sensor offline")
         heartbeat.report_once()
-        self.transmitter.heartbeat.assert_called_with('UNKNOWN', camera_status='ONLINE', actuator_status='ERROR', execution_mode='UNKNOWN')
+        self.transmitter.heartbeat.assert_called_with(
+            "UNKNOWN", camera_status="ONLINE", actuator_status="ERROR", execution_mode="UNKNOWN"
+        )

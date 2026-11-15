@@ -8,6 +8,7 @@ from flask import Flask, jsonify, request
 
 from camera_core import CameraManager
 from transmit import NetworkTransmitter
+from command_guard import register_command_guard
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -43,12 +44,28 @@ def _get_test_frame():
     return None
 
 
+def capture_auth_frame():
+    frame = camera.capture_frame()
+    source = "camera"
+    if frame is None and os.getenv("SMART_LOCK_ALLOW_TEST_IMAGES", "false").lower() == "true":
+        frame, source = _get_test_frame(), "test_image"
+    return frame, source
+
+
+def recognize_auth_frame(frame):
+    if os.getenv("SMART_LOCK_ENV") == "production":
+        from recognize import recognize_with_pad
+
+        return recognize_with_pad(frame)
+    identity, confidence = recognize(frame)
+    return identity, confidence, 0.0
+
+
 app = Flask(__name__)
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 transmitter = NetworkTransmitter(remote_url=BACKEND_URL)
 camera = CameraManager()
-from command_guard import register_command_guard
 register_command_guard(app, transmitter)
 
 
@@ -57,23 +74,27 @@ def index():
     return "Smart lock device service is running."
 
 
-@app.route('/health/ready')
+@app.route("/health/ready")
 def software_readiness():
     """Configuration readiness only; physical camera/lock state comes from heartbeat."""
     from model_manifest import verify_models
     from paths import models_dir
     from template_store import load_templates
+
     try:
         verify_models(models_dir())
-        if os.getenv('SMART_LOCK_ENV') == 'production':
+        if os.getenv("SMART_LOCK_ENV") == "production":
             from anti_spoof import verify_pad_model
+
             verify_pad_model()
         templates = load_templates()
         if not templates:
-            return jsonify(status='not_ready', reason='face_templates_missing', scope='software'), 503
+            return jsonify(
+                status="not_ready", reason="face_templates_missing", scope="software"
+            ), 503
     except (OSError, ValueError):
-        return jsonify(status='not_ready', reason='face_assets_invalid', scope='software'), 503
-    return jsonify(status='ok', scope='software'), 200
+        return jsonify(status="not_ready", reason="face_assets_invalid", scope="software"), 503
+    return jsonify(status="ok", scope="software"), 200
 
 
 @app.route("/reload_templates", methods=["POST"])
@@ -85,24 +106,13 @@ def reload_face_templates():
 
 @app.route("/recognition_and_send", methods=["POST"])
 def trigger_recognition():
-    frame = camera.capture_frame()
-    frame_source = "camera"
-
-    if frame is None:
-        if os.getenv('SMART_LOCK_ALLOW_TEST_IMAGES', 'false').lower() == 'true':
-            frame = _get_test_frame()
-            frame_source = "test_image"
+    frame, frame_source = capture_auth_frame()
 
     if frame is None:
         return jsonify({"status": "error", "message": "Unable to capture image frame"}), 500
 
     try:
-        if os.getenv('SMART_LOCK_ENV') == 'production':
-            from recognize import recognize_with_pad
-            user_id, confidence, pad_score = recognize_with_pad(frame)
-        else:
-            user_id, confidence = recognize(frame)
-            pad_score = 0.0
+        user_id, confidence, _pad_score = recognize_auth_frame(frame)
     except Exception as exc:
         return jsonify(
             {
@@ -161,24 +171,13 @@ def handle_auth_challenge():
     if not request_id or not nonce:
         return jsonify({"status": "error", "message": "Missing request_id or nonce"}), 400
 
-    frame = camera.capture_frame()
-    frame_source = "camera"
-
-    if frame is None:
-        if os.getenv('SMART_LOCK_ALLOW_TEST_IMAGES', 'false').lower() == 'true':
-            frame = _get_test_frame()
-            frame_source = "test_image"
+    frame, frame_source = capture_auth_frame()
 
     if frame is None:
         return jsonify({"status": "error", "message": "Unable to capture image frame"}), 500
 
     try:
-        if os.getenv('SMART_LOCK_ENV') == 'production':
-            from recognize import recognize_with_pad
-            user_id, confidence, pad_score = recognize_with_pad(frame)
-        else:
-            user_id, confidence = recognize(frame)
-            pad_score = 0.0
+        user_id, confidence, pad_score = recognize_auth_frame(frame)
     except Exception as exc:
         return jsonify(
             {

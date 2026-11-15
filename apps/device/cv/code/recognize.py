@@ -3,16 +3,17 @@
 
 封装所有识别逻辑：人脸检测、embedding 提取、模板比对、相似度计算、阈值判断
 """
-import os
-import sys
+
 from pathlib import Path
 import numpy as np
 import cv2
+
 try:
     from .resource_guard import serialized_inference
 except ImportError:
     from resource_guard import serialized_inference
 from typing import Tuple, Optional, Dict
+
 try:
     from .paths import templates_dir as configured_templates_dir
     from .template_store import load_templates
@@ -20,25 +21,10 @@ except ImportError:
     from paths import templates_dir as configured_templates_dir
     from template_store import load_templates
 
-# Ensure package root is importable when executed as a script
-if __package__ is None or __package__ == "":
-    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-
 try:
     from .face_detector import DnnFaceDetector, compute_embeddings
-    from .verify_template import cosine_similarity
-except Exception:
-    try:
-        from code.face_detector import DnnFaceDetector, compute_embeddings
-        from code.verify_template import cosine_similarity
-    except Exception:
-        from face_detector import DnnFaceDetector, compute_embeddings
-        from verify_template import cosine_similarity
-
-# 获取当前文件所在目录，并计算项目根目录和模板目录
-_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.dirname(_CURRENT_DIR)
-_DEFAULT_TEMPLATES_DIR = str(configured_templates_dir())
+except ImportError:
+    from face_detector import DnnFaceDetector, compute_embeddings
 
 
 # 全局变量：模板库和检测器（延迟加载）
@@ -53,6 +39,12 @@ def l2_normalize(embedding: np.ndarray) -> np.ndarray:
     if norm == 0:
         return embedding
     return embedding / norm
+
+
+def cosine_similarity(first: np.ndarray, second: np.ndarray) -> float:
+    """Compare validated face vectors without depending on enrollment CLI tools."""
+    denominator = np.linalg.norm(first) * np.linalg.norm(second)
+    return float(np.dot(first, second) / denominator) if denominator else 0.0
 
 
 def _read_image(image_path: str) -> Optional[np.ndarray]:
@@ -108,79 +100,44 @@ def recognize(
 ) -> Tuple[Optional[str], float]:
     if templates_dir is None:
         templates_dir = str(configured_templates_dir())
-    """
-    人脸识别函数
-    
-    完整流程：
-    1. 人脸检测
-    2. 提取 embedding
-    3. 与模板库中所有模板计算余弦相似度
-    4. 取相似度最高的模板作为候选身份
-    5. 根据阈值判断是否通过身份认证
-    
-    Args:
-        image: BGR 格式的图像数组（numpy array）
-        templates_dir: 模板文件目录
-        conf_threshold: 人脸检测置信度阈值
-        margin_ratio: 裁剪时的 margin 比例
-        match_threshold: 身份匹配阈值（余弦相似度，0-1）
-    
-    Returns:
-        (user_id, confidence)
-        - user_id: 识别到的用户 ID，如果未匹配则返回 None
-        - confidence: 相似度分数 (0-1)，如果未匹配则返回最高相似度
-    
-    示例:
-        import cv2
-        image = cv2.imread("test.jpg")
-        user_id, conf = recognize(image)
-        if user_id:
-            print(f"识别成功: {user_id}, 相似度: {conf:.4f}")
-        else:
-            print(f"识别失败，最高相似度: {conf:.4f}")
-    """
     # 1. 加载模板库
     templates = _get_templates(templates_dir)
     if not templates:
         return None, 0.0
-    
+
     # 2. 人脸检测
     detector = _get_detector(conf_threshold)
     faces = detector.detect(image)
     if len(faces) != 1:
         return None, 0.0
-    
-    # 使用置信度最高的人脸
+
+    # Authentication accepts exactly one detected face.
     best_face = faces[0]
-    
+
     # 3. 提取 embedding
-    embeddings_result = compute_embeddings(
-        image,
-        [best_face],
-        margin_ratio=margin_ratio
-    )
-    
+    embeddings_result = compute_embeddings(image, [best_face], margin_ratio=margin_ratio)
+
     if not embeddings_result:
         return None, 0.0
-    
+
     # 提取并归一化 embedding
-    embedding = np.array(embeddings_result[0]['embedding'], dtype=np.float32)
+    embedding = np.array(embeddings_result[0]["embedding"], dtype=np.float32)
     embedding = l2_normalize(embedding)
-    
+
     # 4. 与所有模板比对，计算余弦相似度
     best_user_id = None
     best_similarity = -1.0
-    
+
     for user_id, template in templates.items():
         if template.shape != embedding.shape:
             continue
-        
+
         similarity = float(cosine_similarity(template, embedding))
-        
+
         if similarity > best_similarity:
             best_similarity = similarity
             best_user_id = user_id
-    
+
     # 5. 根据阈值判断是否通过身份认证
     if best_similarity >= match_threshold:
         return best_user_id, best_similarity
@@ -213,7 +170,7 @@ def recognize_from_path(
     image = _read_image(image_path)
     if image is None:
         return None, 0.0
-    
+
     return recognize(
         image,
         templates_dir=templates_dir,

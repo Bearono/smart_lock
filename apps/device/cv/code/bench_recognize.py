@@ -42,8 +42,7 @@ if str(_CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(_CURRENT_DIR))
 
 from face_detector import DnnFaceDetector, compute_embeddings  # noqa: E402
-from recognize import _get_templates, l2_normalize  # noqa: E402
-from verify_template import cosine_similarity  # noqa: E402
+from recognize import _get_templates, l2_normalize, cosine_similarity  # noqa: E402
 
 
 STAGES = ["detect", "embedding", "match"]
@@ -112,8 +111,9 @@ def _iter_frames(source: str, path: Optional[str], frames: int):
     raise ValueError(f"未知 source: {source}")
 
 
-def _bench_one(detector: DnnFaceDetector, templates: Dict[str, np.ndarray],
-               frame: np.ndarray) -> Optional[Dict[str, float]]:
+def _bench_one(
+    detector: DnnFaceDetector, templates: Dict[str, np.ndarray], frame: np.ndarray
+) -> Optional[Dict[str, float]]:
     stages: Dict[str, float] = {}
 
     t = _now_ms()
@@ -217,14 +217,23 @@ def main():
     summary_path = out_dir / "bench_summary.csv"
     with summary_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["stage", "n", "mean_ms", "median_ms", "p95_ms", "min_ms", "max_ms", "stdev_ms"])
+        writer.writerow(
+            ["stage", "n", "mean_ms", "median_ms", "p95_ms", "min_ms", "max_ms", "stdev_ms"]
+        )
         for stage in STAGES + ["total"]:
             s = _summarize([r[stage] for r in runs])
-            writer.writerow([
-                stage, s["n"],
-                f"{s['mean']:.3f}", f"{s['median']:.3f}", f"{s['p95']:.3f}",
-                f"{s['min']:.3f}", f"{s['max']:.3f}", f"{s['stdev']:.3f}",
-            ])
+            writer.writerow(
+                [
+                    stage,
+                    s["n"],
+                    f"{s['mean']:.3f}",
+                    f"{s['median']:.3f}",
+                    f"{s['p95']:.3f}",
+                    f"{s['min']:.3f}",
+                    f"{s['max']:.3f}",
+                    f"{s['stdev']:.3f}",
+                ]
+            )
         writer.writerow([])
         writer.writerow(["fps_estimate", f"{fps:.2f}"])
         writer.writerow(["wall_seconds", f"{wall_ms / 1000.0:.2f}"])
@@ -234,7 +243,9 @@ def main():
     print(f"{'stage':<12}{'mean':>10}{'median':>10}{'p95':>10}{'stdev':>10}")
     for stage in STAGES + ["total"]:
         s = _summarize([r[stage] for r in runs])
-        print(f"{stage:<12}{s['mean']:>10.2f}{s['median']:>10.2f}{s['p95']:>10.2f}{s['stdev']:>10.2f}")
+        print(
+            f"{stage:<12}{s['mean']:>10.2f}{s['median']:>10.2f}{s['p95']:>10.2f}{s['stdev']:>10.2f}"
+        )
     print(f"\n有效样本 {len(runs)} / 总帧 {args.frames}, 跳过 {skipped}")
     print(f"墙钟耗时 {wall_ms / 1000:.2f}s, 折合 FPS ≈ {fps:.2f}")
     print(f"明细: {detail_path}")

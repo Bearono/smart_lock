@@ -1,7 +1,8 @@
 """Account credential changes revoke derived capabilities before commit."""
+
 import pyotp
 
-from app import db
+from app.extensions import db
 from app.passwords import hash_password
 from app.authorization import revoke_access
 from app.models import AccessLog, MFACredential
@@ -13,9 +14,11 @@ def change_password(user, password, *, actor, reset_totp=False):
     user.password_hash = hash_password(password)
     revoke_access(user.id)
     if reset_totp:
-        for credential in MFACredential.query.filter_by(user_id=user.id, credential_type='totp').all():
+        for credential in MFACredential.query.filter_by(
+            user_id=user.id, credential_type="totp"
+        ).all():
             credential.is_active = False
             credential.credential_data = pyotp.random_base32()
             credential.last_totp_counter = -1
-    action = 'ACCOUNT_RECOVERY' if reset_totp else 'PASSWORD_CHANGE'
-    db.session.add(AccessLog(username=actor, action=f'{action}:{user.username}'[:100]))
+    action = "ACCOUNT_RECOVERY" if reset_totp else "PASSWORD_CHANGE"
+    db.session.add(AccessLog(username=actor, action=f"{action}:{user.username}"[:100]))

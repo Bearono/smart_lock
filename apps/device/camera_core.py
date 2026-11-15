@@ -68,6 +68,7 @@ class CameraManager:
     def _close_picamera2(self):
         camera, self._picamera2 = self._picamera2, None
         if camera is not None:
+
             def release_camera():
                 # Timed-out jobs remain queued; cancel them before asking the camera to stop.
                 for release in (camera.cancel_all_and_flush, camera.stop, camera.close):
@@ -75,7 +76,8 @@ class CameraManager:
                         release()
                     except Exception:
                         logging.getLogger(__name__).exception("Camera release failed")
-            self._cleanup_thread = Thread(target=release_camera, name='camera-cleanup', daemon=True)
+
+            self._cleanup_thread = Thread(target=release_camera, name="camera-cleanup", daemon=True)
             self._cleanup_thread.start()
             self._cleanup_thread.join(timeout=0.5)
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch, onScopeDispose } from 'vue'
-import { media, mfa } from '../../shared/api/index.ts'
+import { ref, computed, watch } from 'vue'
+import { useSnapshots } from '../camera/useSnapshots.ts'
 import { useDoorSession } from '../door/useDoorSession.ts'
-import { serverTime, lockState, cameraState, errorMessage } from '../../shared/lib/presentation.js'
+import { serverTime, lockState, cameraState } from '../../shared/lib/presentation.js'
 import AppIcon from '../../shared/ui/AppIcon.vue'
 import AppDialog from '../../shared/ui/AppDialog.vue'
 import StatusBadge from '../../shared/ui/StatusBadge.vue'
@@ -30,11 +30,17 @@ const {
   taskActive,
   snapshotPath
 } = session
-const search = ref(''),
-  latestPath = ref(''),
-  snapshotError = ref(''),
-  snapshotBusy = ref(false),
-  receivedAt = ref('')
+const search = ref('')
+const {
+  latestPath,
+  snapshotError,
+  snapshotBusy,
+  receivedAt,
+  clearTarget,
+  clearing,
+  refreshSnapshot,
+  clearSnapshot
+} = useSnapshots(selectedId)
 const showList = ref(false)
 const flowPanel = ref<HTMLElement | null>(null)
 const cameraUnavailable = computed(() =>
@@ -49,8 +55,6 @@ const cameraHint = computed(() => {
   if (cameraUnavailable.value) return '摄像头离线或异常，恢复后可拍照和验证人脸。'
   return ''
 })
-const clearTarget = ref(''),
-  clearing = ref(false)
 const visibleDevices = computed(() =>
   devices.value.filter((item) =>
     `${item.display_name || ''} ${item.device_id}`
@@ -65,40 +69,6 @@ const batteryLabel = computed(() => {
     : '未提供'
 })
 
-let imageGeneration = 0,
-  disposed = false,
-  snapshotDevice = ''
-async function refreshSnapshot(capture = false) {
-  if (capture && snapshotBusy.value) return
-  const current = ++imageGeneration,
-    id = selectedId.value
-  if (snapshotDevice !== id) {
-    snapshotDevice = id
-    latestPath.value = ''
-    receivedAt.value = ''
-  }
-  snapshotError.value = ''
-  snapshotBusy.value = true
-  if (!id) {
-    snapshotBusy.value = false
-    return
-  }
-  try {
-    const response = await (capture ? media.capture(id) : media.latest(id))
-    if (!disposed && current === imageGeneration) {
-      latestPath.value = response.data.snapshot || ''
-      receivedAt.value = response.data.received_at || ''
-    }
-  } catch (failure) {
-    if (!disposed && current === imageGeneration)
-      snapshotError.value = errorMessage(
-        failure,
-        capture ? '拍摄结果未确认，请先刷新已有画面' : '快照信息获取失败'
-      )
-  } finally {
-    if (!disposed && current === imageGeneration) snapshotBusy.value = false
-  }
-}
 function changeDevice(event: Event) {
   const element = event.target as HTMLSelectElement
   session.select(element.value)
@@ -107,25 +77,6 @@ function changeDevice(event: Event) {
 function choose(id: string) {
   if (session.select(id)) showList.value = false
 }
-async function clearSnapshot() {
-  if (clearing.value || !clearTarget.value) return
-  const target = clearTarget.value
-  clearing.value = true
-  try {
-    await mfa.clearSnapshot(target)
-    if (latestPath.value === target) {
-      latestPath.value = ''
-      receivedAt.value = ''
-    }
-    clearTarget.value = ''
-    await refreshSnapshot()
-  } catch (failure) {
-    snapshotError.value = errorMessage(failure, '快照删除结果未确认，请重新获取')
-  } finally {
-    clearing.value = false
-  }
-}
-watch(selectedId, () => refreshSnapshot(), { immediate: true })
 watch(
   phase,
   (value) => {
@@ -136,10 +87,6 @@ watch(
   },
   { flush: 'post' }
 )
-onScopeDispose(() => {
-  disposed = true
-  imageGeneration++
-})
 </script>
 <template>
   <section class="home-welcome">

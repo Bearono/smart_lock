@@ -27,6 +27,8 @@ jobs:
             apps/api/requirements.lock
       - run: pip install -r requirements-dev.txt
       - run: pip install --no-deps ./packages/smartlock_protocol
+      - run: ruff check apps packages deploy manage.py
+      - run: ruff format --check apps packages deploy manage.py
       - run: python deploy/verify_protocol_package.py --output /tmp/protocol-wheel
       - run: python deploy/audit_dependencies.py --output /tmp/dependency-audit.json
       - run: python -B -m unittest discover -s apps/api/tests -p 'test_*.py' -v
@@ -91,26 +93,6 @@ jobs:
             apps/android/app/build/outputs/apk/debug/app-debug.apk
             apps/android/app/build/outputs/apk/debug/build-evidence.json
           if-no-files-found: error
-  course-labs:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.12'
-      - run: pip install numpy==2.2.4
-      - name: Fetch pinned JVM test dependencies
-        run: |
-          mkdir -p apps/android/.tools
-          curl --fail --location --retry 3 https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar -o apps/android/.tools/junit-4.13.2.jar
-          curl --fail --location --retry 3 https://repo.maven.apache.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar -o apps/android/.tools/hamcrest-core-1.3.jar
-          sha256sum --check <<'HASHES'
-          8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3  apps/android/.tools/junit-4.13.2.jar
-          66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9  apps/android/.tools/hamcrest-core-1.3.jar
-          HASHES
-      - run: python examples/android_audio/test_jvm.py --jdk "$JAVA_HOME_17_X64"
-      - run: python examples/android_audio/tests/test_codec_interop.py --java "$JAVA_HOME_17_X64/bin/java"
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 15

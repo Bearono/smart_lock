@@ -8,10 +8,6 @@ version = "3.0.0"
 requires-python = ">=3.10"
 dependencies = ["cryptography>=46", "spake2==0.9"]
 
-[project.optional-dependencies]
-audio = ["numpy==2.2.4"]
-audio-device = ["numpy==2.2.4", "sounddevice==0.5.6"]
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["smartlock_protocol", "smartlock_protocol.*"]

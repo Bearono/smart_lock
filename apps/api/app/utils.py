@@ -27,14 +27,14 @@ def send_email(config, alarm_type, message):
         subject = f"【紧急】智能门锁报警：{alarm_type}"
         content = f"检测时间：{datetime.datetime.now()}\n详情：{message}"
 
-        msg = MIMEText(content, 'plain', 'utf-8')
-        msg['Subject'] = Header(subject, 'utf-8')
-        msg['From'] = config['SENDER_EMAIL']
-        msg['To'] = config['RECEIVER_EMAIL']
+        msg = MIMEText(content, "plain", "utf-8")
+        msg["Subject"] = Header(subject, "utf-8")
+        msg["From"] = config["SENDER_EMAIL"]
+        msg["To"] = config["RECEIVER_EMAIL"]
 
-        smtp = smtplib.SMTP_SSL(config['SMTP_SERVER'], config['SMTP_PORT'])
-        smtp.login(config['SENDER_EMAIL'], config['SENDER_PASSWORD'])
-        smtp.sendmail(config['SENDER_EMAIL'], config['RECEIVER_EMAIL'], msg.as_string())
+        smtp = smtplib.SMTP_SSL(config["SMTP_SERVER"], config["SMTP_PORT"])
+        smtp.login(config["SENDER_EMAIL"], config["SENDER_PASSWORD"])
+        smtp.sendmail(config["SENDER_EMAIL"], config["RECEIVER_EMAIL"], msg.as_string())
         smtp.quit()
         print("邮件已发送")
     except Exception as e:
@@ -45,6 +45,5 @@ def generate_video_stream():
     global global_frame_bytes
     while True:
         if global_frame_bytes:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + global_frame_bytes + b'\r\n')
+            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + global_frame_bytes + b"\r\n")
         time.sleep(0.05)

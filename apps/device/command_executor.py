@@ -3,6 +3,7 @@
 Drivers must bound their I/O and return observed state, never desired state.
 An interrupted actuation is deliberately not resumed: its outcome is unknown.
 """
+
 from contextlib import closing
 import logging
 import math
@@ -14,7 +15,7 @@ from threading import Lock
 from typing import Protocol
 
 logger = logging.getLogger(__name__)
-STATES = frozenset({'LOCKED', 'UNLOCKED'})
+STATES = frozenset({"LOCKED", "UNLOCKED"})
 RETENTION_SECONDS = 86400
 
 
@@ -30,13 +31,13 @@ class ActuatorUnavailableError(RuntimeError):
 
 class UnavailableActuator:
     configured = False
-    execution_mode = 'UNKNOWN'
+    execution_mode = "UNKNOWN"
 
     def set_state(self, target):
-        raise ActuatorUnavailableError('No actuator driver configured')
+        raise ActuatorUnavailableError("No actuator driver configured")
 
     def read_state(self):
-        return 'UNKNOWN'
+        return "UNKNOWN"
 
 
 class CommandExecutor:
@@ -48,15 +49,17 @@ class CommandExecutor:
         self.lock = Lock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
-            connection.execute('''CREATE TABLE IF NOT EXISTS executions (
+            connection.execute("""CREATE TABLE IF NOT EXISTS executions (
                 id TEXT PRIMARY KEY, target TEXT NOT NULL, expires REAL NOT NULL,
                 status TEXT NOT NULL, observed TEXT NOT NULL DEFAULT 'UNKNOWN',
-                delivered INTEGER NOT NULL DEFAULT 0)''')
-            columns = {row[1] for row in connection.execute('PRAGMA table_info(executions)')}
-            if 'failure_reason' not in columns:
-                connection.execute('ALTER TABLE executions ADD COLUMN failure_reason TEXT')
-            if 'execution_mode' not in columns:
-                connection.execute("ALTER TABLE executions ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'UNKNOWN'")
+                delivered INTEGER NOT NULL DEFAULT 0)""")
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(executions)")}
+            if "failure_reason" not in columns:
+                connection.execute("ALTER TABLE executions ADD COLUMN failure_reason TEXT")
+            if "execution_mode" not in columns:
+                connection.execute(
+                    "ALTER TABLE executions ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'UNKNOWN'"
+                )
 
     def _connect(self):
         # Autocommit makes every journal transition durable before external I/O.
@@ -64,83 +67,97 @@ class CommandExecutor:
 
     def _execute(self, command):
         if not isinstance(command, dict):
-            raise ValueError('Command must be an object')
-        command_id = command.get('id')
-        target, expires = command.get('target_status'), command.get('expires_at')
-        if (not isinstance(command_id, str) or not re.fullmatch(r'[0-9a-f]{32}', command_id)
-                or not isinstance(target, str) or target not in STATES
-                or type(expires) not in (int, float) or not math.isfinite(expires)):
-            raise ValueError('Invalid command fields')
+            raise ValueError("Command must be an object")
+        command_id = command.get("id")
+        target, expires = command.get("target_status"), command.get("expires_at")
+        if (
+            not isinstance(command_id, str)
+            or not re.fullmatch(r"[0-9a-f]{32}", command_id)
+            or not isinstance(target, str)
+            or target not in STATES
+            or type(expires) not in (int, float)
+            or not math.isfinite(expires)
+        ):
+            raise ValueError("Invalid command fields")
         now = self.clock()
         if expires <= now:
             return
         if expires > now + 60:
-            raise ValueError('Command lifetime exceeds allowed clock skew')
+            raise ValueError("Command lifetime exceeds allowed clock skew")
         with self._connect() as connection:
-            mode = getattr(self.actuator, 'execution_mode', 'UNKNOWN')
-            if mode not in ('PHYSICAL', 'SIMULATED'):
-                mode = 'UNKNOWN'
+            mode = getattr(self.actuator, "execution_mode", "UNKNOWN")
+            if mode not in ("PHYSICAL", "SIMULATED"):
+                mode = "UNKNOWN"
             inserted = connection.execute(
                 "INSERT OR IGNORE INTO executions(id,target,expires,status,execution_mode) VALUES(?,?,?,'executing',?)",
-                (command_id, target, expires, mode)).rowcount
+                (command_id, target, expires, mode),
+            ).rowcount
             if not inserted:
-                previous = connection.execute('SELECT target,expires FROM executions WHERE id=?',
-                                              (command_id,)).fetchone()
+                previous = connection.execute(
+                    "SELECT target,expires FROM executions WHERE id=?", (command_id,)
+                ).fetchone()
                 if previous != (target, expires):
-                    raise ValueError('Command ID reused with different payload')
+                    raise ValueError("Command ID reused with different payload")
                 return
-        status, observed, reason = 'failed', 'UNKNOWN', 'ACTUATION_FAILED'
+        status, observed, reason = "failed", "UNKNOWN", "ACTUATION_FAILED"
         try:
             if self.clock() < expires:
-                execute = getattr(type(self.actuator), 'execute_command', None)
+                execute = getattr(type(self.actuator), "execute_command", None)
                 if callable(execute):
                     execute(self.actuator, command)
                 else:
                     self.actuator.set_state(target)
                 reading = self.actuator.read_state()
-                observed = reading if isinstance(reading, str) and reading in STATES else 'UNKNOWN'
+                observed = reading if isinstance(reading, str) and reading in STATES else "UNKNOWN"
                 if observed == target and self.clock() < expires:
-                    status = 'executed'
+                    status = "executed"
                     reason = None
                 else:
-                    reason = 'FEEDBACK_MISMATCH'
+                    reason = "FEEDBACK_MISMATCH"
         except ActuatorUnavailableError:
-            reason = 'ACTUATOR_UNAVAILABLE'
+            reason = "ACTUATOR_UNAVAILABLE"
         except Exception:
-            logger.exception('Command execution failed: %s', command_id)
+            logger.exception("Command execution failed: %s", command_id)
         with self._connect() as connection:
-            connection.execute("UPDATE executions SET status=?,observed=?,failure_reason=? WHERE id=? AND status='executing'",
-                               (status, observed, reason, command_id))
+            connection.execute(
+                "UPDATE executions SET status=?,observed=?,failure_reason=? WHERE id=? AND status='executing'",
+                (status, observed, reason, command_id),
+            )
 
     def _deliver(self):
         now = self.clock()
         with self._connect() as connection:
             # Wait until expiry before recovering an interrupted reservation.
             # Another worker may still own a live reservation; never steal it.
-            connection.execute("UPDATE executions SET status='failed',failure_reason='COMMAND_INTERRUPTED' WHERE status='executing' AND expires<=?", (now,))
-            connection.execute('DELETE FROM executions WHERE expires<?', (now - RETENTION_SECONDS,))
+            connection.execute(
+                "UPDATE executions SET status='failed',failure_reason='COMMAND_INTERRUPTED' WHERE status='executing' AND expires<=?",
+                (now,),
+            )
+            connection.execute("DELETE FROM executions WHERE expires<?", (now - RETENTION_SECONDS,))
             receipts = connection.execute(
-                "SELECT id,status,observed,failure_reason,execution_mode FROM executions WHERE delivered=0 AND status!='executing' ORDER BY expires DESC LIMIT 1").fetchall()
+                "SELECT id,status,observed,failure_reason,execution_mode FROM executions WHERE delivered=0 AND status!='executing' ORDER BY expires DESC LIMIT 1"
+            ).fetchall()
         for command_id, status, observed, reason, mode in receipts:
             try:
-                self.transmitter.acknowledge_command(command_id, status, observed, failure_reason=reason,
-                                                    execution_mode=mode)
+                self.transmitter.acknowledge_command(
+                    command_id, status, observed, failure_reason=reason, execution_mode=mode
+                )
             except Exception as exc:
-                response = getattr(exc, 'response', None)
+                response = getattr(exc, "response", None)
                 if response is None or response.status_code not in (404, 409):
-                    logger.warning('Command receipt deferred: %s', command_id)
+                    logger.warning("Command receipt deferred: %s", command_id)
                     continue
             with self._connect() as connection:
-                connection.execute('UPDATE executions SET delivered=1 WHERE id=?', (command_id,))
+                connection.execute("UPDATE executions SET delivered=1 WHERE id=?", (command_id,))
 
     def run_once(self):
         with self.lock:
             try:
                 payload = self.transmitter.sync_lock()  # Authenticated by transmitter.
-                if not isinstance(payload, dict) or 'command' not in payload:
-                    raise ValueError('Invalid sync response')
-                if payload['command'] is not None:
-                    self._execute(payload['command'])
+                if not isinstance(payload, dict) or "command" not in payload:
+                    raise ValueError("Invalid sync response")
+                if payload["command"] is not None:
+                    self._execute(payload["command"])
             finally:
                 # A sync outage must not prevent delivery of existing receipts.
                 self._deliver()

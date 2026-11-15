@@ -19,6 +19,6 @@
 - 数据迁移独立执行，回滚依赖匹配备份；不要为修复测试清空真实数据卷。
 - 使用真实、必要的测试，避免只重复实现的断言。破坏兼容性时同时修改调用方和验收。
 
-编码格式由 `.editorconfig`、`.gitattributes` 和 Web 的 ESLint/Prettier 约束。不要引入个人 SDK 路径、IDE 文件或未固定版本的运行依赖。
+编码格式由 `.editorconfig`、`.gitattributes` 、Python 的 Ruff 和 Web 的 ESLint/Prettier 约束。不要引入个人 SDK 路径、IDE 文件或未固定版本的运行依赖。
 
 本仓库未通过本文件授予额外开源许可；第三方代码与素材保留其原有权利和来源。

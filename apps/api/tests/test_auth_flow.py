@@ -3,6 +3,7 @@
 Run from smart_lock: python -m unittest discover -s tests -p 'test_*.py' -v
 No live devices, existing databases, or SMTP calls are used.
 """
+
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,7 +18,16 @@ from flask_jwt_extended import create_access_token
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app, db, bcrypt
-from app.models import AuthSession, Device, DeviceGrant, FaceRecognitionLog, GuestPass, MFACredential, UnlockToken, User
+from app.models import (
+    AuthSession,
+    Device,
+    DeviceGrant,
+    FaceRecognitionLog,
+    GuestPass,
+    MFACredential,
+    UnlockToken,
+    User,
+)
 from app.face_challenges import DeviceUnavailable
 from smartlock_protocol.v2 import SecureEnvelope, Spake2Client
 
@@ -25,36 +35,62 @@ from smartlock_protocol.v2 import SecureEnvelope, Spake2Client
 class AuthFlowTests(unittest.TestCase):
     def setUp(self):
         self.tmp = TemporaryDirectory()
-        self.app = create_app({
-            'TESTING': True, 'BCRYPT_LOG_ROUNDS': 4,
-            'ALLOW_DEMO_DEVICES': True,
-            'RATE_LIMIT_ENABLED': False,
-            'JWT_SECRET_KEY': 'isolated-regression-test-key-32-bytes',
-            'SQLALCHEMY_DATABASE_URI': 'sqlite:///' + (Path(self.tmp.name) / 'test.db').as_posix(),
-            'UPLOAD_FOLDER': str(Path(self.tmp.name) / 'captures'),
-            'DEVICE_DISPATCH_REQUIRED': False,
-        })
+        self.app = create_app(
+            {
+                "TESTING": True,
+                "BCRYPT_LOG_ROUNDS": 4,
+                "ALLOW_DEMO_DEVICES": True,
+                "RATE_LIMIT_ENABLED": False,
+                "JWT_SECRET_KEY": "isolated-regression-test-key-32-bytes",
+                "SQLALCHEMY_DATABASE_URI": "sqlite:///"
+                + (Path(self.tmp.name) / "test.db").as_posix(),
+                "UPLOAD_FOLDER": str(Path(self.tmp.name) / "captures"),
+                "DEVICE_DISPATCH_REQUIRED": False,
+            }
+        )
         self.client = self.app.test_client()
         self.secret = pyotp.random_base32()
         with self.app.app_context():
-            user = User(username='alice', status='approved',
-                        password_hash=bcrypt.generate_password_hash('password').decode())
+            user = User(
+                username="alice",
+                status="approved",
+                password_hash=bcrypt.generate_password_hash("password").decode(),
+            )
             db.session.add(user)
             db.session.flush()
             self.uid = user.id
-            db.session.add(MFACredential(user_id=user.id, credential_type='totp',
-                                        credential_data=self.secret, is_active=True))
-            for device_id in ('door_a', 'door_b'):
+            db.session.add(
+                MFACredential(
+                    user_id=user.id,
+                    credential_type="totp",
+                    credential_data=self.secret,
+                    is_active=True,
+                )
+            )
+            for device_id in ("door_a", "door_b"):
                 db.session.add(DeviceGrant(user_id=user.id, device_id=device_id))
-                db.session.add(MFACredential(user_id=user.id, credential_type='device',
-                                            device_id=device_id, credential_data='', is_active=True))
+                db.session.add(
+                    MFACredential(
+                        user_id=user.id,
+                        credential_type="device",
+                        device_id=device_id,
+                        credential_data="",
+                        is_active=True,
+                    )
+                )
                 db.session.add(Device(device_id=device_id))
             db.session.commit()
-            self.headers = {'Authorization': 'Bearer ' + create_access_token(
-                identity='alice', additional_claims={'mfa': True})}
-        self.dispatch = patch('app.routes.mfa.door.dispatch_face_challenge', side_effect=DeviceUnavailable('offline'))
+            self.headers = {
+                "Authorization": "Bearer "
+                + create_access_token(identity="alice", additional_claims={"mfa": True})
+            }
+        self.dispatch = patch(
+            "app.routes.mfa.door.dispatch_face_challenge", side_effect=DeviceUnavailable("offline")
+        )
         self.dispatch.start()
-        self.policy = patch('app.routes.mfa.door.evaluate_mfa_policy', return_value=['device', 'face'])
+        self.policy = patch(
+            "app.routes.mfa.door.evaluate_mfa_policy", return_value=["device", "face"]
+        )
         self.policy.start()
 
     def tearDown(self):
@@ -66,504 +102,754 @@ class AuthFlowTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def post(self, path, body, authenticated=True, client=None):
-        return (client or self.client).post(path, json=body, headers=self.headers if authenticated else {})
+        return (client or self.client).post(
+            path, json=body, headers=self.headers if authenticated else {}
+        )
 
     def test_repeated_enrollment_has_one_pending_secret(self):
         with self.app.app_context():
-            MFACredential.query.filter_by(user_id=self.uid, credential_type='totp').update({'is_active': False})
+            MFACredential.query.filter_by(user_id=self.uid, credential_type="totp").update(
+                {"is_active": False}
+            )
             db.session.commit()
-        first = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False)
-        second = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False)
+        first = self.post("/api/login/pre", {"username": "alice", "password": "password"}, False)
+        second = self.post("/api/login/pre", {"username": "alice", "password": "password"}, False)
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(first.json['credential_id'], second.json['credential_id'])
-        self.assertEqual(first.json['secret'], second.json['secret'])
+        self.assertEqual(first.json["credential_id"], second.json["credential_id"])
+        self.assertEqual(first.json["secret"], second.json["secret"])
 
     def test_registration_identity_can_be_used_as_a_safe_template_name(self):
-        for username in ('../alice', 'a/b', 'a\\b', ' alice ', 'alice.', 'a\x00b'):
+        for username in ("../alice", "a/b", "a\\b", " alice ", "alice.", "a\x00b"):
             with self.subTest(username=username):
-                self.assertEqual(self.post('/api/register', {'username': username,
-                    'password': 'new-account-password'}, False).status_code, 400)
-        self.assertEqual(self.post('/api/register', {'username': '家人',
-            'password': 'new-account-password'}, False).status_code, 201)
+                self.assertEqual(
+                    self.post(
+                        "/api/register",
+                        {"username": username, "password": "new-account-password"},
+                        False,
+                    ).status_code,
+                    400,
+                )
+        self.assertEqual(
+            self.post(
+                "/api/register", {"username": "家人", "password": "new-account-password"}, False
+            ).status_code,
+            201,
+        )
 
     def test_authentication_lockout_queues_one_alarm_per_episode(self):
         from app.door_auth import record_failure
         from app.models import AlarmLog, AlarmDelivery
+
         with self.app.app_context():
             for _ in range(7):
-                record_failure(self.uid, 'door_a')
+                record_failure(self.uid, "door_a")
                 db.session.commit()
             alarm = AlarmLog.query.one()
-            self.assertEqual(alarm.alarm_type, 'AUTH_LOCKOUT')
-            self.assertIn('alice', alarm.message)
-            self.assertIn('door_a', alarm.message)
+            self.assertEqual(alarm.alarm_type, "AUTH_LOCKOUT")
+            self.assertIn("alice", alarm.message)
+            self.assertIn("door_a", alarm.message)
             self.assertEqual(AlarmDelivery.query.count(), 1)
-            self.assertEqual(AlarmDelivery.query.one().status, 'disabled')
-            other = MFACredential.query.filter_by(user_id=self.uid, device_id='door_b').one()
+            self.assertEqual(AlarmDelivery.query.one().status, "disabled")
+            other = MFACredential.query.filter_by(user_id=self.uid, device_id="door_b").one()
             self.assertFalse(other.is_locked)
 
     def test_historical_pending_secret_cannot_replace_active_authenticator(self):
         with self.app.app_context():
             pending_secret = pyotp.random_base32()
-            pending = MFACredential(user_id=self.uid, credential_type='totp',
-                                    credential_data=pending_secret, is_active=False)
+            pending = MFACredential(
+                user_id=self.uid,
+                credential_type="totp",
+                credential_data=pending_secret,
+                is_active=False,
+            )
             db.session.add(pending)
             db.session.commit()
             pending_id = pending.id
-        result = self.post('/api/mfa/verify/totp', {'credential_id': pending_id,
-                                                   'code': pyotp.TOTP(pending_secret).now()})
+        result = self.post(
+            "/api/mfa/verify/totp",
+            {"credential_id": pending_id, "code": pyotp.TOTP(pending_secret).now()},
+        )
         self.assertEqual(result.status_code, 409)
         with self.app.app_context():
-            self.assertEqual(MFACredential.query.filter_by(user_id=self.uid,
-                credential_type='totp', is_active=True).count(), 1)
+            self.assertEqual(
+                MFACredential.query.filter_by(
+                    user_id=self.uid, credential_type="totp", is_active=True
+                ).count(),
+                1,
+            )
 
     def test_expired_pending_enrollment_is_rejected_and_rotated(self):
         with self.app.app_context():
-            credential = MFACredential.query.filter_by(user_id=self.uid, credential_type='totp').one()
+            credential = MFACredential.query.filter_by(
+                user_id=self.uid, credential_type="totp"
+            ).one()
             credential.is_active = False
             credential.created_at = datetime.now() - timedelta(minutes=6)
             credential_id = credential.id
             db.session.commit()
-        result = self.post('/api/mfa/verify/totp', {'credential_id': credential_id,
-                                                   'code': pyotp.TOTP(self.secret).now()})
-        self.assertEqual(result.status_code, 401, 'Removing the active authenticator must invalidate the old JWT')
-        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False)
-        self.assertNotEqual(pre.json['secret'], self.secret)
+        result = self.post(
+            "/api/mfa/verify/totp",
+            {"credential_id": credential_id, "code": pyotp.TOTP(self.secret).now()},
+        )
+        self.assertEqual(
+            result.status_code, 401, "Removing the active authenticator must invalidate the old JWT"
+        )
+        pre = self.post("/api/login/pre", {"username": "alice", "password": "password"}, False)
+        self.assertNotEqual(pre.json["secret"], self.secret)
         with self.app.app_context():
-            credential = db.session.get(MFACredential, pre.json['credential_id'])
+            credential = db.session.get(MFACredential, pre.json["credential_id"])
             credential.created_at = datetime.now() - timedelta(minutes=6)
             db.session.commit()
-        self.assertEqual(self.post('/api/login/mfa/bind', {'pre_token': pre.json['pre_token'],
-            'code': pyotp.TOTP(pre.json['secret']).now()}, False).status_code, 409)
-        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False)
-        self.assertEqual(self.post('/api/login/mfa/bind', {'pre_token': pre.json['pre_token'],
-            'code': pyotp.TOTP(pre.json['secret']).now()}, False).status_code, 200)
+        self.assertEqual(
+            self.post(
+                "/api/login/mfa/bind",
+                {"pre_token": pre.json["pre_token"], "code": pyotp.TOTP(pre.json["secret"]).now()},
+                False,
+            ).status_code,
+            409,
+        )
+        pre = self.post("/api/login/pre", {"username": "alice", "password": "password"}, False)
+        self.assertEqual(
+            self.post(
+                "/api/login/mfa/bind",
+                {"pre_token": pre.json["pre_token"], "code": pyotp.TOTP(pre.json["secret"]).now()},
+                False,
+            ).status_code,
+            200,
+        )
 
-    def challenge(self, device='door_a'):
-        response = self.post('/api/mfa/open-door/request', {'device_id': device})
+    def challenge(self, device="door_a"):
+        response = self.post("/api/mfa/open-door/request", {"device_id": device})
         self.assertEqual(response.status_code, 200, response.json)
         return response.json
 
-    def packet(self, challenge, *, device='door_a', nonce=None, user='alice', score=.95, **extra):
-        spake = Spake2Client(device, 'ChangeMe-Spake2-Device-Password')
+    def packet(self, challenge, *, device="door_a", nonce=None, user="alice", score=0.95, **extra):
+        spake = Spake2Client(device, "ChangeMe-Spake2-Device-Password")
         state, message = spake.begin()
-        reply = self.post('/api/security/spake2/start', message, False)
+        reply = self.post("/api/security/spake2/start", message, False)
         self.assertEqual(reply.status_code, 200, reply.json)
         session = spake.finish(state, reply.json)
-        return SecureEnvelope.seal(session, dict(
-            request_id=challenge['request_id'], device_id=device,
-            session_nonce=challenge['nonce'] if nonce is None else nonce,
-            face_user_id=user, similarity_score=score, **extra))
+        return SecureEnvelope.seal(
+            session,
+            dict(
+                request_id=challenge["request_id"],
+                device_id=device,
+                session_nonce=challenge["nonce"] if nonce is None else nonce,
+                face_user_id=user,
+                similarity_score=score,
+                **extra,
+            ),
+        )
 
     def verified(self):
         challenge = self.challenge()
-        response = self.post('/api/mfa/open-door/face-result', self.packet(challenge), False)
+        response = self.post("/api/mfa/open-door/face-result", self.packet(challenge), False)
         self.assertEqual(response.status_code, 200, response.json)
         return challenge
 
     def test_required_pad_rejects_missing_and_low_score_and_audits(self):
         from app.models import FaceRecognitionLog
-        self.app.config['FACE_PAD_REQUIRED'] = True
+
+        self.app.config["FACE_PAD_REQUIRED"] = True
         for value in (None, 0.1):
             challenge = self.challenge()
             packet = self.packet(challenge, liveness_score=value)
-            result = self.post('/api/mfa/open-door/face-result', packet, False)
+            result = self.post("/api/mfa/open-door/face-result", packet, False)
             self.assertEqual(result.status_code, 401, result.json)
             with self.app.app_context():
-                log = FaceRecognitionLog.query.filter_by(request_id=challenge['request_id']).one()
+                log = FaceRecognitionLog.query.filter_by(request_id=challenge["request_id"]).one()
                 self.assertFalse(log.passed)
-                self.assertEqual(log.failure_reason, 'face_presentation_check_failed')
+                self.assertEqual(log.failure_reason, "face_presentation_check_failed")
                 self.assertEqual(log.liveness_score, value)
         challenge = self.challenge()
-        self.assertEqual(self.post('/api/mfa/open-door/face-result',
-            self.packet(challenge, liveness_score=0.9), False).status_code, 200)
+        self.assertEqual(
+            self.post(
+                "/api/mfa/open-door/face-result", self.packet(challenge, liveness_score=0.9), False
+            ).status_code,
+            200,
+        )
 
     def test_pad_malformed_score_cannot_verify_face(self):
-        self.app.config['FACE_PAD_REQUIRED'] = True
+        self.app.config["FACE_PAD_REQUIRED"] = True
         challenge = self.challenge()
-        for value in (True, '0.99', -1, 2):
-            result = self.post('/api/mfa/open-door/face-result',
-                self.packet(challenge, liveness_score=value), False)
+        for value in (True, "0.99", -1, 2):
+            result = self.post(
+                "/api/mfa/open-door/face-result",
+                self.packet(challenge, liveness_score=value),
+                False,
+            )
             self.assertEqual(result.status_code, 400)
         with self.app.app_context():
-            self.assertFalse(AuthSession.query.filter_by(request_id=challenge['request_id']).one().face_verified)
+            self.assertFalse(
+                AuthSession.query.filter_by(request_id=challenge["request_id"]).one().face_verified
+            )
 
     def issued(self):
         challenge = self.verified()
-        response = self.post('/api/mfa/open-door/confirm', {'request_id': challenge['request_id']})
+        response = self.post("/api/mfa/open-door/confirm", {"request_id": challenge["request_id"]})
         self.assertEqual(response.status_code, 200, response.json)
         return response.json
 
     def concurrent(self, path, body, authenticated=True):
         barrier = Barrier(2)
+
         def submit():
             with self.app.test_client() as client:
                 barrier.wait(timeout=10)
                 response = self.post(path, body, authenticated, client)
                 return response.status_code, response.json
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             return list(pool.map(lambda _: submit(), range(2)))
 
     def test_unbind_rebind_does_not_revive_accepted_command(self):
         credential = self.issued()
-        accepted = self.post('/api/lock/unlock-token/verify', credential, False)
+        accepted = self.post("/api/lock/unlock-token/verify", credential, False)
         self.assertEqual(accepted.status_code, 200)
-        self.assertEqual(self.post('/api/mfa/unbind/device', {'device_id': 'door_a'}).status_code, 200)
-        self.assertEqual(self.post('/api/mfa/bind/device', {'device_id': 'door_a'}).status_code, 200)
-        result = self.post('/api/lock/command-status', credential, False)
-        self.assertEqual(result.json['status'], 'revoked')
-        self.assertFalse(result.json['hardware_confirmed'])
+        self.assertEqual(
+            self.post("/api/mfa/unbind/device", {"device_id": "door_a"}).status_code, 200
+        )
+        self.assertEqual(
+            self.post("/api/mfa/bind/device", {"device_id": "door_a"}).status_code, 200
+        )
+        result = self.post("/api/lock/command-status", credential, False)
+        self.assertEqual(result.json["status"], "revoked")
+        self.assertFalse(result.json["hardware_confirmed"])
 
     def test_guest_revocation_reaches_already_accepted_command(self):
-        created = self.post('/api/mfa/guest/create', {'device_id': 'door_a', 'guest_name': 'visitor'})
-        credential = self.post('/api/mfa/guest/verify', {'pass_code': created.json['pass_code']}, False).json
-        accepted = self.post('/api/lock/unlock-token/verify', credential, False)
+        created = self.post(
+            "/api/mfa/guest/create", {"device_id": "door_a", "guest_name": "visitor"}
+        )
+        credential = self.post(
+            "/api/mfa/guest/verify", {"pass_code": created.json["pass_code"]}, False
+        ).json
+        accepted = self.post("/api/lock/unlock-token/verify", credential, False)
         self.assertEqual(accepted.status_code, 200)
         with self.app.app_context():
             guest_id = GuestPass.query.one().id
-        self.assertEqual(self.post(f'/api/mfa/guest/revoke/{guest_id}', {}).status_code, 200)
-        self.assertEqual(self.post('/api/lock/command-status', credential, False).json['status'], 'revoked')
+        self.assertEqual(self.post(f"/api/mfa/guest/revoke/{guest_id}", {}).status_code, 200)
+        self.assertEqual(
+            self.post("/api/lock/command-status", credential, False).json["status"], "revoked"
+        )
 
     def test_command_capability_is_read_only_and_device_scoped(self):
         credential = self.issued()
-        self.assertEqual(self.post('/api/lock/command-status', credential, False).status_code, 404)
-        accepted = self.post('/api/lock/unlock-token/verify', credential, False)
+        self.assertEqual(self.post("/api/lock/command-status", credential, False).status_code, 404)
+        accepted = self.post("/api/lock/unlock-token/verify", credential, False)
         for _ in range(2):
-            result = self.post('/api/lock/command-status', credential, False)
-            self.assertEqual(result.json['id'], accepted.json['command_id'])
-            self.assertEqual(result.json['status'], 'pending')
-        self.assertEqual(self.post('/api/lock/command-status', dict(credential, device_id='door_b'), False).status_code, 404)
-        self.assertEqual(self.post('/api/lock/unlock-token/verify', credential, False).status_code, 401)
+            result = self.post("/api/lock/command-status", credential, False)
+            self.assertEqual(result.json["id"], accepted.json["command_id"])
+            self.assertEqual(result.json["status"], "pending")
+        self.assertEqual(
+            self.post(
+                "/api/lock/command-status", dict(credential, device_id="door_b"), False
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.post("/api/lock/unlock-token/verify", credential, False).status_code, 401
+        )
 
     def test_account_reapproval_does_not_restore_old_login(self):
         with self.app.app_context():
-            operator = User(username='operator', role='admin', status='approved', password_hash='unused')
+            operator = User(
+                username="operator", role="admin", status="approved", password_hash="unused"
+            )
             db.session.add(operator)
             db.session.flush()
-            db.session.add(MFACredential(user_id=operator.id, credential_type='totp', credential_data=pyotp.random_base32(), is_active=True))
+            db.session.add(
+                MFACredential(
+                    user_id=operator.id,
+                    credential_type="totp",
+                    credential_data=pyotp.random_base32(),
+                    is_active=True,
+                )
+            )
             db.session.commit()
-            headers = {'Authorization': 'Bearer ' + create_access_token(identity='operator', additional_claims={'mfa': True})}
-        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False).json
-        for operation in ('reject', 'approve'):
-            self.assertEqual(self.client.post(f'/api/admin/users/{self.uid}/{operation}', headers=headers).status_code, 200)
-        self.assertEqual(self.client.get('/api/mfa/status', headers=self.headers).status_code, 401)
-        result = self.post('/api/login/mfa/verify', {'pre_token': pre['pre_token'], 'code': pyotp.TOTP(self.secret).now()}, False)
+            headers = {
+                "Authorization": "Bearer "
+                + create_access_token(identity="operator", additional_claims={"mfa": True})
+            }
+        pre = self.post("/api/login/pre", {"username": "alice", "password": "password"}, False).json
+        for operation in ("reject", "approve"):
+            self.assertEqual(
+                self.client.post(
+                    f"/api/admin/users/{self.uid}/{operation}", headers=headers
+                ).status_code,
+                200,
+            )
+        self.assertEqual(self.client.get("/api/mfa/status", headers=self.headers).status_code, 401)
+        result = self.post(
+            "/api/login/mfa/verify",
+            {"pre_token": pre["pre_token"], "code": pyotp.TOTP(self.secret).now()},
+            False,
+        )
         self.assertEqual(result.status_code, 401)
-        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False).json
-        login = self.post('/api/login/mfa/verify', {'pre_token': pre['pre_token'], 'code': pyotp.TOTP(self.secret).now()}, False)
+        pre = self.post("/api/login/pre", {"username": "alice", "password": "password"}, False).json
+        login = self.post(
+            "/api/login/mfa/verify",
+            {"pre_token": pre["pre_token"], "code": pyotp.TOTP(self.secret).now()},
+            False,
+        )
         self.assertEqual(login.status_code, 200)
-        self.assertEqual(self.client.get('/api/mfa/status', headers={'Authorization': 'Bearer ' + login.json['access_token']}).status_code, 200)
+        self.assertEqual(
+            self.client.get(
+                "/api/mfa/status", headers={"Authorization": "Bearer " + login.json["access_token"]}
+            ).status_code,
+            200,
+        )
 
     def test_malformed_fields_and_device_credential_cannot_enter_totp_verification(self):
         for path, body in (
-            ('/api/mfa/unbind/device', {'device_id': []}),
-            ('/api/mfa/open-door/confirm', {'request_id': {}}),
-            ('/api/mfa/guest/create', {'device_id': 'door_a', 'guest_name': []}),
-            ('/api/mfa/bind/device', {'device_id': 'door_a', 'device_pubkey': {}}),
-            ('/api/mfa/verify/totp', {'code': [], 'credential_id': {}}),
+            ("/api/mfa/unbind/device", {"device_id": []}),
+            ("/api/mfa/open-door/confirm", {"request_id": {}}),
+            ("/api/mfa/guest/create", {"device_id": "door_a", "guest_name": []}),
+            ("/api/mfa/bind/device", {"device_id": "door_a", "device_pubkey": {}}),
+            ("/api/mfa/verify/totp", {"code": [], "credential_id": {}}),
         ):
             with self.subTest(path=path):
                 self.assertEqual(self.post(path, body).status_code, 400)
         with self.app.app_context():
-            credential_id = MFACredential.query.filter_by(credential_type='device').first().id
-        result = self.post('/api/mfa/verify/totp', {'credential_id': credential_id, 'code': pyotp.TOTP(self.secret).now()})
+            credential_id = MFACredential.query.filter_by(credential_type="device").first().id
+        result = self.post(
+            "/api/mfa/verify/totp",
+            {"credential_id": credential_id, "code": pyotp.TOTP(self.secret).now()},
+        )
         self.assertEqual(result.status_code, 400)
 
     def test_password_login_cannot_issue_token_and_totp_is_single_use(self):
-        response = self.post('/api/login', {'username': 'alice', 'password': 'password'}, False)
-        self.assertNotIn('access_token', response.json)
-        body = {'pre_token': response.json['pre_token'], 'code': pyotp.TOTP(self.secret).now()}
-        results = self.concurrent('/api/login/mfa/verify', body, False)
+        response = self.post("/api/login", {"username": "alice", "password": "password"}, False)
+        self.assertNotIn("access_token", response.json)
+        body = {"pre_token": response.json["pre_token"], "code": pyotp.TOTP(self.secret).now()}
+        results = self.concurrent("/api/login/mfa/verify", body, False)
         self.assertEqual(sum(status == 200 for status, _ in results), 1, results)
 
     def test_password_change_requires_both_factors_and_invalidates_old_login(self):
-        path = '/api/account/password'
-        body = {'current_password': 'wrong', 'new_password': 'changed-password-123',
-                'code': pyotp.TOTP(self.secret).now()}
+        path = "/api/account/password"
+        body = {
+            "current_password": "wrong",
+            "new_password": "changed-password-123",
+            "code": pyotp.TOTP(self.secret).now(),
+        }
         self.assertEqual(self.post(path, body).status_code, 401)
-        self.assertEqual(self.client.get('/api/mfa/status', headers=self.headers).status_code, 200)
-        body['current_password'] = 'password'
-        body['new_password'] = 'short'
+        self.assertEqual(self.client.get("/api/mfa/status", headers=self.headers).status_code, 200)
+        body["current_password"] = "password"
+        body["new_password"] = "short"
         self.assertEqual(self.post(path, body).status_code, 400)
-        body['new_password'] = 'changed-password-123'
+        body["new_password"] = "changed-password-123"
         self.assertEqual(self.post(path, body).status_code, 200)
-        self.assertEqual(self.client.get('/api/mfa/status', headers=self.headers).status_code, 401)
-        self.assertEqual(self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False).status_code, 401)
-        self.assertEqual(self.post('/api/login/pre', {'username': 'alice', 'password': body['new_password']}, False).status_code, 200)
+        self.assertEqual(self.client.get("/api/mfa/status", headers=self.headers).status_code, 401)
+        self.assertEqual(
+            self.post(
+                "/api/login/pre", {"username": "alice", "password": "password"}, False
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            self.post(
+                "/api/login/pre", {"username": "alice", "password": body["new_password"]}, False
+            ).status_code,
+            200,
+        )
 
     def test_operator_recovery_rotates_totp_and_preserves_approval_and_role(self):
-        result = self.app.test_cli_runner().invoke(args=[
-            'recover-account', '--username', 'alice', '--password', 'recovered-password-123', '--reset-totp'])
+        result = self.app.test_cli_runner().invoke(
+            args=[
+                "recover-account",
+                "--username",
+                "alice",
+                "--password",
+                "recovered-password-123",
+                "--reset-totp",
+            ]
+        )
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertEqual(self.client.get('/api/mfa/status', headers=self.headers).status_code, 401)
+        self.assertEqual(self.client.get("/api/mfa/status", headers=self.headers).status_code, 401)
         with self.app.app_context():
             user = db.session.get(User, self.uid)
-            self.assertEqual((user.status, user.role), ('approved', 'user'))
-            credential = MFACredential.query.filter_by(user_id=self.uid, credential_type='totp').one()
+            self.assertEqual((user.status, user.role), ("approved", "user"))
+            credential = MFACredential.query.filter_by(
+                user_id=self.uid, credential_type="totp"
+            ).one()
             self.assertFalse(credential.is_active)
             self.assertNotEqual(credential.credential_data, self.secret)
-        response = self.post('/api/login/pre', {'username': 'alice', 'password': 'recovered-password-123'}, False)
+        response = self.post(
+            "/api/login/pre", {"username": "alice", "password": "recovered-password-123"}, False
+        )
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json['totp_bound'])
-        secret = response.json['secret']
-        response = self.post('/api/login/mfa/bind', {
-            'pre_token': response.json['pre_token'], 'code': pyotp.TOTP(secret).now()}, False)
+        self.assertFalse(response.json["totp_bound"])
+        secret = response.json["secret"]
+        response = self.post(
+            "/api/login/mfa/bind",
+            {"pre_token": response.json["pre_token"], "code": pyotp.TOTP(secret).now()},
+            False,
+        )
         self.assertEqual(response.status_code, 200)
 
     def test_wrong_totp_can_retry_but_is_bounded(self):
-        pre = self.post('/api/login/pre', {'username': 'alice', 'password': 'password'}, False).json
-        valid = {pyotp.TOTP(self.secret).at(datetime.now() + timedelta(seconds=i * 30)) for i in (-1, 0, 1)}
+        pre = self.post("/api/login/pre", {"username": "alice", "password": "password"}, False).json
+        valid = {
+            pyotp.TOTP(self.secret).at(datetime.now() + timedelta(seconds=i * 30))
+            for i in (-1, 0, 1)
+        }
         wrong = next(str(i).zfill(6) for i in range(100) if str(i).zfill(6) not in valid)
         for attempt in range(5):
-            res = self.post('/api/login/mfa/verify', {'pre_token': pre['pre_token'], 'code': wrong}, False)
+            res = self.post(
+                "/api/login/mfa/verify", {"pre_token": pre["pre_token"], "code": wrong}, False
+            )
             self.assertEqual(res.status_code, 401)
-            self.assertEqual(res.json['restart_login'], attempt == 4)
-        res = self.post('/api/login/mfa/verify', {'pre_token': pre['pre_token'], 'code': pyotp.TOTP(self.secret).now()}, False)
+            self.assertEqual(res.json["restart_login"], attempt == 4)
+        res = self.post(
+            "/api/login/mfa/verify",
+            {"pre_token": pre["pre_token"], "code": pyotp.TOTP(self.secret).now()},
+            False,
+        )
         self.assertEqual(res.status_code, 401)
 
     def test_first_login_binding_and_account_revocation(self):
         with self.app.app_context():
-            MFACredential.query.filter_by(user_id=self.uid, credential_type='totp').update({'is_active': False})
+            MFACredential.query.filter_by(user_id=self.uid, credential_type="totp").update(
+                {"is_active": False}
+            )
             db.session.commit()
-        pre = self.post('/api/login', {'username': 'alice', 'password': 'password'}, False).json
-        body = {'pre_token': pre['pre_token'], 'code': pyotp.TOTP(pre['secret']).now()}
-        res = self.post('/api/login/mfa/bind', body, False)
+        pre = self.post("/api/login", {"username": "alice", "password": "password"}, False).json
+        body = {"pre_token": pre["pre_token"], "code": pyotp.TOTP(pre["secret"]).now()}
+        res = self.post("/api/login/mfa/bind", body, False)
         self.assertEqual(res.status_code, 200, res.json)
         with self.app.app_context():
-            db.session.get(User, self.uid).status = 'rejected'
+            db.session.get(User, self.uid).status = "rejected"
             db.session.commit()
-        self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_a'}).status_code, 401)
+        self.assertEqual(
+            self.post("/api/mfa/open-door/request", {"device_id": "door_a"}).status_code, 401
+        )
 
     def test_legacy_jwt_and_direct_unlock_rejected(self):
         with self.app.app_context():
-            token = create_access_token(identity='alice')
-        self.assertEqual(self.client.get('/api/mfa/status', headers={'Authorization': 'Bearer ' + token}).status_code, 401)
-        self.assertEqual(self.post('/api/lock/control', {'action': 'UNLOCK', 'device_id': 'door_a'}).status_code, 403)
-        self.assertEqual(self.post('/api/lock/control', {'action': 'LOCK', 'device_id': 'unknown'}).status_code, 403)
+            token = create_access_token(identity="alice")
+        self.assertEqual(
+            self.client.get(
+                "/api/mfa/status", headers={"Authorization": "Bearer " + token}
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            self.post("/api/lock/control", {"action": "UNLOCK", "device_id": "door_a"}).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.post("/api/lock/control", {"action": "LOCK", "device_id": "unknown"}).status_code,
+            403,
+        )
 
     def test_development_dispatch_requires_real_encrypted_result(self):
         challenge = self.challenge()
-        self.assertEqual(challenge['device_dispatch']['status'], 'pending')
-        self.assertEqual(self.post('/api/mfa/open-door/confirm', {'request_id': challenge['request_id']}).status_code, 401)
-        self.assertEqual(self.post('/api/mfa/open-door/face-result', challenge, False).status_code, 401)
+        self.assertEqual(challenge["device_dispatch"]["status"], "pending")
+        self.assertEqual(
+            self.post(
+                "/api/mfa/open-door/confirm", {"request_id": challenge["request_id"]}
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            self.post("/api/mfa/open-door/face-result", challenge, False).status_code, 401
+        )
 
     def test_production_dispatch_and_device_rejection_fail_closed(self):
-        self.app.config['DEVICE_DISPATCH_REQUIRED'] = True
-        self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_a'}).status_code, 502)
-        self.app.config['DEVICE_DISPATCH_REQUIRED'] = False
-        with patch('app.routes.mfa.door.dispatch_face_challenge', side_effect=RuntimeError('face rejected')):
-            self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_a'}).status_code, 502)
+        self.app.config["DEVICE_DISPATCH_REQUIRED"] = True
+        self.assertEqual(
+            self.post("/api/mfa/open-door/request", {"device_id": "door_a"}).status_code, 502
+        )
+        self.app.config["DEVICE_DISPATCH_REQUIRED"] = False
+        with patch(
+            "app.routes.mfa.door.dispatch_face_challenge", side_effect=RuntimeError("face rejected")
+        ):
+            self.assertEqual(
+                self.post("/api/mfa/open-door/request", {"device_id": "door_a"}).status_code, 502
+            )
 
     def test_callback_rejection_preserves_one_evidence_record_and_snapshot(self):
         from app.door_auth import record_failure
 
         def reject(device_id, request_id, nonce):
             session = AuthSession.query.filter_by(request_id=request_id).one()
-            session.status = 'failed'
-            db.session.add(FaceRecognitionLog(
-                request_id=request_id, device_id=device_id, expected_username='alice',
-                face_user_id=None, similarity_score=0, liveness_score=0, passed=False,
-                failure_reason='face_user_or_score_mismatch',
-                snapshot_path='/api/media/' + 'a' * 32 + '.jpg'))
+            session.status = "failed"
+            db.session.add(
+                FaceRecognitionLog(
+                    request_id=request_id,
+                    device_id=device_id,
+                    expected_username="alice",
+                    face_user_id=None,
+                    similarity_score=0,
+                    liveness_score=0,
+                    passed=False,
+                    failure_reason="face_user_or_score_mismatch",
+                    snapshot_path="/api/media/" + "a" * 32 + ".jpg",
+                )
+            )
             record_failure(self.uid, device_id)
             db.session.commit()
-            raise RuntimeError('Device returned HTTP 401: Face verification failed')
+            raise RuntimeError("Device returned HTTP 401: Face verification failed")
 
-        with patch('app.routes.mfa.door.dispatch_face_challenge', side_effect=reject):
-            response = self.post('/api/mfa/open-door/request', {'device_id': 'door_a'})
+        with patch("app.routes.mfa.door.dispatch_face_challenge", side_effect=reject):
+            response = self.post("/api/mfa/open-door/request", {"device_id": "door_a"})
         self.assertEqual(response.status_code, 401, response.json)
-        self.assertEqual(response.json['code'], 'FACE_VERIFICATION_FAILED')
-        self.assertEqual(response.json['reason'], 'face_not_identified')
-        self.assertEqual(response.json['snapshot'], '/api/media/' + 'a' * 32 + '.jpg')
+        self.assertEqual(response.json["code"], "FACE_VERIFICATION_FAILED")
+        self.assertEqual(response.json["reason"], "face_not_identified")
+        self.assertEqual(response.json["snapshot"], "/api/media/" + "a" * 32 + ".jpg")
         with self.app.app_context():
             self.assertEqual(FaceRecognitionLog.query.count(), 1)
-            self.assertEqual(AuthSession.query.one().status, 'failed')
+            self.assertEqual(AuthSession.query.one().status, "failed")
             self.assertFalse(AuthSession.query.one().face_verified)
             self.assertEqual(UnlockToken.query.count(), 0)
-            self.assertEqual(MFACredential.query.filter_by(
-                user_id=self.uid, device_id='door_a').one().failed_attempts, 1)
+            self.assertEqual(
+                MFACredential.query.filter_by(user_id=self.uid, device_id="door_a")
+                .one()
+                .failed_attempts,
+                1,
+            )
 
     def test_face_nonce_device_and_mac_validation(self):
         challenge = self.challenge()
-        packet = self.packet(challenge, device='door_b')
-        self.assertEqual(self.post('/api/mfa/open-door/face-result', packet, False).status_code, 403)
+        packet = self.packet(challenge, device="door_b")
+        self.assertEqual(
+            self.post("/api/mfa/open-door/face-result", packet, False).status_code, 403
+        )
         packet = self.packet(challenge)
-        packet['mac'] = 'AAAA'
-        self.assertEqual(self.post('/api/mfa/open-door/face-result', packet, False).status_code, 400)
-        response = self.post('/api/mfa/open-door/face-result', self.packet(challenge, nonce='wrong'), False)
+        packet["mac"] = "AAAA"
+        self.assertEqual(
+            self.post("/api/mfa/open-door/face-result", packet, False).status_code, 400
+        )
+        response = self.post(
+            "/api/mfa/open-door/face-result", self.packet(challenge, nonce="wrong"), False
+        )
         self.assertEqual(response.status_code, 401, response.json)
         with self.app.app_context():
-            self.assertEqual(AuthSession.query.filter_by(request_id=challenge['request_id']).one().status, 'failed')
+            self.assertEqual(
+                AuthSession.query.filter_by(request_id=challenge["request_id"]).one().status,
+                "failed",
+            )
 
     def test_replayed_face_packet_and_expired_session(self):
         challenge = self.challenge()
         packet = self.packet(challenge)
-        self.assertEqual(self.post('/api/mfa/open-door/face-result', packet, False).status_code, 200)
-        self.assertEqual(self.post('/api/mfa/open-door/face-result', packet, False).status_code, 400)
+        self.assertEqual(
+            self.post("/api/mfa/open-door/face-result", packet, False).status_code, 200
+        )
+        self.assertEqual(
+            self.post("/api/mfa/open-door/face-result", packet, False).status_code, 400
+        )
         with self.app.app_context():
-            AuthSession.query.filter_by(request_id=challenge['request_id']).one().expires_at = datetime.now() - timedelta(seconds=1)
+            AuthSession.query.filter_by(request_id=challenge["request_id"]).one().expires_at = (
+                datetime.now() - timedelta(seconds=1)
+            )
             db.session.commit()
-        self.assertEqual(self.post('/api/mfa/open-door/confirm', {'request_id': challenge['request_id']}).status_code, 410)
+        self.assertEqual(
+            self.post(
+                "/api/mfa/open-door/confirm", {"request_id": challenge["request_id"]}
+            ).status_code,
+            410,
+        )
         other = self.challenge()
         with self.app.app_context():
-            AuthSession.query.filter_by(request_id=other['request_id']).one().expires_at = datetime.now() - timedelta(seconds=1)
+            AuthSession.query.filter_by(request_id=other["request_id"]).one().expires_at = (
+                datetime.now() - timedelta(seconds=1)
+            )
             db.session.commit()
-        self.assertEqual(self.post('/api/mfa/open-door/face-result', self.packet(other), False).status_code, 410)
+        self.assertEqual(
+            self.post("/api/mfa/open-door/face-result", self.packet(other), False).status_code, 410
+        )
 
     def test_confirm_concurrency_issues_only_one_token(self):
         challenge = self.verified()
-        results = self.concurrent('/api/mfa/open-door/confirm', {'request_id': challenge['request_id']})
+        results = self.concurrent(
+            "/api/mfa/open-door/confirm", {"request_id": challenge["request_id"]}
+        )
         self.assertEqual(sum(status == 200 for status, _ in results), 1, results)
         with self.app.app_context():
             self.assertEqual(UnlockToken.query.count(), 1)
-            self.assertEqual(Device.query.filter_by(device_id='door_a').one().status, 'LOCKED')
+            self.assertEqual(Device.query.filter_by(device_id="door_a").one().status, "LOCKED")
 
     def test_token_device_expiry_and_concurrent_consumption(self):
         credential = self.issued()
-        self.assertEqual(self.post('/api/lock/unlock-token/verify', dict(credential, device_id='door_b'), False).status_code, 403)
-        results = self.concurrent('/api/lock/unlock-token/verify', credential, False)
+        self.assertEqual(
+            self.post(
+                "/api/lock/unlock-token/verify", dict(credential, device_id="door_b"), False
+            ).status_code,
+            403,
+        )
+        results = self.concurrent("/api/lock/unlock-token/verify", credential, False)
         self.assertEqual(sum(status == 200 for status, _ in results), 1, results)
         accepted = next(body for status, body in results if status == 200)
-        self.assertTrue(accepted['command_accepted'])
-        self.assertFalse(accepted['hardware_confirmed'])
+        self.assertTrue(accepted["command_accepted"])
+        self.assertFalse(accepted["hardware_confirmed"])
         other = self.issued()
         with self.app.app_context():
-            UnlockToken.query.filter_by(token=other['unlock_token']).one().expires_at = datetime.now() - timedelta(seconds=1)
+            UnlockToken.query.filter_by(token=other["unlock_token"]).one().expires_at = (
+                datetime.now() - timedelta(seconds=1)
+            )
             db.session.commit()
-        self.assertEqual(self.post('/api/lock/unlock-token/verify', other, False).status_code, 401)
+        self.assertEqual(self.post("/api/lock/unlock-token/verify", other, False).status_code, 401)
 
     def test_five_failures_lock_only_target_and_rebinding_does_not_reset(self):
         for _ in range(5):
-            challenge = self.challenge('door_b')
-            self.assertEqual(self.post('/api/mfa/open-door/face-result', self.packet(challenge, device='door_b', user='someone_else'), False).status_code, 401)
-        self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_b'}).status_code, 423)
-        self.post('/api/mfa/unbind/device', {'device_id': 'door_b'})
-        self.post('/api/mfa/bind/device', {'device_id': 'door_b'})
-        self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_b'}).status_code, 423)
-        self.challenge('door_a')
+            challenge = self.challenge("door_b")
+            self.assertEqual(
+                self.post(
+                    "/api/mfa/open-door/face-result",
+                    self.packet(challenge, device="door_b", user="someone_else"),
+                    False,
+                ).status_code,
+                401,
+            )
+        self.assertEqual(
+            self.post("/api/mfa/open-door/request", {"device_id": "door_b"}).status_code, 423
+        )
+        self.post("/api/mfa/unbind/device", {"device_id": "door_b"})
+        self.post("/api/mfa/bind/device", {"device_id": "door_b"})
+        self.assertEqual(
+            self.post("/api/mfa/open-door/request", {"device_id": "door_b"}).status_code, 423
+        )
+        self.challenge("door_a")
 
     def test_unbinding_revokes_issued_token(self):
         credential = self.issued()
-        self.post('/api/mfa/unbind/device', {'device_id': 'door_a'})
-        self.assertNotEqual(self.post('/api/lock/unlock-token/verify', credential, False).status_code, 200)
-        self.post('/api/mfa/bind/device', {'device_id': 'door_a'})
-        self.assertNotEqual(self.post('/api/lock/unlock-token/verify', credential, False).status_code, 200)
+        self.post("/api/mfa/unbind/device", {"device_id": "door_a"})
+        self.assertNotEqual(
+            self.post("/api/lock/unlock-token/verify", credential, False).status_code, 200
+        )
+        self.post("/api/mfa/bind/device", {"device_id": "door_a"})
+        self.assertNotEqual(
+            self.post("/api/lock/unlock-token/verify", credential, False).status_code, 200
+        )
 
     def test_legacy_duplicate_bindings_do_not_hide_lockout(self):
         with self.app.app_context():
-            db.session.add(MFACredential(user_id=self.uid, credential_type='device',
-                                        device_id='door_a', credential_data='', is_active=True, is_locked=True))
+            db.session.add(
+                MFACredential(
+                    user_id=self.uid,
+                    credential_type="device",
+                    device_id="door_a",
+                    credential_data="",
+                    is_active=True,
+                    is_locked=True,
+                )
+            )
             db.session.commit()
-        self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_a'}).status_code, 423)
-        self.post('/api/mfa/unbind/device', {'device_id': 'door_a'})
-        self.post('/api/mfa/bind/device', {'device_id': 'door_a'})
-        self.assertEqual(self.post('/api/mfa/open-door/request', {'device_id': 'door_a'}).status_code, 423)
+        self.assertEqual(
+            self.post("/api/mfa/open-door/request", {"device_id": "door_a"}).status_code, 423
+        )
+        self.post("/api/mfa/unbind/device", {"device_id": "door_a"})
+        self.post("/api/mfa/bind/device", {"device_id": "door_a"})
+        self.assertEqual(
+            self.post("/api/mfa/open-door/request", {"device_id": "door_a"}).status_code, 423
+        )
 
     def test_heartbeat_cannot_bypass_unlock_authorization(self):
-        response = self.client.get('/api/device/status?device_id=door_a', headers=self.headers)
-        self.assertFalse(response.json['is_online'])
-        body = {'device_id': 'door_a', 'lock_status': 'UNLOCKED'}
-        self.assertEqual(self.post('/api/device/heartbeat', body, False).status_code, 401)
-        self.assertEqual(self.post('/api/lock/sync', body, False).status_code, 401)
+        response = self.client.get("/api/device/status?device_id=door_a", headers=self.headers)
+        self.assertFalse(response.json["is_online"])
+        body = {"device_id": "door_a", "lock_status": "UNLOCKED"}
+        self.assertEqual(self.post("/api/device/heartbeat", body, False).status_code, 401)
+        self.assertEqual(self.post("/api/lock/sync", body, False).status_code, 401)
         challenge = self.challenge()
-        packet = self.packet(challenge, lock_status='UNLOCKED')
-        response = self.post('/api/device/heartbeat', packet, False)
+        packet = self.packet(challenge, lock_status="UNLOCKED")
+        response = self.post("/api/device/heartbeat", packet, False)
         self.assertEqual(response.status_code, 200, response.json)
-        self.assertEqual(response.json['device']['reported_status'], 'UNLOCKED')
-        self.assertEqual(response.json['device']['status'], 'LOCKED')
+        self.assertEqual(response.json["device"]["reported_status"], "UNLOCKED")
+        self.assertEqual(response.json["device"]["status"], "LOCKED")
 
     def test_actuator_health_is_authenticated_and_does_not_imply_lock_state(self):
         challenge = self.challenge()
         for actuator, lock_status, expected in (
-            ('UNAVAILABLE', 'UNKNOWN', 200), ('UNAVAILABLE', 'UNLOCKED', 400),
-            ('invalid', 'UNKNOWN', 400), ('AVAILABLE', 'UNKNOWN', 200),
+            ("UNAVAILABLE", "UNKNOWN", 200),
+            ("UNAVAILABLE", "UNLOCKED", 400),
+            ("invalid", "UNKNOWN", 400),
+            ("AVAILABLE", "UNKNOWN", 200),
         ):
             packet = self.packet(challenge, lock_status=lock_status, actuator_status=actuator)
-            response = self.post('/api/device/heartbeat', packet, False)
+            response = self.post("/api/device/heartbeat", packet, False)
             self.assertEqual(response.status_code, expected, response.json)
             if expected == 200:
-                self.assertEqual(response.json['device']['actuator_status'], actuator)
-                self.assertEqual(response.json['device']['reported_status'], 'UNKNOWN')
+                self.assertEqual(response.json["device"]["actuator_status"], actuator)
+                self.assertEqual(response.json["device"]["reported_status"], "UNKNOWN")
         # A legacy sender must clear stale capability instead of retaining it.
-        response = self.post('/api/device/heartbeat', self.packet(challenge, lock_status='UNKNOWN'), False)
-        self.assertEqual(response.json['device']['actuator_status'], 'UNKNOWN')
-        self.post('/api/device/heartbeat', self.packet(challenge, lock_status='LOCKED'), False)
-        response = self.post('/api/device/heartbeat', self.packet(challenge, actuator_status='UNAVAILABLE'), False)
-        self.assertEqual(response.json['device']['reported_status'], 'UNKNOWN')
+        response = self.post(
+            "/api/device/heartbeat", self.packet(challenge, lock_status="UNKNOWN"), False
+        )
+        self.assertEqual(response.json["device"]["actuator_status"], "UNKNOWN")
+        self.post("/api/device/heartbeat", self.packet(challenge, lock_status="LOCKED"), False)
+        response = self.post(
+            "/api/device/heartbeat", self.packet(challenge, actuator_status="UNAVAILABLE"), False
+        )
+        self.assertEqual(response.json["device"]["reported_status"], "UNKNOWN")
 
     def test_consumption_rolls_back_if_commit_fails(self):
         credential = self.issued()
-        with patch.object(db.session, 'commit', side_effect=RuntimeError('storage failure')):
+        with patch.object(db.session, "commit", side_effect=RuntimeError("storage failure")):
             with self.assertRaises(RuntimeError):
-                self.post('/api/lock/unlock-token/verify', credential, False)
+                self.post("/api/lock/unlock-token/verify", credential, False)
         with self.app.app_context():
-            self.assertFalse(UnlockToken.query.filter_by(token=credential['unlock_token']).one().is_used)
-            self.assertEqual(Device.query.filter_by(device_id='door_a').one().status, 'LOCKED')
-        self.assertEqual(self.post('/api/lock/unlock-token/verify', credential, False).status_code, 200)
-
-    def test_performance_client_runs_full_simulated_flow(self):
-        import importlib.util
-        import requests
-        perf_dir = Path(__file__).parent / 'perf'
-        sys.path.insert(0, str(perf_dir))
-        from client import test_totp_secret
-        spec = importlib.util.spec_from_file_location('measure_e2e', perf_dir / 'measure_e2e.py')
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        with self.app.app_context():
-            MFACredential.query.filter_by(user_id=self.uid, credential_type='totp').one().credential_data = test_totp_secret('alice')
-            db.session.commit()
-        class Response:
-            def __init__(self, response):
-                self.response = response
-            def json(self):
-                return self.response.json
-            def raise_for_status(self):
-                if self.response.status_code >= 400:
-                    raise requests.HTTPError(str(self.response.json))
-        class Client:
-            def post(_self, url, json, headers=None, timeout=None):
-                return Response(self.client.post(url, json=json, headers=headers or {}))
-        result = module.one_run(Client(), '', 'alice', 'password', 'door_a', simulate_face=True)
-        self.assertGreater(result['total'], 0)
-        with self.app.app_context():
-            self.assertTrue(UnlockToken.query.one().is_used)
+            self.assertFalse(
+                UnlockToken.query.filter_by(token=credential["unlock_token"]).one().is_used
+            )
+            self.assertEqual(Device.query.filter_by(device_id="door_a").one().status, "LOCKED")
+        self.assertEqual(
+            self.post("/api/lock/unlock-token/verify", credential, False).status_code, 200
+        )
 
     def test_night_policy_persists_until_confirmation(self):
-        with patch('app.routes.mfa.door.evaluate_mfa_policy', return_value=['device', 'face', 'totp']):
+        with patch(
+            "app.routes.mfa.door.evaluate_mfa_policy", return_value=["device", "face", "totp"]
+        ):
             challenge = self.verified()
-        body = {'request_id': challenge['request_id']}
-        self.assertEqual(self.post('/api/mfa/open-door/confirm', body).status_code, 400)
-        body['totp_code'] = pyotp.TOTP(self.secret).now()
-        self.assertEqual(self.post('/api/mfa/open-door/confirm', body).status_code, 200)
+        body = {"request_id": challenge["request_id"]}
+        self.assertEqual(self.post("/api/mfa/open-door/confirm", body).status_code, 400)
+        body["totp_code"] = pyotp.TOTP(self.secret).now()
+        self.assertEqual(self.post("/api/mfa/open-door/confirm", body).status_code, 200)
 
     def test_guest_lifecycle_history_has_device_context_without_secret(self):
         from app.models import AccessLog
-        response = self.post('/api/mfa/guest/create', {'device_id': 'door_a', 'guest_name': 'visitor'})
+
+        response = self.post(
+            "/api/mfa/guest/create", {"device_id": "door_a", "guest_name": "visitor"}
+        )
         self.assertEqual(response.status_code, 200)
         with self.app.app_context():
             guest_id = GuestPass.query.one().id
-        self.assertEqual(self.post('/api/mfa/guest/revoke/' + str(guest_id), {}).status_code, 200)
+        self.assertEqual(self.post("/api/mfa/guest/revoke/" + str(guest_id), {}).status_code, 200)
         with self.app.app_context():
-            entries = AccessLog.query.filter(AccessLog.action.in_(['GUEST_PASS_CREATED', 'GUEST_PASS_REVOKED'])).all()
-            self.assertEqual({entry.action for entry in entries}, {'GUEST_PASS_CREATED', 'GUEST_PASS_REVOKED'})
-            self.assertTrue(all(entry.device_id == 'door_a' and entry.username == 'alice' for entry in entries))
-            self.assertNotIn(response.json['pass_code'], repr([entry.__dict__ for entry in entries]))
+            entries = AccessLog.query.filter(
+                AccessLog.action.in_(["GUEST_PASS_CREATED", "GUEST_PASS_REVOKED"])
+            ).all()
+            self.assertEqual(
+                {entry.action for entry in entries}, {"GUEST_PASS_CREATED", "GUEST_PASS_REVOKED"}
+            )
+            self.assertTrue(
+                all(entry.device_id == "door_a" and entry.username == "alice" for entry in entries)
+            )
+            self.assertNotIn(
+                response.json["pass_code"], repr([entry.__dict__ for entry in entries])
+            )
 
     def test_guest_budget_device_binding_and_revocation(self):
-        response = self.post('/api/mfa/guest/create', {'device_id': 'door_a', 'guest_name': 'guest', 'max_uses': 1})
+        response = self.post(
+            "/api/mfa/guest/create", {"device_id": "door_a", "guest_name": "guest", "max_uses": 1}
+        )
         self.assertEqual(response.status_code, 200, response.json)
-        results = self.concurrent('/api/mfa/guest/verify', {'pass_code': response.json['pass_code']}, False)
+        results = self.concurrent(
+            "/api/mfa/guest/verify", {"pass_code": response.json["pass_code"]}, False
+        )
         self.assertEqual(sum(status == 200 for status, _ in results), 1, results)
         credential = next(body for status, body in results if status == 200)
-        self.assertEqual(credential['device_id'], 'door_a')
+        self.assertEqual(credential["device_id"], "door_a")
         with self.app.app_context():
             guest = GuestPass.query.one()
             self.assertEqual(guest.used_count, 1)
             guest_id = guest.id
-        self.post('/api/mfa/guest/revoke/' + str(guest_id), {})
-        self.assertEqual(self.post('/api/lock/unlock-token/verify', credential, False).status_code, 401)
+        self.post("/api/mfa/guest/revoke/" + str(guest_id), {})
+        self.assertEqual(
+            self.post("/api/lock/unlock-token/verify", credential, False).status_code, 401
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

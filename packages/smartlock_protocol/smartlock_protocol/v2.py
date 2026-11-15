@@ -39,15 +39,17 @@ def b64e(data: bytes) -> str:
 
 def b64d(data: str) -> bytes:
     if not isinstance(data, str):
-        raise ValueError('Base64 field must be a string')
-    decoded = base64.b64decode(data.encode('ascii'), validate=True)
+        raise ValueError("Base64 field must be a string")
+    decoded = base64.b64decode(data.encode("ascii"), validate=True)
     if b64e(decoded) != data:
-        raise ValueError('Non-canonical Base64 field')
+        raise ValueError("Non-canonical Base64 field")
     return decoded
 
 
 def canonical_json(data: Dict[str, Any]) -> bytes:
-    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return json.dumps(
+        data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
 
 
 def password_fingerprint(password: str) -> bytes:
@@ -110,16 +112,19 @@ class Spake2Client:
         return state, msg
 
     def finish(self, state: Spake2ClientState, server_msg: Dict[str, str]) -> SecuritySession:
-        if not isinstance(server_msg, dict) or server_msg.get('version') != PROTOCOL_VERSION:
-            raise ValueError('Invalid server protocol response')
-        expires_at = server_msg.get('expires_at')
-        if type(expires_at) not in (int, float) or not time.time() < expires_at <= time.time() + 86400:
-            raise ValueError('Invalid server session expiry')
+        if not isinstance(server_msg, dict) or server_msg.get("version") != PROTOCOL_VERSION:
+            raise ValueError("Invalid server protocol response")
+        expires_at = server_msg.get("expires_at")
+        if (
+            type(expires_at) not in (int, float)
+            or not time.time() < expires_at <= time.time() + 86400
+        ):
+            raise ValueError("Invalid server session expiry")
         # 字段名保留 server_pub 是为了兼容上一版接口；实际内容已改为 SPAKE2_B 消息。
         spake2_key = state.spake2.finish(b64d(server_msg["server_pub"]))
         server_nonce = b64d(server_msg["server_nonce"])
         if len(server_nonce) != 16:
-            raise ValueError('Invalid server nonce')
+            raise ValueError("Invalid server nonce")
         salt = state.client_nonce + server_nonce + state.device_id.encode("utf-8")
         session_key = hkdf(
             spake2_key,
@@ -129,12 +134,14 @@ class Spake2Client:
         )
         expected_challenge = hmac_sha256(
             session_key,
-            canonical_json({
-                "session_id": server_msg["session_id"],
-                "device_id": state.device_id,
-                "client_nonce": b64e(state.client_nonce),
-                "server_nonce": server_msg["server_nonce"],
-            }),
+            canonical_json(
+                {
+                    "session_id": server_msg["session_id"],
+                    "device_id": state.device_id,
+                    "client_nonce": b64e(state.client_nonce),
+                    "server_nonce": server_msg["server_nonce"],
+                }
+            ),
         )
         if not constant_time_equal(expected_challenge, b64d(server_msg["challenge"])):
             raise ValueError("SPAKE2 challenge verification failed")
@@ -151,20 +158,30 @@ class SecureResponse:
 
     @staticmethod
     def sign(session, header, endpoint, body):
-        message = {'session_id': session.session_id, 'request_id': header['request_id'],
-                   'nonce': header['nonce'], 'endpoint': endpoint, 'body': body}
-        key = hkdf(session.session_key, salt=b'smart-lock-response', info=b'hmac', length=32)
-        if header.get('version') == 'SL-SEC-v3':
-            message = {'header': header, 'endpoint': endpoint, 'direction': 'server-to-device', 'body': body}
-            key = hkdf(session.session_key, salt=b'SL-SEC-v3', info=b'HMAC-SHA256/server-to-device')
-        return {'body': body, 'mac': b64e(hmac_sha256(key, canonical_json(message)))}
+        message = {
+            "session_id": session.session_id,
+            "request_id": header["request_id"],
+            "nonce": header["nonce"],
+            "endpoint": endpoint,
+            "body": body,
+        }
+        key = hkdf(session.session_key, salt=b"smart-lock-response", info=b"hmac", length=32)
+        if header.get("version") == "SL-SEC-v3":
+            message = {
+                "header": header,
+                "endpoint": endpoint,
+                "direction": "server-to-device",
+                "body": body,
+            }
+            key = hkdf(session.session_key, salt=b"SL-SEC-v3", info=b"HMAC-SHA256/server-to-device")
+        return {"body": body, "mac": b64e(hmac_sha256(key, canonical_json(message)))}
 
     @classmethod
     def verify(cls, session, header, endpoint, response):
-        expected = cls.sign(session, header, endpoint, response['body'])
-        if not constant_time_equal(b64d(expected['mac']), b64d(response['mac'])):
-            raise ValueError('Invalid backend command response signature')
-        return response['body']
+        expected = cls.sign(session, header, endpoint, response["body"])
+        if not constant_time_equal(b64d(expected["mac"]), b64d(response["mac"])):
+            raise ValueError("Invalid backend command response signature")
+        return response["body"]
 
 
 class SecureEnvelope:
@@ -172,7 +189,9 @@ class SecureEnvelope:
 
     @staticmethod
     def _derive_keys(session_key: bytes) -> tuple[bytes, bytes]:
-        material = hkdf(session_key, salt=b"smart-lock-secure-envelope", info=b"aes-cbc+hmac", length=64)
+        material = hkdf(
+            session_key, salt=b"smart-lock-secure-envelope", info=b"aes-cbc+hmac", length=64
+        )
         return material[:32], material[32:]
 
     @classmethod
@@ -185,7 +204,7 @@ class SecureEnvelope:
     ) -> Dict[str, Any]:
         now = int(time.time())
         if session.expires_at <= time.time():
-            raise ValueError('Cannot seal using an expired session')
+            raise ValueError("Cannot seal using an expired session")
         header = {
             "version": PROTOCOL_VERSION,
             "session_id": session.session_id,
