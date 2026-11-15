@@ -369,6 +369,12 @@ async function run() {
     .getByText(/未识别到可验证的人脸/)
     .waitFor()
   await page.getByRole('img', { name: '本次验证快照', exact: true }).waitFor()
+  const feedback = await page.getByRole('region', { name: '门锁验证进度' }).evaluate((panel) => ({
+    focused: document.activeElement === panel,
+    top: panel.getBoundingClientRect().top
+  }))
+  assert.equal(feedback.focused, true)
+  assert.ok(feedback.top >= 0 && feedback.top < 250, 'Authentication feedback must be in view')
   assert.equal(await page.getByLabel('身份验证器验证码', { exact: true }).count(), 0)
   assert.equal(calls.consume, 0)
   assert.equal(calls.face, faceBefore + 1)

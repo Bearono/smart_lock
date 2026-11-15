@@ -37,6 +37,7 @@ const search = ref(''),
   snapshotBusy = ref(false),
   receivedAt = ref('')
 const showList = ref(false)
+const flowPanel = ref<HTMLElement | null>(null)
 const cameraUnavailable = computed(() =>
   ['OFFLINE', 'ERROR'].includes(selected.value?.camera_status ?? '')
 )
@@ -126,6 +127,16 @@ async function clearSnapshot() {
   }
 }
 watch(selectedId, () => refreshSnapshot(), { immediate: true })
+watch(
+  phase,
+  (value) => {
+    if (['face', 'confirm', 'recover', 'failed'].includes(value)) {
+      flowPanel.value?.focus({ preventScroll: true })
+      flowPanel.value?.scrollIntoView({ block: 'start', behavior: 'auto' })
+    }
+  },
+  { flush: 'post' }
+)
 onScopeDispose(() => {
   disposed = true
   imageGeneration++
@@ -353,7 +364,14 @@ onScopeDispose(() => {
       </div>
       <RecentActivity :device-id="selectedId" :refresh-signal="`${phase}:${refreshing}`" />
     </template>
-    <section v-if="['face', 'confirm', 'recover', 'failed'].includes(phase)" class="panel">
+    <section
+      v-if="['face', 'confirm', 'recover', 'failed'].includes(phase)"
+      ref="flowPanel"
+      class="panel"
+      tabindex="-1"
+      aria-label="门锁验证进度"
+      style="scroll-margin-top: 100px"
+    >
       <div class="panel-head">
         <div>
           <h3>{{ flowAction === '开门' ? '开门验证' : '上锁操作' }}</h3>

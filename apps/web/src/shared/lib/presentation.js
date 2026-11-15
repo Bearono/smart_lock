@@ -1,5 +1,6 @@
 const actions = {
   REMOTE_LOCK: '上锁命令已提交',
+  BLOCKED_LOCKED_DEVICE_ATTEMPT: '认证已锁定，本次开门被拦截',
   TOKEN_UNLOCK: '开门命令已提交',
   UNLOCK_TOKEN_ISSUED: '开门授权已签发',
   GUEST_TOKEN_ISSUED: '访客验证通过',
@@ -11,6 +12,8 @@ const actions = {
   SNAPSHOT_CAPTURE: '门前新画面已获取'
 }
 export function actionLabel(value) {
+  if (typeof value === 'string' && value.startsWith('ADMIN_UNLOCK_DEVICE_FOR_'))
+    return '管理员已解除设备认证锁定'
   return actions[value] || value || '未提供'
 }
 export function alarmLabel(value) {
@@ -53,6 +56,8 @@ export function errorMessage(error, fallback = '暂时无法完成，请稍后�
     return reasons[error.response.data.reason] || '人脸验证未通过，请检查本次照片后重新验证'
   }
   const known = {
+    'Invalid or expired pre_token':
+      '本次登录验证已过期，请重新输入账号密码，并在 5 分钟内完成动态验证码验证',
     'Invalid TOTP code': '验证码不正确，请重新开始验证',
     'Invalid or already used TOTP code': '验证码无效或已使用，请等待身份验证器生成下一组验证码',
     'Authentication failed': '本次验证失败，请重新开始',
