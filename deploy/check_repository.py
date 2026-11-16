@@ -93,6 +93,13 @@ def check_documents(root, documents):
             errors.append("Missing current document: " + str(document.relative_to(root)))
             continue
         content = document.read_text(encoding="utf-8-sig")
+        # GFM can consume emphasis markers and adjacent CJK prose into a bare URL.
+        prose = re.sub(r"(?ms)^ *(`{3,}|~{3,})[^\n]*\n.*?^ *\1 *$", "", content)
+        prose = re.sub(r"(`+)[^`]*?\1", "", prose)
+        if re.search(r"\*{1,2}https?://", prose):
+            errors.append(
+                f"Emphasized bare URL in {document.relative_to(root)}: use an explicit Markdown link"
+            )
         for target in re.findall(r"\[[^\]]*\]\(([^\s)]+)\)", content):
             if target.startswith("#") or urlsplit(target).scheme:
                 continue

@@ -39,7 +39,9 @@ docker compose -f compose.yaml -f compose.tls.yaml up -d --build --wait backend 
 docker compose exec backend flask --app run create-admin --username operator
 ```
 
-浏览器访问 **https://localhost:8443**。管理员密码由命令行交互设置，首次登录登记身份验证器。完整运行还需按[部署指南](deploy/README.md)配置设备身份、树莓派、模型、模板和[模拟门锁](apps/lock_sim/README.md)。
+浏览器访问 [https://localhost:8443](https://localhost:8443)。管理员密码由命令行交互设置，首次登录登记身份验证器。
+
+完整运行还需按[部署指南](deploy/README.md)配置设备身份、树莓派、模型、模板和[模拟门锁](apps/lock_sim/README.md)。
 
 ## 仓库结构
 

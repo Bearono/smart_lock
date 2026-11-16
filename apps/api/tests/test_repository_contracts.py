@@ -55,6 +55,22 @@ class RepositoryContracts(unittest.TestCase):
             with patch.object(checks.subprocess, "run", side_effect=FileNotFoundError):
                 self.assertEqual(checks.source_files(root), [root / "README.md"])
 
+    def test_document_urls_do_not_swallow_adjacent_prose_in_github(self):
+        cases = [
+            ("浏览器访问 **https://localhost:8443**。管理员密码交互设置。", True),
+            ("浏览器访问 [https://localhost:8443](https://localhost:8443)。", False),
+            ("浏览器访问 **[本地服务](https://localhost:8443)**。", False),
+            ("示例：`**https://localhost:8443**`。", False),
+            ("```md\n**https://localhost:8443**\n```\n", False),
+        ]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            doc = root / "README.md"
+            for content, rejected in cases:
+                with self.subTest(content=content):
+                    doc.write_text(content, encoding="utf-8")
+                    self.assertEqual(bool(checks.check_documents(root, [doc])), rejected)
+
     def test_mfa_http_contract_is_preserved_across_module_split(self):
         sys.path.insert(0, str(ROOT / "apps/api"))
         from app import create_app

@@ -42,6 +42,7 @@ python manage.py check
 
 - 文件编码 UTF-8；通用文本 LF，Windows cmd/bat 使用 CRLF。Python/Java 使用四空格，Web 与配置使用两空格；Python 统一使用 Ruff，前端统一使用 Prettier。
 - 当前文档使用稳定的小写文件名；不保留阶段计划和重复报告，历史通过 Git 追溯。
+- 正文网址使用显式 Markdown 链接，配置值使用行内代码；文档变更需核对 GitHub 渲染后的标题、表格、代码块和链接，格式化与链接路径检查不能替代排版检查。
 - 数据库、私钥、模板、采集照片、SDK、虚拟环境和构建产物放入被忽略目录。
 - `outputs` 用于本机调试证据，`releases` 用于已验证产物，`instance` 用于本机运行状态。
 - 配置通过环境变量和显式文件路径注入，不把个人路径、账号或密钥提交到示例。

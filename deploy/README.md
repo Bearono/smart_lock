@@ -11,7 +11,9 @@ docker compose -f compose.yaml -f compose.tls.yaml up -d --build --wait backend 
 docker compose exec backend flask --app run create-admin --username operator
 ```
 
-初始化工具只创建缺失密钥，不覆盖已有文件。管理员密码交互输入；首次登录需要绑定身份验证器。浏览器使用 **https://localhost:8443**；HTTP 8080 仅供本机预览。本地 CA 位于 `deploy/tls/ca.crt`，必须核对后由使用者决定是否信任，不能关闭证书验证。
+初始化工具只创建缺失密钥，不覆盖已有文件。管理员密码交互输入；首次登录需要绑定身份验证器。浏览器访问 [https://localhost:8443](https://localhost:8443)；HTTP 8080 仅供本机预览。
+
+本地 CA 位于 `deploy/tls/ca.crt`，必须核对后由使用者决定是否信任，不能关闭证书验证。
 
 已有部署可直接启动现有容器；Windows 上需先启动 Docker Desktop：
 
