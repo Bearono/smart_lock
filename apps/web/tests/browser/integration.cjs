@@ -1,11 +1,23 @@
 // Run ONLY against tests/browser_fixture.py's disposable database.
 const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
+const fs = require('node:fs/promises')
+const path = require('node:path')
 const { chromium } = require('playwright')
 if (process.env.ISOLATED_BACKEND_FIXTURE !== '1') {
   throw new Error('Start the disposable backend fixture, then set ISOLATED_BACKEND_FIXTURE=1')
 }
 const base = process.env.FRONTEND_URL || 'http://127.0.0.1:5173'
+const artifacts = path.resolve(__dirname, '../../test-artifacts')
+async function capture(page, name) {
+  await fs.mkdir(artifacts, { recursive: true })
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: path.join(artifacts, `${name}.png`), fullPage: true })
+  assert.ok(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    `${name} must fit the viewport`
+  )
+}
 function totp(secret) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
   const bits = [...secret.toUpperCase()]
@@ -36,6 +48,11 @@ async function run() {
   const enrollment = await (await prelogin).json()
   assert.equal(enrollment.totp_bound, false, 'fixture must be newly created')
   assert.ok(enrollment.secret)
+  await page.getByRole('button', { name: '完成绑定并登录' }).waitFor()
+  await capture(page, 'enrollment-desktop')
+  await page.setViewportSize({ width: 320, height: 640 })
+  await capture(page, 'enrollment-320')
+  await page.setViewportSize({ width: 1440, height: 1000 })
   await page.getByLabel('身份验证器验证码', { exact: true }).fill(totp(enrollment.secret))
   await page.getByRole('button', { name: '完成绑定并登录' }).click()
   await page.getByRole('button', { name: '上锁', exact: true }).waitFor()
@@ -73,6 +90,8 @@ async function run() {
   await page.getByLabel('访客凭证', { exact: true }).fill(passCode.trim())
   await page.getByRole('button', { name: '验证并申请开门' }).click()
   await page.locator('[role="alert"]').waitFor()
+  await page.setViewportSize({ width: 320, height: 640 })
+  await capture(page, 'guest-rejected-320')
   assert.equal(await page.locator('.command-status').count(), 0)
   assert.deepEqual(errors, [])
   console.log(

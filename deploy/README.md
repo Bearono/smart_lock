@@ -18,10 +18,10 @@ docker compose exec backend flask --app run create-admin --username operator
 已有部署可直接启动现有容器；Windows 上需先启动 Docker Desktop：
 
 ```powershell
-docker compose -f compose.yaml -f compose.tls.yaml start backend web tls
+docker start smart-lock-backend-1 smart-lock-web-1 smart-lock-tls-1
 ```
 
-`start` 使用现有容器和数据卷，不执行数据库初始化。首次安装、配置变更和升级使用 Compose；停止使用 `docker compose -f compose.yaml -f compose.tls.yaml stop`。通知发送作为独立服务配置和启动。
+上述容器名称对应仓库默认项目名 `smart-lock`。`docker start` 仅启动指定容器，保留原有数据卷；Compose 的 `start` 可能同时启动依赖的 `init` 服务。首次安装、配置变更和升级使用 Compose；停止使用 `docker compose -f compose.yaml -f compose.tls.yaml stop`。通知发送作为独立服务配置和启动。
 
 API 不单独暴露宿主机端口；入口只绑定回环地址。后端以非 root 身份运行，文件系统只读，业务数据保存在 `data` 卷。`/health/live` 检查进程，`/health/ready` 检查数据库结构；设备在线情况以有效心跳为准。
 

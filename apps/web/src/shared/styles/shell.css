@@ -173,7 +173,10 @@
 }
 .account-name {
   font-size: 13px;
-  overflow-wrap: anywhere;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .avatar {
   width: 32px;
@@ -306,6 +309,7 @@
   }
   .account-name {
     font-size: 12px;
+    max-width: 8ch;
   }
   .main-content {
     padding: 16px 20px 128px;

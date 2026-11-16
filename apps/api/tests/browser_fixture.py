@@ -9,6 +9,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import sys
 
+from flask import request
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app, db, bcrypt
 from app.models import Device, DeviceGrant, MFACredential, User
@@ -54,4 +56,12 @@ if __name__ == "__main__":
                     )
                 )
             db.session.commit()
+
+        @app.before_request
+        def keep_fixture_devices_online():
+            # This fixture has no device process to send heartbeats during manual review.
+            if request.path == "/api/device/status":
+                Device.query.update({"last_update": datetime.now(), "is_online": True})
+                db.session.commit()
+
         app.run(host="127.0.0.1", port=8000, debug=False, use_reloader=False)

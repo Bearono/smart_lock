@@ -75,6 +75,9 @@ let snapshotFixtures = false,
   faceRejected = false,
   receiptUnauthorized = false,
   emptyDevices = false
+let listState = 'ready'
+let accountName = 'qa_operator'
+let verification = null
 
 async function fixture(page) {
   let loggedIn = false
@@ -90,16 +93,18 @@ async function fixture(page) {
       return respond({ pre_token: 'qa-pre', totp_bound: true, role: 'admin' })
     if (endpoint === '/api/login/mfa/verify') {
       loggedIn = true
-      return respond({ username: 'qa_operator', role: 'admin' })
+      return respond({ username: accountName, role: 'admin' })
     }
     if (endpoint === '/api/account/session')
       return loggedIn
-        ? respond({ username: 'qa_operator', role: 'admin' })
+        ? respond({ username: accountName, role: 'admin' })
         : respond({ msg: 'Login required' }, 401)
     if (endpoint === '/api/logout') {
       loggedIn = false
       return respond({ msg: 'Signed out' })
     }
+    if (listState === 'error' && request.method() === 'GET' && endpoint !== '/api/account/session')
+      return respond({ msg: '服务暂时不可用，请稍后重试。' }, 503)
     if (endpoint === '/api/device/status')
       return deviceFailure
         ? respond({ msg: '设备状态获取失败' }, 503)
@@ -107,7 +112,7 @@ async function fixture(page) {
     if (endpoint === '/api/admin/security/evidence')
       return respond({
         observed_at: '2026-10-08T00:00:00Z',
-        verification: null,
+        verification,
         protocol: {
           version: 'SL-SEC-v3',
           handshake: 'SPAKE2',
@@ -149,7 +154,7 @@ async function fixture(page) {
     if (endpoint === '/api/mfa/status')
       return respond({
         totp_bound: true,
-        devices: devices.map((item, index) => ({
+        devices: (listState === 'empty' ? [] : devices).map((item, index) => ({
           credential_id: index + 1,
           device_id: item.device_id,
           is_active: true,
@@ -202,7 +207,7 @@ async function fixture(page) {
         hardware_confirmed: commandConfirmed && devices[0].execution_mode !== 'SIMULATED'
       })
     if (endpoint === '/api/lock/history') {
-      const history = logs.filter(
+      const history = (listState === 'empty' ? [] : logs).filter(
         (entry) =>
           !url.searchParams.get('device_id') ||
           entry.device_id === url.searchParams.get('device_id')
@@ -211,7 +216,7 @@ async function fixture(page) {
     }
     if (endpoint === '/api/face/logs')
       return respond({
-        data: url.searchParams.get('passed') === 'false' ? [] : faceLogs,
+        data: listState === 'empty' || url.searchParams.get('passed') === 'false' ? [] : faceLogs,
         total: 1,
         pages: 1,
         current_page: 1
@@ -220,7 +225,7 @@ async function fixture(page) {
       calls.verify++
       return respond({ unlock_token: 'guest-token', device_id: 'qa_front' })
     }
-    if (endpoint === '/api/mfa/guest/list') return respond(guestPasses)
+    if (endpoint === '/api/mfa/guest/list') return respond(listState === 'empty' ? [] : guestPasses)
     if (endpoint === '/api/mfa/guest/create') {
       guestPasses = [
         {
@@ -241,19 +246,23 @@ async function fixture(page) {
     }
     if (endpoint === '/api/alarms')
       return respond([
-        {
-          id: 1,
-          time: '2026-10-08 14:30:00',
-          type: '认证异常',
-          message: '测试事件：请核查认证失败记录。',
-          status: 'pending',
-          email_status: 'disabled'
-        }
+        ...(listState === 'empty'
+          ? []
+          : [
+              {
+                id: 1,
+                time: '2026-10-08 14:30:00',
+                type: '认证异常',
+                message: '测试事件：请核查认证失败记录。',
+                status: 'pending',
+                email_status: 'disabled'
+              }
+            ])
       ])
     if (endpoint.startsWith('/api/alarms/')) return respond({ msg: 'updated' })
     if (endpoint === '/api/admin/users')
       return respond(
-        users.filter(
+        (listState === 'empty' ? [] : users).filter(
           (user) =>
             !url.searchParams.get('status') || user.status === url.searchParams.get('status')
         )
@@ -275,10 +284,50 @@ async function fixture(page) {
     throw new Error(`Unexpected fixture endpoint: ${request.method()} ${endpoint}`)
   })
 }
+async function capture(page, name) {
+  await page.waitForFunction(() => !document.querySelector('.loading-line'))
+  await page.evaluate(async () => {
+    await document.fonts.ready
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  })
+  const dialog = page.getByRole('dialog')
+  const modal = (await dialog.count()) > 0
+  await page.screenshot({ path: path.join(artifacts, `${name}.png`), fullPage: !modal })
+  await noOverflow(page, name)
+  if (modal) {
+    const bounds = await dialog.evaluate((element) => ({
+      top: element.getBoundingClientRect().top,
+      bottom: element.getBoundingClientRect().bottom,
+      overflow: element.scrollWidth > element.clientWidth + 1,
+      viewport: innerHeight
+    }))
+    assert.ok(
+      bounds.top >= 0 && bounds.bottom <= bounds.viewport + 1,
+      `${name}: modal fits viewport`
+    )
+    assert.equal(bounds.overflow, false, `${name}: modal has no horizontal clipping`)
+    const closeVisible = await dialog
+      .getByRole('button', { name: '关闭', exact: true })
+      .evaluate((button) => {
+        const rect = button.getBoundingClientRect()
+        return button.contains(
+          document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+        )
+      })
+    assert.ok(closeVisible, `${name}: close control remains reachable while scrolling`)
+  }
+}
 async function noOverflow(page, label) {
   const overflow = await page.evaluate(() =>
     [...document.querySelectorAll('body *')]
-      .filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
+      .filter((element) => {
+        const rect = element.getBoundingClientRect()
+        return (
+          !element.closest('svg') &&
+          rect.width > 0 &&
+          (rect.right > innerWidth + 1 || rect.left < -1)
+        )
+      })
       .slice(0, 8)
       .map((element) => ({
         tag: element.tagName,
@@ -287,6 +336,7 @@ async function noOverflow(page, label) {
       }))
   )
   if (overflow.length) console.log(label, overflow)
+  assert.deepEqual(overflow, [], `${label} has content outside the viewport`)
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
     true,
@@ -312,6 +362,8 @@ async function run() {
   await page.getByLabel('用户名', { exact: true }).fill('qa_operator')
   await page.getByLabel('密码', { exact: true }).fill('test-fixture-password')
   await page.getByRole('button', { name: '继续验证' }).click()
+  await page.getByLabel('身份验证器验证码', { exact: true }).waitFor()
+  await capture(page, 'login-mfa-desktop')
   await page.getByLabel('身份验证器验证码', { exact: true }).fill('123456')
   await page.getByRole('button', { name: '确认登录' }).click()
   await page.getByRole('button', { name: '验证并开门' }).waitFor()
@@ -395,6 +447,7 @@ async function run() {
   await page.getByRole('button', { name: '查看详情' }).click()
   await page.getByRole('dialog').getByText('0.96', { exact: true }).waitFor()
   await page.getByRole('dialog').getByText('0.91', { exact: true }).waitFor()
+  await capture(page, 'face-detail-desktop')
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByRole('link', { name: '我的家', exact: true }).click()
   const desktopResultOrder = await page
@@ -441,12 +494,15 @@ async function run() {
 
   await page.getByRole('link', { name: '访客', exact: true }).click()
   await page.getByRole('button', { name: '创建访客凭证', exact: true }).click()
+  await capture(page, 'guest-create-desktop')
   await page.getByLabel('访客名称', { exact: false }).fill('测试来访者')
   await page.getByRole('button', { name: '确认创建', exact: true }).click()
   await page.getByText('one-time-qa-code', { exact: true }).waitFor()
+  await capture(page, 'guest-created-desktop')
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   assert.equal(await page.getByText('one-time-qa-code', { exact: true }).count(), 0)
   await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await capture(page, 'guest-revoke-desktop')
   await page.getByRole('button', { name: '确认撤销', exact: true }).click()
   await page.getByText('已撤销', { exact: true }).waitFor()
 
@@ -462,6 +518,7 @@ async function run() {
   await page.getByRole('link', { name: '异常提醒', exact: true }).click()
   await page.getByRole('button', { name: '查看与处理', exact: true }).click()
   await page.getByRole('dialog').getByText('未启用', { exact: true }).waitFor()
+  await capture(page, 'alarm-detail-desktop')
   await page.keyboard.press('Escape')
   assert.equal(await page.getByRole('dialog').count(), 0)
 
@@ -479,6 +536,21 @@ async function run() {
       await page.goto(base + route)
       await page.locator('.page-heading, .home-welcome').waitFor()
       await noOverflow(page, `${route} at ${width}px`)
+      await capture(page, `page-${route.split('/').pop()}-${width}`)
+      if (route === '/dashboard/users') {
+        const fits = await page
+          .locator('td[data-label="角色"]')
+          .first()
+          .evaluate((element) => {
+            const text = document.createRange()
+            text.selectNodeContents(element)
+            return (
+              text.getBoundingClientRect().height <=
+              parseFloat(getComputedStyle(element).lineHeight) + 1
+            )
+          })
+        assert.ok(fits, `Member roles remain on one line at ${width}px`)
+      }
     }
   }
   await page.setViewportSize({ width: 390, height: 844 })
@@ -531,6 +603,7 @@ async function run() {
   await page.getByRole('button', { name: '刷新状态', exact: true }).click()
   await page.getByText('暂无设备', { exact: true }).waitFor()
   await noOverflow(page, 'empty home mobile')
+  await capture(page, 'home-empty-mobile')
   emptyDevices = false
   await page.getByRole('button', { name: '刷新状态', exact: true }).click()
   await page.getByRole('button', { name: '验证并开门' }).waitFor()
@@ -608,6 +681,7 @@ async function run() {
   await page.getByLabel('身份验证器验证码', { exact: true }).fill('123456')
   await page.getByRole('button', { name: '修改密码并退出', exact: true }).click()
   await page.getByText('两次新密码不一致', { exact: true }).waitFor()
+  await capture(page, 'password-error-mobile')
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByRole('button', { name: '修改密码', exact: true }).click()
   assert.equal(await page.getByLabel('当前密码', { exact: true }).inputValue(), '')
@@ -641,6 +715,74 @@ async function run() {
   )
   assert.equal(await guest.evaluate(() => localStorage.getItem('token')), null)
   receiptUnauthorized = false
+  const reviewRoutes = [
+    '/dashboard',
+    '/dashboard/records',
+    '/dashboard/guests',
+    '/dashboard/alarms',
+    '/dashboard/users',
+    '/dashboard/security',
+    '/dashboard/evidence'
+  ]
+  for (const state of ['empty', 'error']) {
+    listState = state
+    emptyDevices = state === 'empty'
+    for (const route of reviewRoutes) {
+      await page.goto(base + route)
+      await page.locator('.page-heading, .home-welcome').waitFor()
+      await capture(page, `${state}-${route.split('/').pop()}-390`)
+    }
+  }
+  listState = 'ready'
+  emptyDevices = false
+  accountName = 'long_account_'.repeat(6)
+  verification = {
+    passed: true,
+    created_at: '2026-11-16T00:00:00Z',
+    environment: 'isolated-browser-fixture',
+    git_sha: 'a'.repeat(40),
+    source_digest: 'b'.repeat(64),
+    scope: '隔离测试数据：仅验证报告布局',
+    checks: [{ name: 'repository-contracts', exit_code: 0 }]
+  }
+  users[0].username = accountName
+  devices[0].display_name = '入户门名称'.repeat(12)
+  guestPasses[0].guest_name = 'guest_'.repeat(12)
+  logs[0].username = accountName
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const route of reviewRoutes) {
+      await page.goto(base + route)
+      await page.locator('.page-heading, .home-welcome').waitFor()
+      await capture(page, `long-${route.split('/').pop()}-${width}`)
+      const accountLabel = await page.locator('.account-name').boundingBox()
+      assert.ok(accountLabel.height < 30, 'Long account names must not grow the toolbar')
+    }
+  }
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.goto(base + '/dashboard/guests')
+  await page.getByRole('button', { name: '创建访客凭证', exact: true }).click()
+  await capture(page, 'guest-create-320')
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.goto(base + '/dashboard/security')
+  await page.getByRole('button', { name: '解除绑定', exact: true }).first().click()
+  await capture(page, 'unbind-320')
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('button', { name: '修改密码', exact: true }).click()
+  await capture(page, 'password-320')
+  await page.getByRole('button', { name: '修改密码并退出', exact: true }).scrollIntoViewIfNeeded()
+  await capture(page, 'password-actions-320')
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.goto(base + '/dashboard/users')
+  await page.getByRole('button', { name: '批准', exact: true }).click()
+  await capture(page, 'approve-user-320')
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByLabel('账户状态').selectOption('approved')
+  await page.getByRole('button', { name: '管理权限', exact: true }).first().click()
+  await capture(page, 'device-permissions-320')
+  await page.getByRole('button', { name: '解除该用户的设备认证锁定', exact: true }).click()
+  await capture(page, 'unlock-auth-320')
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
   const unauthorized = await browser.newContext()
   const publicPage = await unauthorized.newPage()
   await publicPage.goto(base + '/dashboard/users')
@@ -649,6 +791,9 @@ async function run() {
   await publicPage.setViewportSize({ width: 320, height: 640 })
   await noOverflow(publicPage, 'login at 320px')
   await publicPage.screenshot({ path: path.join(artifacts, 'login-mobile.png'), fullPage: true })
+  await publicPage.getByRole('button', { name: '创建账户', exact: true }).click()
+  await capture(publicPage, 'register-320')
+  await publicPage.getByRole('button', { name: '返回登录', exact: true }).click()
   await publicPage.getByLabel('密码', { exact: true }).fill('qa-visibility-check')
   await publicPage.getByRole('button', { name: '显示密码', exact: true }).click()
   assert.equal(await publicPage.getByLabel('密码', { exact: true }).getAttribute('type'), 'text')
@@ -659,7 +804,7 @@ async function run() {
   )
   assert.deepEqual(errors, [], 'runtime errors or Vue warnings')
   console.log(
-    'Browser acceptance passed: login, receipt recovery, state semantics, permissions, visitors, alarms, naming, security evidence, empty state, 35 responsive and 5 text enlargement checks.'
+    'Browser acceptance passed: authentication, receipts, permissions, visitors, alarms, evidence; 35 responsive, 14 empty/error, 14 long-content, 5 text enlargement checks; narrow dialogs and account labels.'
   )
   await browser.close()
 }

@@ -18,7 +18,7 @@ SmartLock 采用模块化单体后端、独立设备服务和共享协议库。�
 ## 系统与信任边界
 
 ```mermaid
-flowchart LR
+flowchart TD
   B[网页 / Android WebView] -->|HTTPS + HttpOnly Cookie/CSRF| T[TLS / Nginx]
   T --> F[Flask：鉴权与业务]
   F --> D[(SQLite：权限、会话、重放、命令)]
@@ -78,6 +78,7 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
+  direction LR
   [*] --> pending: 接受有效命令
   pending --> executed: 有效执行回执与匹配反馈
   pending --> failed: 设备报告失败

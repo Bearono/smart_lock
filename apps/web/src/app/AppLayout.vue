@@ -123,7 +123,7 @@ function acknowledge() {
         <div v-glass class="topbar-actions">
           <RouterLink class="account-link" to="/dashboard/security">
             <span class="avatar">{{ username.slice(0, 1).toUpperCase() }}</span>
-            <span class="account-name">{{ username }}</span>
+            <span class="account-name" :title="username">{{ username }}</span>
           </RouterLink>
           <button class="icon-button" aria-label="退出登录" :disabled="signingOut" @click="logout">
             <AppIcon name="logout" :size="18" />

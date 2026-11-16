@@ -177,6 +177,7 @@ img {
   background: var(--surface-hover);
 }
 .panel {
+  container-type: inline-size;
   border: 1px solid #ffffffc9;
   background: var(--surface);
   border-radius: var(--radius);
@@ -196,6 +197,13 @@ img {
 }
 .panel-head p {
   margin-top: 3px;
+}
+.panel-head > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.panel-head > .badge {
+  flex-shrink: 0;
 }
 .page-heading {
   display: flex;
@@ -340,6 +348,7 @@ select:disabled {
 }
 .table-scroll {
   overflow-x: auto;
+  container-type: inline-size;
 }
 table {
   width: 100%;
@@ -446,6 +455,10 @@ tbody tr:hover {
   backdrop-filter: blur(10px);
 }
 .dialog-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -455,6 +468,7 @@ tbody tr:hover {
 }
 .dialog-content {
   padding: 24px;
+  overflow-wrap: anywhere;
 }
 .expanded-image {
   width: 100%;
@@ -620,6 +634,9 @@ tbody tr:hover {
   .app-dialog {
     max-height: calc(100dvh - 24px);
   }
+}
+
+@container (max-width: 600px) {
   .responsive-table thead {
     display: none;
   }
