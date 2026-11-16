@@ -8,5 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt \
 COPY packages/smartlock_protocol /opt/smartlock_protocol
 RUN pip install --no-cache-dir --no-deps /opt/smartlock_protocol
 COPY apps/lock_sim/*.py /app/
+COPY apps/lock_sim/static /app/static
 USER 10001:10001
 CMD ["gunicorn", "--bind", "0.0.0.0:5444", "--workers", "1", "--threads", "2", "--timeout", "15", "--certfile", "/run/tls/server.crt", "--keyfile", "/run/tls/server.key", "service:from_environment()"]

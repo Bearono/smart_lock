@@ -14,7 +14,8 @@
     "test:browser": "node tests/browser/acceptance.cjs",
     "test:integration": "node tests/browser/integration.cjs",
     "test:material": "node tests/browser/material.cjs",
-    "test:device-console": "node tests/browser/device-console.cjs"
+    "test:device-console": "node tests/browser/device-console.cjs",
+    "test:lock-simulator": "node tests/browser/lock-simulator.cjs"
   },
   "dependencies": {
     "axios": "^1.13.2",

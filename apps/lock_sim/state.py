@@ -15,13 +15,18 @@ class StateStore:
         self.path, self.clock = Path(path), clock
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db, db:
+            db.execute("BEGIN IMMEDIATE")
             db.execute(
                 "CREATE TABLE IF NOT EXISTS bolt (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL, fault TEXT NOT NULL)"
             )
             db.execute("INSERT OR IGNORE INTO bolt VALUES (1,'LOCKED','normal')")
             db.execute(
-                "CREATE TABLE IF NOT EXISTS commands (id TEXT PRIMARY KEY, target TEXT NOT NULL, expires REAL NOT NULL, observed TEXT NOT NULL)"
+                "CREATE TABLE IF NOT EXISTS commands (id TEXT PRIMARY KEY, target TEXT NOT NULL, expires REAL NOT NULL, observed TEXT NOT NULL, executed_at REAL)"
             )
+            if "executed_at" not in {
+                column[1] for column in db.execute("PRAGMA table_info(commands)")
+            }:
+                db.execute("ALTER TABLE commands ADD COLUMN executed_at REAL")
             db.execute(
                 "CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires REAL NOT NULL)"
             )
@@ -34,16 +39,38 @@ class StateStore:
             db.execute("DELETE FROM nonces WHERE expires < ?", (self.clock(),))
             db.execute("INSERT INTO nonces VALUES (?,?)", (nonce, expires))
 
-    def read(self):
+    def read(self, *, include_commands=False):
         with self.connect() as db:
+            db.execute("BEGIN")
             state, fault = db.execute("SELECT state,fault FROM bolt WHERE id=1").fetchone()
             count = db.execute("SELECT count(*) FROM commands").fetchone()[0]
-        return {
+            if include_commands:
+                commands = db.execute(
+                    "SELECT id,target,observed,executed_at FROM commands "
+                    "ORDER BY rowid DESC LIMIT 8"
+                ).fetchall()
+                observed_at = self.clock()
+        result = {
             "reported_status": "UNKNOWN" if fault == "feedback_lost" else state,
             "execution_mode": "SIMULATED",
             "fault": fault,
             "command_count": count,
         }
+        if include_commands:
+            result.update(
+                observed_at=observed_at,
+                commands=[
+                    {
+                        "id": identity,
+                        "target_status": target,
+                        "reported_status": observed,
+                        "status": "executed" if observed == target else "failed",
+                        "executed_at": executed_at,
+                    }
+                    for identity, target, observed, executed_at in commands
+                ],
+            )
+        return result
 
     def execute(self, command):
         identity, target, expires = (
@@ -62,7 +89,8 @@ class StateStore:
             raise ValueError("Command expired or exceeds allowed lifetime")
         with self.connect() as db, db:
             db.execute("BEGIN IMMEDIATE")
-            if self.clock() >= expires:
+            executed_at = self.clock()
+            if executed_at >= expires:
                 raise ValueError("Command expired while waiting for simulated actuator")
             previous = db.execute(
                 "SELECT target,expires,observed FROM commands WHERE id=?", (identity,)
@@ -78,7 +106,8 @@ class StateStore:
                     db.execute("UPDATE bolt SET state=? WHERE id=1", (state,))
                 observed = "UNKNOWN" if fault == "feedback_lost" else state
                 db.execute(
-                    "INSERT INTO commands VALUES (?,?,?,?)", (identity, target, expires, observed)
+                    "INSERT INTO commands (id,target,expires,observed,executed_at) VALUES (?,?,?,?,?)",
+                    (identity, target, expires, observed, executed_at),
                 )
                 db.execute("DELETE FROM commands WHERE expires < ?", (now - 86400,))
         return {

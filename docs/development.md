@@ -38,6 +38,8 @@ python manage.py check
 
 软件夹具、容器和实机结果分别记录，CI 结论对应具体提交。行为变更应有能够发现回归的用例；算法阈值调整需要独立评估和记录。
 
+独立调试界面由 Web 工具链运行浏览器回归：`npm --prefix apps/web run test:device-console` 检查相机控制台，`npm --prefix apps/web run test:lock-simulator` 检查模拟锁面板。两者仅使用隔离夹具，不操作在线设备。
+
 ## 文件与配置
 
 - 文件编码 UTF-8；通用文本 LF，Windows cmd/bat 使用 CRLF。Python/Java 使用四空格，Web 与配置使用两空格；Python 统一使用 Ruff，前端统一使用 Prettier。
